@@ -119,6 +119,7 @@ export const GenerateRequestSchema = registry.register(
       brandId: z.string().optional(),
       campaignId: z.string().optional(),
       apolloEnrichmentId: z.string().optional(),
+      leadId: z.string().optional().describe("Lead-service correlation ID, unique per campaign"),
       idempotencyKey: z.string().optional(),
       workflowName: z.string().optional(),
       includeAiDisclaimer: z.boolean().optional().default(false).describe("When true, appends a small AI-generated disclaimer to the email body"),
@@ -248,6 +249,32 @@ registry.registerPath({
     },
     404: {
       description: "Generation not found",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// GET /generations/by-lead/:leadId
+// ---------------------------------------------------------------------------
+registry.registerPath({
+  method: "get",
+  path: "/generations/by-lead/{leadId}",
+  tags: ["Content Generation"],
+  summary: "Get generation by lead-service correlation ID",
+  request: {
+    headers: z.object({ "x-clerk-org-id": z.string() }),
+    params: z.object({ leadId: z.string() }),
+  },
+  responses: {
+    200: {
+      description: "Content generation for this lead",
+      content: {
+        "application/json": { schema: GenerationSingleResponseSchema },
+      },
+    },
+    404: {
+      description: "No generation found for this leadId",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },
