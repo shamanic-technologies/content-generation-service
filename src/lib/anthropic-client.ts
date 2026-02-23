@@ -35,7 +35,7 @@ Cold emails live or die on trust. Avoid anything that pattern-matches to scam or
 // ─── AI disclaimer ──────────────────────────────────────────────────────────
 
 export const AI_DISCLAIMER_TEXT =
-  "This message was sent because your profile matched an opportunity. It was drafted with the help of AI. If you reply, a real person will get back to you directly.";
+  "Your profile was matched to this opportunity based on publicly available information. AI helped tailor this message so you can quickly assess its relevance. If interested or if you have questions, our client will respond directly.";
 
 export const AI_DISCLAIMER_HTML =
   `<p style="font-size:11px;color:#999;font-style:italic;margin-top:24px;">${AI_DISCLAIMER_TEXT}</p>`;

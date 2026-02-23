@@ -22,9 +22,9 @@ describe("appendAiDisclaimer", () => {
     expect(AI_DISCLAIMER_HTML).toContain("font-style:italic");
   });
 
-  it("disclaimer text mentions AI and real person", () => {
+  it("disclaimer text mentions AI and client responding", () => {
     expect(AI_DISCLAIMER_TEXT).toContain("AI");
-    expect(AI_DISCLAIMER_TEXT).toContain("real person");
+    expect(AI_DISCLAIMER_TEXT).toContain("our client will respond directly");
   });
 });
 
