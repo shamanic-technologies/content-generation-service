@@ -1,0 +1,961 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Content Generation Service",
+    "description": "AI-powered content generation service",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://content-generation.mcpfactory.org"
+    }
+  ],
+  "components": {
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "service": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "service"
+        ]
+      },
+      "UpsertPromptRequest": {
+        "type": "object",
+        "properties": {
+          "appId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "description": "Prompt type, e.g. 'email' or 'calendar'"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Prompt template text with {{variable}} placeholders"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of expected variable names used in the prompt"
+          }
+        },
+        "required": [
+          "appId",
+          "type",
+          "prompt",
+          "variables"
+        ]
+      },
+      "UpsertPromptResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "appId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "appId",
+          "type",
+          "variables",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "GenerateRequest": {
+        "type": "object",
+        "properties": {
+          "appId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "description": "Which stored prompt to use, e.g. 'email' or 'calendar'"
+          },
+          "variables": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "description": "Variable values to substitute into the prompt template. Non-string values (arrays, objects) are coerced to strings."
+          },
+          "keyMode": {
+            "type": "string",
+            "enum": [
+              "byok",
+              "app"
+            ]
+          },
+          "runId": {
+            "type": "string"
+          },
+          "brandId": {
+            "type": "string"
+          },
+          "campaignId": {
+            "type": "string"
+          },
+          "apolloEnrichmentId": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "workflowName": {
+            "type": "string"
+          },
+          "aiDisclaimer": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, appends a small AI-generated disclaimer to the email body"
+          }
+        },
+        "required": [
+          "appId",
+          "type",
+          "variables",
+          "keyMode",
+          "runId"
+        ]
+      },
+      "GenerateResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "sequence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "step": {
+                  "type": "number"
+                },
+                "bodyHtml": {
+                  "type": "string"
+                },
+                "bodyText": {
+                  "type": "string"
+                },
+                "daysSinceLastStep": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "step",
+                "bodyHtml",
+                "bodyText",
+                "daysSinceLastStep"
+              ]
+            }
+          },
+          "tokensInput": {
+            "type": "number"
+          },
+          "tokensOutput": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "subject",
+          "sequence",
+          "tokensInput",
+          "tokensOutput"
+        ]
+      },
+      "GenerationsListResponse": {
+        "type": "object",
+        "properties": {
+          "generations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": {
+                "nullable": true
+              }
+            }
+          }
+        },
+        "required": [
+          "generations"
+        ]
+      },
+      "GenerationSingleResponse": {
+        "type": "object",
+        "properties": {
+          "generation": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {
+              "nullable": true
+            }
+          }
+        },
+        "required": [
+          "generation"
+        ]
+      },
+      "GenerateContentRequest": {
+        "type": "object",
+        "properties": {
+          "appId": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "includeFooter": {
+            "type": "boolean",
+            "default": false
+          },
+          "aiDisclaimer": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, appends a small AI-generated disclaimer to the email body"
+          },
+          "keyMode": {
+            "type": "string",
+            "enum": [
+              "byok",
+              "app"
+            ]
+          },
+          "parentRunId": {
+            "type": "string"
+          },
+          "workflowName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "appId",
+          "prompt",
+          "keyMode"
+        ]
+      },
+      "GenerateContentResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "bodyHtml": {
+            "type": "string"
+          },
+          "bodyText": {
+            "type": "string"
+          },
+          "tokensInput": {
+            "type": "number"
+          },
+          "tokensOutput": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "subject",
+          "bodyHtml",
+          "bodyText",
+          "tokensInput",
+          "tokensOutput"
+        ]
+      },
+      "GenerateCalendarRequest": {
+        "type": "object",
+        "properties": {
+          "appId": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "keyMode": {
+            "type": "string",
+            "enum": [
+              "byok",
+              "app"
+            ]
+          },
+          "parentRunId": {
+            "type": "string"
+          },
+          "workflowName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "appId",
+          "prompt",
+          "keyMode"
+        ]
+      },
+      "GenerateCalendarResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string",
+            "nullable": true
+          },
+          "tokensInput": {
+            "type": "number"
+          },
+          "tokensOutput": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "location",
+          "tokensInput",
+          "tokensOutput"
+        ]
+      },
+      "StatsRequest": {
+        "type": "object",
+        "properties": {
+          "runIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "appId": {
+            "type": "string"
+          },
+          "brandId": {
+            "type": "string"
+          },
+          "campaignId": {
+            "type": "string"
+          }
+        }
+      },
+      "StatsResponse": {
+        "type": "object",
+        "properties": {
+          "stats": {
+            "type": "object",
+            "properties": {
+              "emailsGenerated": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "emailsGenerated"
+            ]
+          }
+        },
+        "required": [
+          "stats"
+        ]
+      },
+      "StatsByModelRequest": {
+        "type": "object",
+        "properties": {
+          "runIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "clerkOrgId": {
+            "type": "string"
+          },
+          "appId": {
+            "type": "string"
+          },
+          "brandId": {
+            "type": "string"
+          },
+          "campaignId": {
+            "type": "string"
+          }
+        }
+      },
+      "StatsByModelResponse": {
+        "type": "object",
+        "properties": {
+          "stats": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "number"
+                },
+                "runIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "model",
+                "count",
+                "runIds"
+              ]
+            }
+          }
+        },
+        "required": [
+          "stats"
+        ]
+      },
+      "ClerkOrgId": {
+        "type": "string"
+      }
+    },
+    "parameters": {
+      "ClerkOrgId": {
+        "schema": {
+          "$ref": "#/components/schemas/ClerkOrgId"
+        },
+        "required": true,
+        "name": "X-Clerk-Org-Id",
+        "in": "header"
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prompts": {
+      "put": {
+        "tags": [
+          "Prompts"
+        ],
+        "summary": "Register or update a prompt template for an app (idempotent)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-clerk-org-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertPromptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Prompt upserted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpsertPromptResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generate": {
+      "post": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "Generate content using a stored prompt template with variable substitution",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-clerk-org-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generated content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Prompt not found for this app + type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generations": {
+      "get": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "List generations with filters",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "runId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "campaignId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "appId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "brandId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-clerk-org-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of generations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationsListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "At least one filter required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generations/by-enrichment/{apolloEnrichmentId}": {
+      "get": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "Get generation by enrichment ID",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "apolloEnrichmentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-clerk-org-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Content generation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationSingleResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Generation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generate/content": {
+      "post": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "Generate email content from a free-text prompt",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-clerk-org-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateContentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generated email content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateContentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generate/calendar": {
+      "post": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "Generate calendar event fields from a free-text prompt",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-clerk-org-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateCalendarRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generated calendar event",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateCalendarResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stats": {
+      "post": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Get aggregated stats by filters",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-clerk-org-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Aggregated stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing required fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stats/by-model": {
+      "post": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Get content generation stats grouped by model (internal)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatsByModelRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stats grouped by model",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsByModelResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing required fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
