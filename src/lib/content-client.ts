@@ -9,7 +9,7 @@ export interface GenerateContentParams {
   prompt: string;
   variables?: string[];
   includeFooter?: boolean;
-  aiDisclaimer?: boolean;
+  includeAiDisclaimer?: boolean;
 }
 
 export interface GenerateContentResult {
@@ -42,7 +42,7 @@ export async function generateContent(
 
   let parsed = parseEmailResponse(text);
 
-  if (params.aiDisclaimer) {
+  if (params.includeAiDisclaimer) {
     const patched = appendAiDisclaimer(parsed.bodyHtml, parsed.bodyText);
     parsed = { ...parsed, ...patched };
   }
