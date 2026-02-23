@@ -31,6 +31,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       apolloEnrichmentId,
       idempotencyKey,
       workflowName,
+      aiDisclaimer,
     } = parsed.data;
 
     // Idempotency: return existing generation if key matches
@@ -73,6 +74,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     const result = await generateFromTemplate(anthropicApiKey, {
       promptTemplate: storedPrompt.prompt,
       variables,
+      aiDisclaimer,
     });
 
     // Extract lead/client fields from variables for dedicated columns

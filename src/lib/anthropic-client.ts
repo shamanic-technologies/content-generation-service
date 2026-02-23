@@ -32,9 +32,27 @@ Don't open with a compliment. "Your work in X caught my attention" is the fastes
 Cold emails live or die on trust. Avoid anything that pattern-matches to scam or MLM: specific dollar amounts, crypto terminology (tokens, chains, USDT, Web3), compensation details, "passive income" language. Lead with the mission and the human impact. The money conversation happens later, on a call, once trust is established.`;
 }
 
+// ─── AI disclaimer ──────────────────────────────────────────────────────────
+
+export const AI_DISCLAIMER_TEXT =
+  "This message was sent because your profile matched an opportunity. It was drafted with the help of AI. If you reply, a real person will get back to you directly.";
+
+export const AI_DISCLAIMER_HTML =
+  `<p style="font-size:11px;color:#999;font-style:italic;margin-top:24px;">${AI_DISCLAIMER_TEXT}</p>`;
+
+export function appendAiDisclaimer(bodyHtml: string, bodyText: string): { bodyHtml: string; bodyText: string } {
+  return {
+    bodyHtml: bodyHtml + AI_DISCLAIMER_HTML,
+    bodyText: bodyText + "\n\n" + AI_DISCLAIMER_TEXT,
+  };
+}
+
+// ─── Template generation ────────────────────────────────────────────────────
+
 export interface GenerateFromTemplateParams {
   promptTemplate: string;
   variables: Record<string, unknown>;
+  aiDisclaimer?: boolean;
 }
 
 export interface SequenceStep {
@@ -128,7 +146,17 @@ export async function generateFromTemplate(
   const textContent = response.content.find((c) => c.type === "text");
   const text = textContent?.type === "text" ? textContent.text : "";
 
-  const parsed = parseSequenceJson(text);
+  let parsed = parseSequenceJson(text);
+
+  if (params.aiDisclaimer) {
+    parsed = {
+      subject: parsed.subject,
+      sequence: parsed.sequence.map((step) => {
+        const patched = appendAiDisclaimer(step.bodyHtml, step.bodyText);
+        return { ...step, ...patched };
+      }),
+    };
+  }
 
   const tokensInput = response.usage.input_tokens;
   const tokensOutput = response.usage.output_tokens;

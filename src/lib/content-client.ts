@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { appendAiDisclaimer } from "./anthropic-client.js";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -8,6 +9,7 @@ export interface GenerateContentParams {
   prompt: string;
   variables?: string[];
   includeFooter?: boolean;
+  aiDisclaimer?: boolean;
 }
 
 export interface GenerateContentResult {
@@ -38,7 +40,12 @@ export async function generateContent(
   const textContent = response.content.find((c) => c.type === "text");
   const text = textContent?.type === "text" ? textContent.text : "";
 
-  const parsed = parseEmailResponse(text);
+  let parsed = parseEmailResponse(text);
+
+  if (params.aiDisclaimer) {
+    const patched = appendAiDisclaimer(parsed.bodyHtml, parsed.bodyText);
+    parsed = { ...parsed, ...patched };
+  }
 
   return {
     ...parsed,

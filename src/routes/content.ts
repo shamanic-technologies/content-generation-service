@@ -34,13 +34,13 @@ router.post("/generate/content", serviceAuth, async (req: AuthenticatedRequest, 
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
 
-    const { appId, prompt, variables, includeFooter, keyMode, parentRunId, workflowName } = parsed.data;
+    const { appId, prompt, variables, includeFooter, aiDisclaimer, keyMode, parentRunId, workflowName } = parsed.data;
 
     // Get Anthropic API key
     const apiKey = await resolveApiKey(keyMode, req.clerkOrgId!, appId);
 
     // Generate content
-    const result = await generateContent(apiKey, { prompt, variables, includeFooter });
+    const result = await generateContent(apiKey, { prompt, variables, includeFooter, aiDisclaimer });
 
     // Create run in runs-service — MUST succeed or we fail the request
     const genRun = await createRun({

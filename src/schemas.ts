@@ -121,6 +121,7 @@ export const GenerateRequestSchema = registry.register(
       apolloEnrichmentId: z.string().optional(),
       idempotencyKey: z.string().optional(),
       workflowName: z.string().optional(),
+      aiDisclaimer: z.boolean().optional().default(false).describe("When true, appends a small AI-generated disclaimer to the email body"),
     })
     .openapi("GenerateRequest")
 );
@@ -263,6 +264,7 @@ export const GenerateContentRequestSchema = registry.register(
       prompt: z.string(),
       variables: z.array(z.string()).optional(),
       includeFooter: z.boolean().optional().default(false),
+      aiDisclaimer: z.boolean().optional().default(false).describe("When true, appends a small AI-generated disclaimer to the email body"),
       keyMode: z.enum(["byok", "app"]),
       parentRunId: z.string().optional(),
       workflowName: z.string().optional(),
