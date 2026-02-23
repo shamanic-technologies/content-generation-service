@@ -29,6 +29,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       brandId,
       campaignId,
       apolloEnrichmentId,
+      leadId,
       idempotencyKey,
       workflowName,
       includeAiDisclaimer,
@@ -108,6 +109,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         promptRaw: result.promptRaw,
         responseRaw: result.responseRaw,
         workflowName: workflowName ?? null,
+        leadId: leadId ?? null,
         idempotencyKey: idempotencyKey ?? null,
       })
       .returning();
@@ -223,6 +225,32 @@ router.get("/generations/by-enrichment/:apolloEnrichmentId", serviceAuth, async 
     res.json({ generation });
   } catch (error) {
     console.error("Get generation error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * GET /generations/by-lead/:leadId - Get generation by lead-service correlation ID
+ */
+router.get("/generations/by-lead/:leadId", serviceAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { leadId } = req.params;
+
+    const generation = await db.query.emailGenerations.findFirst({
+      where: (gens, { eq, and }) =>
+        and(
+          eq(gens.leadId, leadId),
+          eq(gens.orgId, req.orgId!)
+        ),
+    });
+
+    if (!generation) {
+      return res.status(404).json({ error: "Generation not found" });
+    }
+
+    res.json({ generation });
+  } catch (error) {
+    console.error("Get generation by leadId error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

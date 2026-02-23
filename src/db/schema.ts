@@ -80,6 +80,9 @@ export const emailGenerations = pgTable(
     // Workflow tracking
     workflowName: text("workflow_name"),
 
+    // Lead tracking — lead-service correlation ID
+    leadId: text("lead_id"),
+
     // Idempotency support — caller-supplied key to prevent duplicate generations
     idempotencyKey: text("idempotency_key"),
 
@@ -91,6 +94,7 @@ export const emailGenerations = pgTable(
     index("idx_emailgen_enrichment").on(table.apolloEnrichmentId),
     index("idx_emailgen_campaign").on(table.campaignId),
     uniqueIndex("idx_emailgen_idempotency").on(table.orgId, table.idempotencyKey),
+    uniqueIndex("idx_emailgen_lead").on(table.campaignId, table.leadId),
   ]
 );
 

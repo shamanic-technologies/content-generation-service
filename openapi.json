@@ -137,6 +137,10 @@
           "apolloEnrichmentId": {
             "type": "string"
           },
+          "leadId": {
+            "type": "string",
+            "description": "Lead-service correlation ID, unique per campaign"
+          },
           "idempotencyKey": {
             "type": "string"
           },
@@ -736,6 +740,54 @@
           },
           "404": {
             "description": "Generation not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generations/by-lead/{leadId}": {
+      "get": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "Get generation by lead-service correlation ID",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "leadId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-clerk-org-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Content generation for this lead",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationSingleResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No generation found for this leadId",
             "content": {
               "application/json": {
                 "schema": {
