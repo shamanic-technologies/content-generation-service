@@ -53,11 +53,11 @@ const baseParams = {
   variables: { name: "Sarah" },
 };
 
-describe("generateFromTemplate with aiDisclaimer", () => {
-  it("does NOT include disclaimer when aiDisclaimer is false", async () => {
+describe("generateFromTemplate with includeAiDisclaimer", () => {
+  it("does NOT include disclaimer when includeAiDisclaimer is false", async () => {
     const result = await generateFromTemplate("fake-key", {
       ...baseParams,
-      aiDisclaimer: false,
+      includeAiDisclaimer: false,
     });
 
     for (const step of result.sequence) {
@@ -66,7 +66,7 @@ describe("generateFromTemplate with aiDisclaimer", () => {
     }
   });
 
-  it("does NOT include disclaimer when aiDisclaimer is omitted", async () => {
+  it("does NOT include disclaimer when includeAiDisclaimer is omitted", async () => {
     const result = await generateFromTemplate("fake-key", baseParams);
 
     for (const step of result.sequence) {
@@ -75,10 +75,10 @@ describe("generateFromTemplate with aiDisclaimer", () => {
     }
   });
 
-  it("appends disclaimer to ALL sequence steps when aiDisclaimer is true", async () => {
+  it("appends disclaimer to ALL sequence steps when includeAiDisclaimer is true", async () => {
     const result = await generateFromTemplate("fake-key", {
       ...baseParams,
-      aiDisclaimer: true,
+      includeAiDisclaimer: true,
     });
 
     expect(result.sequence).toHaveLength(3);
@@ -92,7 +92,7 @@ describe("generateFromTemplate with aiDisclaimer", () => {
   it("disclaimer appears at the end of bodyHtml, not the beginning", async () => {
     const result = await generateFromTemplate("fake-key", {
       ...baseParams,
-      aiDisclaimer: true,
+      includeAiDisclaimer: true,
     });
 
     const html = result.sequence[0].bodyHtml;

@@ -143,7 +143,7 @@
           "workflowName": {
             "type": "string"
           },
-          "aiDisclaimer": {
+          "includeAiDisclaimer": {
             "type": "boolean",
             "default": false,
             "description": "When true, appends a small AI-generated disclaimer to the email body"
@@ -259,7 +259,7 @@
             "type": "boolean",
             "default": false
           },
-          "aiDisclaimer": {
+          "includeAiDisclaimer": {
             "type": "boolean",
             "default": false,
             "description": "When true, appends a small AI-generated disclaimer to the email body"

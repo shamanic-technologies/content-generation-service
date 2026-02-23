@@ -52,7 +52,7 @@ export function appendAiDisclaimer(bodyHtml: string, bodyText: string): { bodyHt
 export interface GenerateFromTemplateParams {
   promptTemplate: string;
   variables: Record<string, unknown>;
-  aiDisclaimer?: boolean;
+  includeAiDisclaimer?: boolean;
 }
 
 export interface SequenceStep {
@@ -148,7 +148,7 @@ export async function generateFromTemplate(
 
   let parsed = parseSequenceJson(text);
 
-  if (params.aiDisclaimer) {
+  if (params.includeAiDisclaimer) {
     parsed = {
       subject: parsed.subject,
       sequence: parsed.sequence.map((step) => {
