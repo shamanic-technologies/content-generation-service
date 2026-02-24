@@ -8,8 +8,27 @@ export interface AuthenticatedRequest extends Request {
   clerkOrgId?: string;
 }
 
+const API_KEY = process.env.CONTENT_GENERATION_SERVICE_API_KEY;
+
 /**
- * Middleware for internal service calls (no auth - Railway private network)
+ * Global middleware — validates X-Api-Key header on every request.
+ */
+export function apiKeyAuth(req: Request, res: Response, next: NextFunction) {
+  if (!API_KEY) {
+    console.error("[auth] CONTENT_GENERATION_SERVICE_API_KEY is not set — rejecting request");
+    return res.status(500).json({ error: "Server misconfiguration" });
+  }
+
+  const provided = req.headers["x-api-key"] as string | undefined;
+  if (!provided || provided !== API_KEY) {
+    return res.status(401).json({ error: "Invalid or missing API key" });
+  }
+
+  next();
+}
+
+/**
+ * Middleware for service calls — resolves org from X-Clerk-Org-Id header.
  */
 export async function serviceAuth(
   req: AuthenticatedRequest,

@@ -10,6 +10,11 @@
       "url": "https://content-generation.mcpfactory.org"
     }
   ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
   "components": {
     "schemas": {
       "ErrorResponse": {
@@ -487,6 +492,13 @@
         "required": true,
         "name": "X-Clerk-Org-Id",
         "in": "header"
+      }
+    },
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Api-Key"
       }
     }
   },

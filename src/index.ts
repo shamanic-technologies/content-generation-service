@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { db } from "./db/index.js";
+import { apiKeyAuth } from "./middleware/auth.js";
 import healthRoutes from "./routes/health.js";
 import generateRoutes from "./routes/generate.js";
 import contentRoutes from "./routes/content.js";
@@ -31,6 +32,9 @@ app.get("/openapi.json", (_req, res) => {
     res.status(404).json({ error: "OpenAPI spec not generated. Run: pnpm generate:openapi" });
   }
 });
+
+// API key auth — all routes require valid X-Api-Key
+app.use(apiKeyAuth);
 
 // Routes
 app.use(healthRoutes);
