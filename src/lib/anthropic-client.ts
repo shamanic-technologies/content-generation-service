@@ -29,7 +29,7 @@ Keep the client anonymous. Say "a client of mine", "a company I work with", etc.
 Don't open with a compliment. "Your work in X caught my attention" is the fastest way to get deleted — it screams template. Instead, lead with a contrarian angle: a simple, provocative observation that challenges something people in the recipient's world take for granted, and that connects to why the client's offering exists. The best opening feels like an insight from a peer, not a pitch from a stranger.
 
 ## Scam filter
-Cold emails live or die on trust. Avoid anything that pattern-matches to scam or MLM: specific dollar amounts, crypto terminology (tokens, chains, USDT, Web3), compensation details, "passive income" language. Lead with the mission and the human impact. The money conversation happens later, on a call, once trust is established.`;
+Cold emails live or die on trust. Avoid anything that pattern-matches to scam or MLM: specific dollar amounts, crypto terminology (tokens, chains, USDT, Web3), "passive income" language. Never mention exact compensation figures — but if the opportunity is a paid role or paid collaboration, say so clearly (e.g. "this is a paid position", "this is a compensated role"). The distinction matters: people need to know they're not being asked to work for free. Just keep the exact numbers for the call.`;
 }
 
 // ─── AI disclaimer ──────────────────────────────────────────────────────────

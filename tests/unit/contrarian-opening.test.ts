@@ -38,10 +38,10 @@ describe("system prompt guides opening line and scam filtering", () => {
     expect(callArgs.system).toContain("dollar amounts");
   });
 
-  it("emphasizes trust and mission-first approach", async () => {
+  it("emphasizes trust and allows mentioning paid roles", async () => {
     const callArgs = mockCreate.mock.calls[0][0];
     expect(callArgs.system).toContain("trust");
-    expect(callArgs.system).toContain("mission");
+    expect(callArgs.system).toContain("paid role");
   });
 
   it("guides toward simple, readable language", async () => {
