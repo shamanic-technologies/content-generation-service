@@ -24,6 +24,9 @@ const PORT = process.env.PORT || 3005;
 app.use(cors());
 app.use(express.json());
 
+// Public routes (no API key required — used by Railway healthcheck)
+app.use(healthRoutes);
+
 // OpenAPI spec endpoint
 app.get("/openapi.json", (_req, res) => {
   if (existsSync(openapiPath)) {
@@ -33,11 +36,10 @@ app.get("/openapi.json", (_req, res) => {
   }
 });
 
-// API key auth — all routes require valid X-Api-Key
+// API key auth — all routes below require valid X-Api-Key
 app.use(apiKeyAuth);
 
-// Routes
-app.use(healthRoutes);
+// Protected routes
 app.use(generateRoutes);
 app.use(contentRoutes);
 app.use(statsRoutes);
