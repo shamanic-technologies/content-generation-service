@@ -18,7 +18,20 @@ const document = generator.generateDocument({
         "https://content-generation.mcpfactory.org",
     },
   ],
+  security: [{ ApiKeyAuth: [] }],
 });
+
+// Inject securitySchemes (zod-to-openapi doesn't support components.securitySchemes natively)
+(document as any).components = {
+  ...(document as any).components,
+  securitySchemes: {
+    ApiKeyAuth: {
+      type: "apiKey",
+      in: "header",
+      name: "X-Api-Key",
+    },
+  },
+};
 
 fs.writeFileSync("openapi.json", JSON.stringify(document, null, 2));
 console.log("Generated openapi.json");
