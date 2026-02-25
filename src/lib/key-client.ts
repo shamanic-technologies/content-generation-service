@@ -1,8 +1,18 @@
 const KEY_SERVICE_URL = process.env.KEY_SERVICE_URL || "http://localhost:3001";
 const KEY_SERVICE_API_KEY = process.env.KEY_SERVICE_API_KEY;
 
-function authHeaders(): Record<string, string> {
-  return KEY_SERVICE_API_KEY ? { "X-Api-Key": KEY_SERVICE_API_KEY } : {};
+export interface CallerContext {
+  callerMethod: string;
+  callerPath: string;
+}
+
+function buildHeaders(caller: CallerContext): Record<string, string> {
+  return {
+    ...(KEY_SERVICE_API_KEY ? { "X-Api-Key": KEY_SERVICE_API_KEY } : {}),
+    "X-Caller-Service": "content-generation",
+    "X-Caller-Method": caller.callerMethod,
+    "X-Caller-Path": caller.callerPath,
+  };
 }
 
 /**
@@ -10,11 +20,12 @@ function authHeaders(): Record<string, string> {
  */
 export async function getByokKey(
   clerkOrgId: string,
-  provider: string
+  provider: string,
+  caller: CallerContext
 ): Promise<string> {
   const response = await fetch(
     `${KEY_SERVICE_URL}/internal/keys/${provider}/decrypt?clerkOrgId=${clerkOrgId}`,
-    { headers: authHeaders() }
+    { headers: buildHeaders(caller) }
   );
 
   if (!response.ok) {
@@ -34,11 +45,12 @@ export async function getByokKey(
  */
 export async function getAppKey(
   appId: string,
-  provider: string
+  provider: string,
+  caller: CallerContext
 ): Promise<string> {
   const response = await fetch(
     `${KEY_SERVICE_URL}/internal/app-keys/${provider}/decrypt?appId=${appId}`,
-    { headers: authHeaders() }
+    { headers: buildHeaders(caller) }
   );
 
   if (!response.ok) {

@@ -4,7 +4,7 @@ import { contentGenerations } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { generateContent } from "../lib/content-client.js";
 import { generateCalendar } from "../lib/content-client.js";
-import { getByokKey, getAppKey } from "../lib/key-client.js";
+import { getByokKey, getAppKey, type CallerContext } from "../lib/key-client.js";
 import { createRun, updateRun, addCosts } from "../lib/runs-client.js";
 import { GenerateContentRequestSchema, GenerateCalendarRequestSchema } from "../schemas.js";
 
@@ -16,12 +16,13 @@ const router = Router();
 async function resolveApiKey(
   keyMode: "byok" | "app",
   clerkOrgId: string,
-  appId: string
+  appId: string,
+  caller: CallerContext
 ): Promise<string> {
   if (keyMode === "byok") {
-    return getByokKey(clerkOrgId, "anthropic");
+    return getByokKey(clerkOrgId, "anthropic", caller);
   }
-  return getAppKey(appId, "anthropic");
+  return getAppKey(appId, "anthropic", caller);
 }
 
 /**
@@ -37,7 +38,10 @@ router.post("/generate/content", serviceAuth, async (req: AuthenticatedRequest, 
     const { appId, prompt, variables, includeFooter, includeAiDisclaimer, keyMode, parentRunId, workflowName } = parsed.data;
 
     // Get Anthropic API key
-    const apiKey = await resolveApiKey(keyMode, req.clerkOrgId!, appId);
+    const apiKey = await resolveApiKey(keyMode, req.clerkOrgId!, appId, {
+      callerMethod: "POST",
+      callerPath: "/generate/content",
+    });
 
     // Generate content
     const result = await generateContent(apiKey, { prompt, variables, includeFooter, includeAiDisclaimer });
@@ -117,7 +121,10 @@ router.post("/generate/calendar", serviceAuth, async (req: AuthenticatedRequest,
     const { appId, prompt, keyMode, parentRunId, workflowName } = parsed.data;
 
     // Get Anthropic API key
-    const apiKey = await resolveApiKey(keyMode, req.clerkOrgId!, appId);
+    const apiKey = await resolveApiKey(keyMode, req.clerkOrgId!, appId, {
+      callerMethod: "POST",
+      callerPath: "/generate/calendar",
+    });
 
     // Generate calendar fields
     const result = await generateCalendar(apiKey, { prompt });
