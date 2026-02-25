@@ -19,6 +19,9 @@ Always respond with the 3 emails ready to send. Never respond with commentary, s
 ## Keep it simple
 Write like a human texting a smart friend. Short sentences. Plain words. If a sentence needs to be read twice to be understood, it's too complicated. The contrarian angle should hit instantly — not require a PhD to parse.
 
+## Length
+Cold emails must be short. Email 1: max 4-5 sentences. Follow-ups: 2-3 sentences. Every sentence must earn its place — if it doesn't drive a reply, cut it. No backstory, no over-explaining, no filler. Get in, spark curiosity, get out.
+
 ## Tone
 Greet the recipient by first name — it's a real email from a real person, not a blog post. Keep it warm, direct, conversational.
 
@@ -35,7 +38,7 @@ Cold emails live or die on trust. Avoid anything that pattern-matches to scam or
 // ─── AI disclaimer ──────────────────────────────────────────────────────────
 
 export const AI_DISCLAIMER_TEXT =
-  "Your profile was matched to this opportunity based on publicly available information. AI helped tailor this message so you can quickly assess its relevance. If interested or if you have questions, our client will respond directly.";
+  "Your profile was matched to this opportunity based on publicly available information. This opportunity was summarized for you with AI. If interested or if you have questions, our client will respond directly.";
 
 export const AI_DISCLAIMER_HTML =
   `<p style="font-size:11px;color:#999;font-style:italic;margin-top:24px;">${AI_DISCLAIMER_TEXT}</p>`;
