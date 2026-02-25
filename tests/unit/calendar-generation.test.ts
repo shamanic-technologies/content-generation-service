@@ -110,7 +110,7 @@ describe("POST /generate/calendar", () => {
       })
       .expect(200);
 
-    expect(mockGetAppKey).toHaveBeenCalledWith("polaritycourse", "anthropic");
+    expect(mockGetAppKey).toHaveBeenCalledWith("polaritycourse", "anthropic", { callerMethod: "POST", callerPath: "/generate/calendar" });
     expect(mockGetByokKey).not.toHaveBeenCalled();
   });
 
@@ -125,7 +125,7 @@ describe("POST /generate/calendar", () => {
       })
       .expect(200);
 
-    expect(mockGetByokKey).toHaveBeenCalledWith("org_test", "anthropic");
+    expect(mockGetByokKey).toHaveBeenCalledWith("org_test", "anthropic", { callerMethod: "POST", callerPath: "/generate/calendar" });
     expect(mockGetAppKey).not.toHaveBeenCalled();
   });
 

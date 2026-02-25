@@ -193,7 +193,7 @@ describe("POST /generate (template-based)", () => {
       })
       .expect(200);
 
-    expect(mockGetByokKey).toHaveBeenCalledWith("org_test", "anthropic");
+    expect(mockGetByokKey).toHaveBeenCalledWith("org_test", "anthropic", { callerMethod: "POST", callerPath: "/generate" });
     expect(mockGetAppKey).not.toHaveBeenCalled();
   });
 
@@ -210,7 +210,7 @@ describe("POST /generate (template-based)", () => {
       })
       .expect(200);
 
-    expect(mockGetAppKey).toHaveBeenCalledWith("my-app", "anthropic");
+    expect(mockGetAppKey).toHaveBeenCalledWith("my-app", "anthropic", { callerMethod: "POST", callerPath: "/generate" });
     expect(mockGetByokKey).not.toHaveBeenCalled();
   });
 

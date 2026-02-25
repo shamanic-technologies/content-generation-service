@@ -67,9 +67,10 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     }
 
     // Get Anthropic API key
+    const caller = { callerMethod: "POST", callerPath: "/generate" };
     const anthropicApiKey = keyMode === "byok"
-      ? await getByokKey(req.clerkOrgId!, "anthropic")
-      : await getAppKey(appId, "anthropic");
+      ? await getByokKey(req.clerkOrgId!, "anthropic", caller)
+      : await getAppKey(appId, "anthropic", caller);
 
     // Generate using the stored prompt + variable substitution
     const result = await generateFromTemplate(anthropicApiKey, {
