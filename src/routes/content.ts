@@ -15,12 +15,12 @@ const router = Router();
  */
 async function resolveApiKey(
   keyMode: "byok" | "app",
-  clerkOrgId: string,
+  orgId: string,
   appId: string,
   caller: CallerContext
 ): Promise<string> {
   if (keyMode === "byok") {
-    return getByokKey(clerkOrgId, "anthropic", caller);
+    return getByokKey(orgId, "anthropic", caller);
   }
   return getAppKey(appId, "anthropic", caller);
 }
@@ -38,7 +38,7 @@ router.post("/generate/content", serviceAuth, async (req: AuthenticatedRequest, 
     const { appId, prompt, variables, includeFooter, includeAiDisclaimer, keyMode, parentRunId, workflowName } = parsed.data;
 
     // Get Anthropic API key
-    const apiKey = await resolveApiKey(keyMode, req.clerkOrgId!, appId, {
+    const apiKey = await resolveApiKey(keyMode, req.externalOrgId!, appId, {
       callerMethod: "POST",
       callerPath: "/generate/content",
     });
@@ -48,7 +48,7 @@ router.post("/generate/content", serviceAuth, async (req: AuthenticatedRequest, 
 
     // Create run in runs-service — MUST succeed or we fail the request
     const genRun = await createRun({
-      clerkOrgId: req.clerkOrgId!,
+      orgId: req.externalOrgId!,
       appId,
       serviceName: "content-generation-service",
       taskName: "content-generation",
@@ -121,7 +121,7 @@ router.post("/generate/calendar", serviceAuth, async (req: AuthenticatedRequest,
     const { appId, prompt, keyMode, parentRunId, workflowName } = parsed.data;
 
     // Get Anthropic API key
-    const apiKey = await resolveApiKey(keyMode, req.clerkOrgId!, appId, {
+    const apiKey = await resolveApiKey(keyMode, req.externalOrgId!, appId, {
       callerMethod: "POST",
       callerPath: "/generate/calendar",
     });
@@ -131,7 +131,7 @@ router.post("/generate/calendar", serviceAuth, async (req: AuthenticatedRequest,
 
     // Create run in runs-service — MUST succeed or we fail the request
     const genRun = await createRun({
-      clerkOrgId: req.clerkOrgId!,
+      orgId: req.externalOrgId!,
       appId,
       serviceName: "content-generation-service",
       taskName: "calendar-generation",

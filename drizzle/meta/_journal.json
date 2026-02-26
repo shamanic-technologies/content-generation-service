@@ -92,6 +92,13 @@
       "when": 1771829113699,
       "tag": "0012_previous_masked_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1772092800000,
+      "tag": "0013_rename_clerk_to_external",
+      "breakpoints": true
     }
   ]
 }

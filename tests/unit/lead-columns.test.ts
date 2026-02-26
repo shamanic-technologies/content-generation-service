@@ -17,7 +17,7 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = "org-internal-123";
-    req.clerkOrgId = req.headers["x-clerk-org-id"] || "org_test";
+    req.externalOrgId = req.headers["x-org-id"] || "org_test";
     next();
   },
 }));
@@ -104,7 +104,7 @@ describe("POST /generate — lead/client column population", () => {
   it("populates lead columns from variables", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         type: "email",
@@ -133,7 +133,7 @@ describe("POST /generate — lead/client column population", () => {
   it("sets lead columns to null when variables are missing", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         type: "email",
@@ -155,7 +155,7 @@ describe("POST /generate — lead/client column population", () => {
   it("ignores non-string variable values for lead columns", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         type: "email",
@@ -180,7 +180,7 @@ describe("POST /generate — lead/client column population", () => {
   it("ignores empty string variable values for lead columns", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         type: "email",
@@ -207,7 +207,7 @@ describe("POST /generate — lead/client column population", () => {
 
     await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         type: "email",

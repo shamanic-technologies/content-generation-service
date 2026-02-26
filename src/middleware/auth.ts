@@ -5,7 +5,7 @@ import { orgs } from "../db/schema.js";
 
 export interface AuthenticatedRequest extends Request {
   orgId?: string;
-  clerkOrgId?: string;
+  externalOrgId?: string;
 }
 
 const API_KEY = process.env.CONTENT_GENERATION_SERVICE_API_KEY;
@@ -28,7 +28,7 @@ export function apiKeyAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 /**
- * Middleware for service calls — resolves org from X-Clerk-Org-Id header.
+ * Middleware for service calls — resolves org from X-Org-Id header.
  */
 export async function serviceAuth(
   req: AuthenticatedRequest,
@@ -36,27 +36,27 @@ export async function serviceAuth(
   next: NextFunction
 ) {
   try {
-    const clerkOrgId = req.headers["x-clerk-org-id"] as string;
+    const externalOrgId = req.headers["x-org-id"] as string;
 
-    if (!clerkOrgId) {
-      return res.status(400).json({ error: "x-clerk-org-id header required" });
+    if (!externalOrgId) {
+      return res.status(400).json({ error: "x-org-id header required" });
     }
 
     // Find or create org
     let org = await db.query.orgs.findFirst({
-      where: eq(orgs.clerkOrgId, clerkOrgId),
+      where: eq(orgs.externalOrgId, externalOrgId),
     });
 
     if (!org) {
       const [newOrg] = await db
         .insert(orgs)
-        .values({ clerkOrgId })
+        .values({ externalOrgId })
         .returning();
       org = newOrg;
     }
 
     req.orgId = org.id;
-    req.clerkOrgId = clerkOrgId;
+    req.externalOrgId = externalOrgId;
     next();
   } catch (error) {
     console.error("Auth error:", error);

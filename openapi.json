@@ -433,7 +433,7 @@
               "type": "string"
             }
           },
-          "clerkOrgId": {
+          "orgId": {
             "type": "string"
           },
           "appId": {
@@ -480,17 +480,17 @@
           "stats"
         ]
       },
-      "ClerkOrgId": {
+      "OrgId": {
         "type": "string"
       }
     },
     "parameters": {
-      "ClerkOrgId": {
+      "OrgId": {
         "schema": {
-          "$ref": "#/components/schemas/ClerkOrgId"
+          "$ref": "#/components/schemas/OrgId"
         },
         "required": true,
-        "name": "X-Clerk-Org-Id",
+        "name": "X-Org-Id",
         "in": "header"
       }
     },
@@ -535,7 +535,7 @@
               "type": "string"
             },
             "required": true,
-            "name": "x-clerk-org-id",
+            "name": "x-org-id",
             "in": "header"
           }
         ],
@@ -585,7 +585,7 @@
               "type": "string"
             },
             "required": true,
-            "name": "x-clerk-org-id",
+            "name": "x-org-id",
             "in": "header"
           }
         ],
@@ -687,7 +687,7 @@
               "type": "string"
             },
             "required": true,
-            "name": "x-clerk-org-id",
+            "name": "x-org-id",
             "in": "header"
           }
         ],
@@ -735,7 +735,7 @@
               "type": "string"
             },
             "required": true,
-            "name": "x-clerk-org-id",
+            "name": "x-org-id",
             "in": "header"
           }
         ],
@@ -783,7 +783,7 @@
               "type": "string"
             },
             "required": true,
-            "name": "x-clerk-org-id",
+            "name": "x-org-id",
             "in": "header"
           }
         ],
@@ -823,7 +823,7 @@
               "type": "string"
             },
             "required": true,
-            "name": "x-clerk-org-id",
+            "name": "x-org-id",
             "in": "header"
           }
         ],
@@ -883,7 +883,7 @@
               "type": "string"
             },
             "required": true,
-            "name": "x-clerk-org-id",
+            "name": "x-org-id",
             "in": "header"
           }
         ],
@@ -943,7 +943,7 @@
               "type": "string"
             },
             "required": true,
-            "name": "x-clerk-org-id",
+            "name": "x-org-id",
             "in": "header"
           }
         ],

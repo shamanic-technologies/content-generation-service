@@ -19,12 +19,12 @@ function buildHeaders(caller: CallerContext): Record<string, string> {
  * Fetch a BYOK (Bring Your Own Key) key from key-service.
  */
 export async function getByokKey(
-  clerkOrgId: string,
+  orgId: string,
   provider: string,
   caller: CallerContext
 ): Promise<string> {
   const response = await fetch(
-    `${KEY_SERVICE_URL}/internal/keys/${provider}/decrypt?clerkOrgId=${clerkOrgId}`,
+    `${KEY_SERVICE_URL}/internal/keys/${provider}/decrypt?orgId=${orgId}`,
     { headers: buildHeaders(caller) }
   );
 

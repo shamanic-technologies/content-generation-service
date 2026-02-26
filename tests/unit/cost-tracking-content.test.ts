@@ -25,7 +25,7 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = "org-internal-123";
-    req.clerkOrgId = req.headers["x-clerk-org-id"] || "org_test";
+    req.externalOrgId = req.headers["x-org-id"] || "org_test";
     next();
   },
 }));
@@ -117,7 +117,7 @@ describe("Content generation cost tracking", () => {
 
     const res = await request(app)
       .post("/generate/content")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send(CONTENT_BODY)
       .expect(500);
 
@@ -133,7 +133,7 @@ describe("Content generation cost tracking", () => {
 
     const res = await request(app)
       .post("/generate/content")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send(CONTENT_BODY)
       .expect(500);
 
@@ -145,7 +145,7 @@ describe("Content generation cost tracking", () => {
   it("should use anthropic-sonnet-4.6 cost names for /generate/content", async () => {
     await request(app)
       .post("/generate/content")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send(CONTENT_BODY)
       .expect(200);
 
@@ -159,7 +159,7 @@ describe("Content generation cost tracking", () => {
   it("should post raw token quantities for /generate/content", async () => {
     await request(app)
       .post("/generate/content")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send(CONTENT_BODY)
       .expect(200);
 
@@ -181,7 +181,7 @@ describe("Content generation cost tracking", () => {
 
     const res = await request(app)
       .post("/generate/calendar")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send(CALENDAR_BODY)
       .expect(500);
 
@@ -197,7 +197,7 @@ describe("Content generation cost tracking", () => {
 
     const res = await request(app)
       .post("/generate/calendar")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send(CALENDAR_BODY)
       .expect(500);
 
@@ -209,7 +209,7 @@ describe("Content generation cost tracking", () => {
   it("should use anthropic-sonnet-4.6 cost names for /generate/calendar", async () => {
     await request(app)
       .post("/generate/calendar")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send(CALENDAR_BODY)
       .expect(200);
 

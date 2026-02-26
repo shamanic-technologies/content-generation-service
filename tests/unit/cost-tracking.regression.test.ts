@@ -36,7 +36,7 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = "org-internal-123";
-    req.clerkOrgId = req.headers["x-clerk-org-id"] || "org_test";
+    req.externalOrgId = req.headers["x-org-id"] || "org_test";
     next();
   },
 }));
@@ -136,7 +136,7 @@ describe("Email generation cost tracking", () => {
   it("should post costs with exact cost names: anthropic-sonnet-4.6-tokens-input and anthropic-sonnet-4.6-tokens-output", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send(VALID_REQUEST)
       .expect(200);
 
@@ -153,7 +153,7 @@ describe("Email generation cost tracking", () => {
   it("should post raw token quantities, not dollar amounts", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send(VALID_REQUEST)
       .expect(200);
 
@@ -178,7 +178,7 @@ describe("Email generation cost tracking", () => {
 
     await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send(VALID_REQUEST)
       .expect(200); // Email still generated despite cost tracking failure
 
@@ -194,7 +194,7 @@ describe("Email generation cost tracking", () => {
   it("should create child run with correct parentRunId linking to campaign run", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({ ...VALID_REQUEST, runId: "campaign-run-abc" })
       .expect(200);
 
@@ -217,7 +217,7 @@ describe("Email generation cost tracking", () => {
 
     await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send(VALID_REQUEST)
       .expect(200);
 

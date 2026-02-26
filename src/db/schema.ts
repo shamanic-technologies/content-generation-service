@@ -1,30 +1,30 @@
 import { pgTable, uuid, text, timestamp, uniqueIndex, index, integer, jsonb, boolean } from "drizzle-orm/pg-core";
 
-// Local users table (maps to Clerk)
+// Local users table (maps external user IDs to internal UUIDs)
 export const users = pgTable(
   "users",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    clerkUserId: text("clerk_user_id").notNull().unique(),
+    externalUserId: text("external_user_id").notNull().unique(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("idx_users_clerk_id").on(table.clerkUserId),
+    uniqueIndex("idx_users_external_id").on(table.externalUserId),
   ]
 );
 
-// Local orgs table (maps to Clerk)
+// Local orgs table (maps external org IDs to internal UUIDs)
 export const orgs = pgTable(
   "orgs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    clerkOrgId: text("clerk_org_id").notNull().unique(),
+    externalOrgId: text("external_org_id").notNull().unique(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("idx_orgs_clerk_id").on(table.clerkOrgId),
+    uniqueIndex("idx_orgs_external_id").on(table.externalOrgId),
   ]
 );
 

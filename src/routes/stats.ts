@@ -17,12 +17,12 @@ router.post("/stats/by-model", async (req, res) => {
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
 
-    const { runIds, clerkOrgId, appId, brandId, campaignId } = parsed.data;
+    const { runIds, orgId, appId, brandId, campaignId } = parsed.data;
 
     const hasRunIds = Array.isArray(runIds) && runIds.length > 0;
 
-    if (!hasRunIds && !clerkOrgId && !appId && !brandId && !campaignId) {
-      return res.status(400).json({ error: "At least one filter required: runIds, clerkOrgId, appId, brandId, or campaignId" });
+    if (!hasRunIds && !orgId && !appId && !brandId && !campaignId) {
+      return res.status(400).json({ error: "At least one filter required: runIds, orgId, appId, brandId, or campaignId" });
     }
 
     const conditions: SQL[] = [];
@@ -31,10 +31,10 @@ router.post("/stats/by-model", async (req, res) => {
     if (brandId) conditions.push(eq(emailGenerations.brandId, brandId));
     if (campaignId) conditions.push(eq(emailGenerations.campaignId, campaignId));
 
-    // If clerkOrgId provided, resolve to internal orgId via join
-    if (clerkOrgId) {
+    // If orgId provided, resolve to internal org UUID via lookup
+    if (orgId) {
       const org = await db.query.orgs.findFirst({
-        where: (o, { eq }) => eq(o.clerkOrgId, clerkOrgId),
+        where: (o, { eq }) => eq(o.externalOrgId, orgId),
         columns: { id: true },
       });
       if (!org) {

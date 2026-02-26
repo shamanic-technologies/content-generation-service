@@ -17,7 +17,7 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = "org-internal-123";
-    req.clerkOrgId = req.headers["x-clerk-org-id"] || "org_test";
+    req.externalOrgId = req.headers["x-org-id"] || "org_test";
     next();
   },
 }));
@@ -105,7 +105,7 @@ describe("POST /generate (template-based)", () => {
   it("looks up stored prompt and passes template + variables to generateFromTemplate", async () => {
     const res = await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         type: "email",
@@ -142,7 +142,7 @@ describe("POST /generate (template-based)", () => {
 
     const res = await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "unknown-app",
         type: "email",
@@ -158,7 +158,7 @@ describe("POST /generate (template-based)", () => {
   it("returns 400 when required fields are missing", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({ appId: "my-app" }) // missing type, variables, runId
       .expect(400);
   });
@@ -166,7 +166,7 @@ describe("POST /generate (template-based)", () => {
   it("works with optional fields (brandId, campaignId, apolloEnrichmentId)", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         type: "email",
@@ -183,7 +183,7 @@ describe("POST /generate (template-based)", () => {
   it("uses getByokKey when keyMode is byok", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         type: "email",
@@ -200,7 +200,7 @@ describe("POST /generate (template-based)", () => {
   it("uses getAppKey when keyMode is app", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         type: "email",
@@ -217,7 +217,7 @@ describe("POST /generate (template-based)", () => {
   it("returns 400 for invalid keyMode", async () => {
     const res = await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         type: "email",
@@ -233,7 +233,7 @@ describe("POST /generate (template-based)", () => {
   it("accepts array and object variable values (regression: windmill sends non-strings)", async () => {
     const res = await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         type: "email",

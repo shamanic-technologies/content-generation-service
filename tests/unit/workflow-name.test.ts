@@ -22,7 +22,7 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = "org-internal-123";
-    req.clerkOrgId = req.headers["x-clerk-org-id"] || "org_test";
+    req.externalOrgId = req.headers["x-org-id"] || "org_test";
     next();
   },
 }));
@@ -131,7 +131,7 @@ describe("workflowName propagation", () => {
     it("should pass workflowName to createRun when provided", async () => {
       await request(app)
         .post("/generate")
-        .set("X-Clerk-Org-Id", "org_test")
+        .set("X-Org-Id", "org_test")
         .send({
           appId: "app-1",
           type: "email",
@@ -152,7 +152,7 @@ describe("workflowName propagation", () => {
     it("should store workflowName in the database", async () => {
       await request(app)
         .post("/generate")
-        .set("X-Clerk-Org-Id", "org_test")
+        .set("X-Org-Id", "org_test")
         .send({
           appId: "app-1",
           type: "email",
@@ -173,7 +173,7 @@ describe("workflowName propagation", () => {
     it("should work without workflowName (optional)", async () => {
       await request(app)
         .post("/generate")
-        .set("X-Clerk-Org-Id", "org_test")
+        .set("X-Org-Id", "org_test")
         .send({
           appId: "app-1",
           type: "email",
@@ -208,7 +208,7 @@ describe("workflowName propagation", () => {
     it("should pass workflowName to createRun", async () => {
       await request(app)
         .post("/generate/content")
-        .set("X-Clerk-Org-Id", "org_test")
+        .set("X-Org-Id", "org_test")
         .send({
           appId: "app-1",
           prompt: "Write a cold email",
@@ -227,7 +227,7 @@ describe("workflowName propagation", () => {
     it("should store workflowName in the database", async () => {
       await request(app)
         .post("/generate/content")
-        .set("X-Clerk-Org-Id", "org_test")
+        .set("X-Org-Id", "org_test")
         .send({
           appId: "app-1",
           prompt: "Write a cold email",
@@ -256,7 +256,7 @@ describe("workflowName propagation", () => {
     it("should pass workflowName to createRun", async () => {
       await request(app)
         .post("/generate/calendar")
-        .set("X-Clerk-Org-Id", "org_test")
+        .set("X-Org-Id", "org_test")
         .send({
           appId: "app-1",
           prompt: "Schedule a team sync",
@@ -275,7 +275,7 @@ describe("workflowName propagation", () => {
     it("should store workflowName in the database", async () => {
       await request(app)
         .post("/generate/calendar")
-        .set("X-Clerk-Org-Id", "org_test")
+        .set("X-Org-Id", "org_test")
         .send({
           appId: "app-1",
           prompt: "Schedule a team sync",

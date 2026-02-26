@@ -17,7 +17,7 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = "org-internal-123";
-    req.clerkOrgId = req.headers["x-clerk-org-id"] || "org_test";
+    req.externalOrgId = req.headers["x-org-id"] || "org_test";
     next();
   },
 }));
@@ -83,7 +83,7 @@ describe("POST /generate/calendar", () => {
   it("should return generated calendar event fields", async () => {
     const res = await request(app)
       .post("/generate/calendar")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "polaritycourse",
         prompt: "Generate calendar event for a webinar about sexual polarity with Kevin & Maria",
@@ -102,7 +102,7 @@ describe("POST /generate/calendar", () => {
   it("should use getAppKey when keyMode is app", async () => {
     await request(app)
       .post("/generate/calendar")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "polaritycourse",
         prompt: "Generate calendar event",
@@ -117,7 +117,7 @@ describe("POST /generate/calendar", () => {
   it("should use getByokKey when keyMode is byok", async () => {
     await request(app)
       .post("/generate/calendar")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "polaritycourse",
         prompt: "Generate calendar event",
@@ -132,7 +132,7 @@ describe("POST /generate/calendar", () => {
   it("should return 400 for missing required fields", async () => {
     const res = await request(app)
       .post("/generate/calendar")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "polaritycourse",
         // missing prompt and keyMode
@@ -145,7 +145,7 @@ describe("POST /generate/calendar", () => {
   it("should create run with calendar-generation task name", async () => {
     await request(app)
       .post("/generate/calendar")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "polaritycourse",
         prompt: "Generate calendar event",
