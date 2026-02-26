@@ -12,11 +12,11 @@ export async function cleanTestData() {
 /**
  * Insert a test org
  */
-export async function insertTestOrg(data: { clerkOrgId?: string } = {}) {
+export async function insertTestOrg(data: { externalOrgId?: string } = {}) {
   const [org] = await db
     .insert(orgs)
     .values({
-      clerkOrgId: data.clerkOrgId || `test-org-${Date.now()}`,
+      externalOrgId: data.externalOrgId || `test-org-${Date.now()}`,
     })
     .returning();
   return org;

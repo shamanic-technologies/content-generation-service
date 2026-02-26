@@ -17,7 +17,7 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = "org-internal-123";
-    req.clerkOrgId = req.headers["x-clerk-org-id"] || "org_test";
+    req.externalOrgId = req.headers["x-org-id"] || "org_test";
     next();
   },
 }));
@@ -98,7 +98,7 @@ describe("POST /generate/content", () => {
   it("should return generated email content", async () => {
     const res = await request(app)
       .post("/generate/content")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         prompt: "Write a welcome email for a webinar about sales techniques",
@@ -117,7 +117,7 @@ describe("POST /generate/content", () => {
   it("should pass variables to generateContent", async () => {
     await request(app)
       .post("/generate/content")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         prompt: "Write a webinar reminder",
@@ -137,7 +137,7 @@ describe("POST /generate/content", () => {
   it("should pass includeFooter to generateContent", async () => {
     await request(app)
       .post("/generate/content")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         prompt: "Write a webinar reminder",
@@ -157,7 +157,7 @@ describe("POST /generate/content", () => {
   it("should use getByokKey when keyMode is byok", async () => {
     await request(app)
       .post("/generate/content")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         prompt: "Write an email",
@@ -172,7 +172,7 @@ describe("POST /generate/content", () => {
   it("should use getAppKey when keyMode is app", async () => {
     await request(app)
       .post("/generate/content")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         prompt: "Write an email",
@@ -187,7 +187,7 @@ describe("POST /generate/content", () => {
   it("should return 400 for missing prompt", async () => {
     const res = await request(app)
       .post("/generate/content")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         keyMode: "byok",
@@ -200,7 +200,7 @@ describe("POST /generate/content", () => {
   it("should return 400 for invalid keyMode", async () => {
     const res = await request(app)
       .post("/generate/content")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         prompt: "Write an email",
@@ -214,7 +214,7 @@ describe("POST /generate/content", () => {
   it("should pass parentRunId to createRun when provided", async () => {
     await request(app)
       .post("/generate/content")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         prompt: "Write an email",

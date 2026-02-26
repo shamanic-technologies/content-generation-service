@@ -17,7 +17,7 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = "org-internal-123";
-    req.clerkOrgId = req.headers["x-clerk-org-id"] || "org_test";
+    req.externalOrgId = req.headers["x-org-id"] || "org_test";
     next();
   },
 }));
@@ -120,7 +120,7 @@ describe("leadId support", () => {
     it("stores leadId in DB when provided", async () => {
       await request(app)
         .post("/generate")
-        .set("X-Clerk-Org-Id", "org_test")
+        .set("X-Org-Id", "org_test")
         .send({ ...validBody, leadId: "lead-abc-123" })
         .expect(200);
 
@@ -131,7 +131,7 @@ describe("leadId support", () => {
     it("stores leadId as null when not provided (backward compat)", async () => {
       await request(app)
         .post("/generate")
-        .set("X-Clerk-Org-Id", "org_test")
+        .set("X-Org-Id", "org_test")
         .send(validBody)
         .expect(200);
 
@@ -152,7 +152,7 @@ describe("leadId support", () => {
 
       const res = await request(app)
         .get("/generations/by-lead/lead-abc-123")
-        .set("X-Clerk-Org-Id", "org_test")
+        .set("X-Org-Id", "org_test")
         .expect(200);
 
       expect(res.body.generation.id).toBe("gen-found");
@@ -164,7 +164,7 @@ describe("leadId support", () => {
 
       const res = await request(app)
         .get("/generations/by-lead/lead-nonexistent")
-        .set("X-Clerk-Org-Id", "org_test")
+        .set("X-Org-Id", "org_test")
         .expect(404);
 
       expect(res.body.error).toBe("Generation not found");

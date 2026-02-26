@@ -56,11 +56,11 @@ export interface RunWithCosts extends Run {
 }
 
 export interface CreateRunParams {
-  clerkOrgId: string;
+  orgId: string;
   appId: string;
   serviceName: string;
   taskName: string;
-  clerkUserId?: string;
+  userId?: string;
   brandId?: string;
   campaignId?: string;
   parentRunId?: string;
@@ -73,8 +73,8 @@ export interface CostItem {
 }
 
 export interface ListRunsParams {
-  clerkOrgId: string;
-  clerkUserId?: string;
+  orgId: string;
+  userId?: string;
   appId?: string;
   brandId?: string;
   campaignId?: string;
@@ -89,7 +89,7 @@ export interface ListRunsParams {
 }
 
 export interface RunSummaryParams {
-  clerkOrgId: string;
+  orgId: string;
   serviceName?: string;
   startedAfter?: string;
   startedBefore?: string;
@@ -211,8 +211,8 @@ export async function listRuns(
   params: ListRunsParams
 ): Promise<{ runs: (Run & { ownCostInUsdCents: string })[]; limit: number; offset: number }> {
   const searchParams = new URLSearchParams();
-  searchParams.set("clerkOrgId", params.clerkOrgId);
-  if (params.clerkUserId) searchParams.set("clerkUserId", params.clerkUserId);
+  searchParams.set("orgId", params.orgId);
+  if (params.userId) searchParams.set("userId", params.userId);
   if (params.appId) searchParams.set("appId", params.appId);
   if (params.brandId) searchParams.set("brandId", params.brandId);
   if (params.campaignId) searchParams.set("campaignId", params.campaignId);
@@ -249,7 +249,7 @@ export async function getRunSummary(
   params: RunSummaryParams
 ): Promise<{ breakdown: SummaryBreakdown[] }> {
   const searchParams = new URLSearchParams();
-  searchParams.set("clerkOrgId", params.clerkOrgId);
+  searchParams.set("orgId", params.orgId);
   if (params.serviceName) searchParams.set("serviceName", params.serviceName);
   if (params.startedAfter) searchParams.set("startedAfter", params.startedAfter);
   if (params.startedBefore) searchParams.set("startedBefore", params.startedBefore);

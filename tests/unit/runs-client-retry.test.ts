@@ -36,7 +36,7 @@ describe("runs-client retry logic", () => {
     mockFetch.mockResolvedValueOnce(jsonResponse(200, { id: "run-1" }));
 
     const result = await createRun({
-      clerkOrgId: "org_1",
+      orgId: "org_1",
       appId: "app-1",
       serviceName: "test",
       taskName: "test",

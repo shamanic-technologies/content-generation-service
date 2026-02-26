@@ -17,7 +17,7 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = "org-internal-123";
-    req.clerkOrgId = req.headers["x-clerk-org-id"] || "org_test";
+    req.externalOrgId = req.headers["x-org-id"] || "org_test";
     next();
   },
 }));
@@ -136,7 +136,7 @@ describe("POST /generate idempotency", () => {
 
     const res = await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({ ...validBody, idempotencyKey: "idem-key-1" })
       .expect(200);
 
@@ -157,7 +157,7 @@ describe("POST /generate idempotency", () => {
 
     const res = await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({ ...validBody, idempotencyKey: "idem-key-new" })
       .expect(200);
 
@@ -174,7 +174,7 @@ describe("POST /generate idempotency", () => {
   it("generates normally when no idempotencyKey is provided (backward compat)", async () => {
     const res = await request(app)
       .post("/generate")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send(validBody) // no idempotencyKey
       .expect(200);
 

@@ -69,7 +69,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     // Get Anthropic API key
     const caller = { callerMethod: "POST", callerPath: "/generate" };
     const anthropicApiKey = keyMode === "byok"
-      ? await getByokKey(req.clerkOrgId!, "anthropic", caller)
+      ? await getByokKey(req.externalOrgId!, "anthropic", caller)
       : await getAppKey(appId, "anthropic", caller);
 
     // Generate using the stored prompt + variable substitution
@@ -118,7 +118,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     // Track run + costs in runs-service
     try {
       const genRun = await createRun({
-        clerkOrgId: req.clerkOrgId!,
+        orgId: req.externalOrgId!,
         appId,
         brandId,
         campaignId,

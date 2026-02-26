@@ -6,7 +6,7 @@ import request from "supertest";
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = "org-internal-123";
-    req.clerkOrgId = req.headers["x-clerk-org-id"] || "org_test";
+    req.externalOrgId = req.headers["x-org-id"] || "org_test";
     next();
   },
 }));
@@ -74,7 +74,7 @@ describe("PUT /prompts", () => {
 
     const res = await request(app)
       .put("/prompts")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         type: "email",
@@ -109,7 +109,7 @@ describe("PUT /prompts", () => {
 
     const res = await request(app)
       .put("/prompts")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({
         appId: "my-app",
         type: "email",
@@ -124,7 +124,7 @@ describe("PUT /prompts", () => {
   it("returns 400 for missing required fields", async () => {
     await request(app)
       .put("/prompts")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .send({ appId: "my-app" }) // missing type, prompt, variables
       .expect(400);
   });
@@ -153,7 +153,7 @@ describe("GET /prompts", () => {
 
     const res = await request(app)
       .get("/prompts?appId=my-app&type=email")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .expect(200);
 
     expect(res.body.prompt).toBe("Write an email to {{recipient}}");
@@ -165,14 +165,14 @@ describe("GET /prompts", () => {
 
     await request(app)
       .get("/prompts?appId=unknown&type=email")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .expect(404);
   });
 
   it("returns 400 when appId or type missing", async () => {
     await request(app)
       .get("/prompts?appId=my-app")
-      .set("X-Clerk-Org-Id", "org_test")
+      .set("X-Org-Id", "org_test")
       .expect(400);
   });
 });
