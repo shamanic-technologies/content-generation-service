@@ -16,8 +16,8 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 // Mock auth middleware
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
-    req.orgId = "org-internal-123";
-    req.externalOrgId = req.headers["x-org-id"] || "org_test";
+    req.orgId = req.headers["x-org-id"] || "org-internal-123";
+    req.userId = req.headers["x-user-id"] || "user-internal-456";
     next();
   },
 }));
@@ -56,12 +56,11 @@ vi.mock("../../src/db/schema.js", () => ({
     orgId: { name: "org_id" },
     idempotencyKey: { name: "idempotency_key" },
   },
-  prompts: { appId: { name: "app_id" }, type: { name: "type" } },
+  prompts: { orgId: { name: "org_id" }, type: { name: "type" } },
 }));
 
 vi.mock("../../src/lib/key-client.js", () => ({
-  getByokKey: vi.fn().mockResolvedValue("fake-anthropic-key"),
-  getAppKey: vi.fn().mockResolvedValue("fake-app-key"),
+  decryptKey: vi.fn().mockResolvedValue({ key: "fake-anthropic-key", keySource: "platform" as const }),
 }));
 
 const mockGenerateFromTemplate = vi.fn().mockResolvedValue({
@@ -89,10 +88,8 @@ function createTestApp() {
 }
 
 const validBody = {
-  appId: "my-app",
   type: "email",
   variables: { recipientInfo: "John Doe", senderInfo: "MyBrand" },
-  keyMode: "byok",
   runId: "run-parent-1",
 };
 
@@ -104,7 +101,7 @@ describe("POST /generate idempotency", () => {
     mockCreateRun.mockResolvedValue({ id: "run-456" });
     mockPromptFindFirst.mockResolvedValue({
       id: "prompt-1",
-      appId: "my-app",
+      orgId: "org-internal-123",
       type: "email",
       prompt: "Write an email.\n\n{{recipientInfo}}\n\n{{senderInfo}}",
       variables: ["recipientInfo", "senderInfo"],
@@ -136,7 +133,8 @@ describe("POST /generate idempotency", () => {
 
     const res = await request(app)
       .post("/generate")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({ ...validBody, idempotencyKey: "idem-key-1" })
       .expect(200);
 
@@ -157,7 +155,8 @@ describe("POST /generate idempotency", () => {
 
     const res = await request(app)
       .post("/generate")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({ ...validBody, idempotencyKey: "idem-key-new" })
       .expect(200);
 
@@ -174,7 +173,8 @@ describe("POST /generate idempotency", () => {
   it("generates normally when no idempotencyKey is provided (backward compat)", async () => {
     const res = await request(app)
       .post("/generate")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send(validBody) // no idempotencyKey
       .expect(200);
 

@@ -20,13 +20,11 @@ import request from "supertest";
  */
 
 // Mock runs-client before importing the route
-const mockEnsureOrganization = vi.fn().mockResolvedValue("org-123");
 const mockCreateRun = vi.fn().mockResolvedValue({ id: "run-456" });
 const mockUpdateRun = vi.fn().mockResolvedValue({});
 const mockAddCosts = vi.fn().mockResolvedValue({ costs: [] });
 
 vi.mock("../../src/lib/runs-client.js", () => ({
-  ensureOrganization: (...args: unknown[]) => mockEnsureOrganization(...args),
   createRun: (...args: unknown[]) => mockCreateRun(...args),
   updateRun: (...args: unknown[]) => mockUpdateRun(...args),
   addCosts: (...args: unknown[]) => mockAddCosts(...args),
@@ -35,8 +33,8 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 // Mock auth middleware to pass through
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
-    req.orgId = "org-internal-123";
-    req.externalOrgId = req.headers["x-org-id"] || "org_test";
+    req.orgId = req.headers["x-org-id"] || "org-internal-123";
+    req.userId = req.headers["x-user-id"] || "user-internal-456";
     next();
   },
 }));
@@ -64,7 +62,7 @@ vi.mock("../../src/db/index.js", () => ({
       prompts: {
         findFirst: vi.fn().mockResolvedValue({
           id: "prompt-1",
-          appId: "app-1",
+          orgId: "org-internal-123",
           type: "email",
           prompt: MOCK_PROMPT_TEMPLATE,
           variables: ["recipientName", "senderName"],
@@ -76,12 +74,11 @@ vi.mock("../../src/db/index.js", () => ({
 
 vi.mock("../../src/db/schema.js", () => ({
   emailGenerations: { id: { name: "id" } },
-  prompts: { appId: { name: "app_id" }, type: { name: "type" } },
+  prompts: { orgId: { name: "org_id" }, type: { name: "type" } },
 }));
 
 vi.mock("../../src/lib/key-client.js", () => ({
-  getByokKey: vi.fn().mockResolvedValue("fake-anthropic-key"),
-  getAppKey: vi.fn().mockResolvedValue("fake-app-key"),
+  decryptKey: vi.fn().mockResolvedValue({ key: "fake-anthropic-key", keySource: "platform" as const }),
 }));
 
 // Mock anthropic client to return predictable token counts
@@ -110,10 +107,8 @@ function createTestApp() {
 }
 
 const VALID_REQUEST = {
-  appId: "app-1",
   type: "email",
   variables: { recipientName: "John at Acme", senderName: "MyCompany" },
-  keyMode: "byok",
   runId: "run-parent-123",
 };
 
@@ -123,7 +118,6 @@ describe("Email generation cost tracking", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     mockDbSetCalls.length = 0;
-    mockEnsureOrganization.mockResolvedValue("org-123");
     mockCreateRun.mockResolvedValue({ id: "run-456" });
     mockUpdateRun.mockResolvedValue({});
     mockAddCosts.mockResolvedValue({ costs: [] });
@@ -136,7 +130,8 @@ describe("Email generation cost tracking", () => {
   it("should post costs with exact cost names: anthropic-sonnet-4.6-tokens-input and anthropic-sonnet-4.6-tokens-output", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send(VALID_REQUEST)
       .expect(200);
 
@@ -153,7 +148,8 @@ describe("Email generation cost tracking", () => {
   it("should post raw token quantities, not dollar amounts", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send(VALID_REQUEST)
       .expect(200);
 
@@ -170,6 +166,20 @@ describe("Email generation cost tracking", () => {
     expect(inputCost.quantity).toBeGreaterThan(1);
   });
 
+  it("should include costSource from key-service on each cost item", async () => {
+    await request(app)
+      .post("/generate")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
+      .send(VALID_REQUEST)
+      .expect(200);
+
+    const [, costItems] = mockAddCosts.mock.calls[0];
+    for (const item of costItems) {
+      expect(item.costSource).toBe("platform");
+    }
+  });
+
   it("should log at error level when cost tracking fails", async () => {
     mockCreateRun.mockResolvedValueOnce({ id: "run-456" });
     mockAddCosts.mockRejectedValueOnce(new Error("Cost name not registered"));
@@ -178,7 +188,8 @@ describe("Email generation cost tracking", () => {
 
     await request(app)
       .post("/generate")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send(VALID_REQUEST)
       .expect(200); // Email still generated despite cost tracking failure
 
@@ -194,7 +205,8 @@ describe("Email generation cost tracking", () => {
   it("should create child run with correct parentRunId linking to campaign run", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({ ...VALID_REQUEST, runId: "campaign-run-abc" })
       .expect(200);
 
@@ -208,8 +220,6 @@ describe("Email generation cost tracking", () => {
   });
 
   it("should link generationRunId to DB record even when addCosts fails", async () => {
-    // This is the critical regression: if addCosts fails, the DB link must
-    // still be set so the dashboard can show per-item cost details.
     mockCreateRun.mockResolvedValueOnce({ id: "run-456" });
     mockAddCosts.mockRejectedValueOnce(new Error("Cost name not registered"));
 
@@ -217,7 +227,8 @@ describe("Email generation cost tracking", () => {
 
     await request(app)
       .post("/generate")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send(VALID_REQUEST)
       .expect(200);
 

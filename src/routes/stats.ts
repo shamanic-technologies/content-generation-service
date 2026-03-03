@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "../db/index.js";
-import { emailGenerations, orgs } from "../db/schema.js";
+import { emailGenerations } from "../db/schema.js";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { StatsByModelRequestSchema } from "../schemas.js";
 
@@ -17,30 +17,22 @@ router.post("/stats/by-model", async (req, res) => {
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
 
-    const { runIds, orgId, appId, brandId, campaignId } = parsed.data;
+    const { runIds, orgId, brandId, campaignId } = parsed.data;
 
     const hasRunIds = Array.isArray(runIds) && runIds.length > 0;
 
-    if (!hasRunIds && !orgId && !appId && !brandId && !campaignId) {
-      return res.status(400).json({ error: "At least one filter required: runIds, orgId, appId, brandId, or campaignId" });
+    if (!hasRunIds && !orgId && !brandId && !campaignId) {
+      return res.status(400).json({ error: "At least one filter required: runIds, orgId, brandId, or campaignId" });
     }
 
     const conditions: SQL[] = [];
     if (hasRunIds) conditions.push(inArray(emailGenerations.runId, runIds!));
-    if (appId) conditions.push(eq(emailGenerations.appId, appId));
     if (brandId) conditions.push(eq(emailGenerations.brandId, brandId));
     if (campaignId) conditions.push(eq(emailGenerations.campaignId, campaignId));
 
-    // If orgId provided, resolve to internal org UUID via lookup
+    // If orgId provided, filter directly (it's already the internal UUID)
     if (orgId) {
-      const org = await db.query.orgs.findFirst({
-        where: (o, { eq }) => eq(o.externalOrgId, orgId),
-        columns: { id: true },
-      });
-      if (!org) {
-        return res.json({ stats: [] });
-      }
-      conditions.push(eq(emailGenerations.orgId, org.id));
+      conditions.push(eq(emailGenerations.orgId, orgId));
     }
 
     // Group email generations by model, counting and collecting runIds

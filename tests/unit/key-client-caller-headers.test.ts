@@ -9,7 +9,7 @@ describe("key-client caller headers", () => {
     fakeFetch.mockReset();
     fakeFetch.mockResolvedValue({
       ok: true,
-      json: async () => ({ key: "decrypted-key" }),
+      json: async () => ({ key: "decrypted-key", keySource: "platform" }),
     });
   });
 
@@ -17,10 +17,10 @@ describe("key-client caller headers", () => {
     vi.unstubAllEnvs();
   });
 
-  it("getByokKey sends X-Caller-Service, X-Caller-Method, X-Caller-Path headers", async () => {
-    const { getByokKey } = await import("../../src/lib/key-client.js");
+  it("decryptKey sends X-Caller-Service, X-Caller-Method, X-Caller-Path headers", async () => {
+    const { decryptKey } = await import("../../src/lib/key-client.js");
 
-    await getByokKey("org_test", "anthropic", {
+    await decryptKey("anthropic", "org-123", "user-456", {
       callerMethod: "POST",
       callerPath: "/generate",
     });
@@ -34,29 +34,27 @@ describe("key-client caller headers", () => {
     });
   });
 
-  it("getAppKey sends X-Caller-Service, X-Caller-Method, X-Caller-Path headers", async () => {
-    const { getAppKey } = await import("../../src/lib/key-client.js");
+  it("decryptKey calls correct URL with orgId and userId", async () => {
+    const { decryptKey } = await import("../../src/lib/key-client.js");
 
-    await getAppKey("my-app", "anthropic", {
+    await decryptKey("anthropic", "org-123", "user-456", {
       callerMethod: "POST",
       callerPath: "/generate/content",
     });
 
     expect(fakeFetch).toHaveBeenCalledOnce();
-    const [, opts] = fakeFetch.mock.calls[0];
-    expect(opts.headers).toMatchObject({
-      "X-Caller-Service": "content-generation",
-      "X-Caller-Method": "POST",
-      "X-Caller-Path": "/generate/content",
-    });
+    const [url] = fakeFetch.mock.calls[0];
+    expect(url).toContain("/keys/anthropic/decrypt");
+    expect(url).toContain("orgId=org-123");
+    expect(url).toContain("userId=user-456");
   });
 
   it("includes X-Api-Key alongside caller headers when KEY_SERVICE_API_KEY is set", async () => {
     vi.stubEnv("KEY_SERVICE_API_KEY", "test-api-key");
 
-    const { getByokKey } = await import("../../src/lib/key-client.js");
+    const { decryptKey } = await import("../../src/lib/key-client.js");
 
-    await getByokKey("org_test", "anthropic", {
+    await decryptKey("anthropic", "org-123", "user-456", {
       callerMethod: "POST",
       callerPath: "/generate",
     });

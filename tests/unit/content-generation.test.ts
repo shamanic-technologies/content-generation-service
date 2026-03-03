@@ -16,8 +16,8 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 // Mock auth middleware
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
-    req.orgId = "org-internal-123";
-    req.externalOrgId = req.headers["x-org-id"] || "org_test";
+    req.orgId = req.headers["x-org-id"] || "org-internal-123";
+    req.userId = req.headers["x-user-id"] || "user-internal-456";
     next();
   },
 }));
@@ -38,12 +38,10 @@ vi.mock("../../src/db/schema.js", () => ({
 }));
 
 // Mock key-client
-const mockGetByokKey = vi.fn().mockResolvedValue("fake-byok-key");
-const mockGetAppKey = vi.fn().mockResolvedValue("fake-app-key");
+const mockDecryptKey = vi.fn().mockResolvedValue({ key: "fake-anthropic-key", keySource: "platform" as const });
 
 vi.mock("../../src/lib/key-client.js", () => ({
-  getByokKey: (...args: unknown[]) => mockGetByokKey(...args),
-  getAppKey: (...args: unknown[]) => mockGetAppKey(...args),
+  decryptKey: (...args: unknown[]) => mockDecryptKey(...args),
 }));
 
 // Mock content-client
@@ -98,11 +96,10 @@ describe("POST /generate/content", () => {
   it("should return generated email content", async () => {
     const res = await request(app)
       .post("/generate/content")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({
-        appId: "my-app",
         prompt: "Write a welcome email for a webinar about sales techniques",
-        keyMode: "byok",
       })
       .expect(200);
 
@@ -117,17 +114,16 @@ describe("POST /generate/content", () => {
   it("should pass variables to generateContent", async () => {
     await request(app)
       .post("/generate/content")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({
-        appId: "my-app",
         prompt: "Write a webinar reminder",
         variables: ["firstName", "webinarStartTime"],
-        keyMode: "byok",
       })
       .expect(200);
 
     expect(mockGenerateContent).toHaveBeenCalledWith(
-      "fake-byok-key",
+      "fake-anthropic-key",
       expect.objectContaining({
         variables: ["firstName", "webinarStartTime"],
       })
@@ -137,75 +133,41 @@ describe("POST /generate/content", () => {
   it("should pass includeFooter to generateContent", async () => {
     await request(app)
       .post("/generate/content")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({
-        appId: "my-app",
         prompt: "Write a webinar reminder",
         includeFooter: true,
-        keyMode: "byok",
       })
       .expect(200);
 
     expect(mockGenerateContent).toHaveBeenCalledWith(
-      "fake-byok-key",
+      "fake-anthropic-key",
       expect.objectContaining({
         includeFooter: true,
       })
     );
   });
 
-  it("should use getByokKey when keyMode is byok", async () => {
+  it("should call decryptKey with correct parameters", async () => {
     await request(app)
       .post("/generate/content")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({
-        appId: "my-app",
         prompt: "Write an email",
-        keyMode: "byok",
       })
       .expect(200);
 
-    expect(mockGetByokKey).toHaveBeenCalledWith("org_test", "anthropic", { callerMethod: "POST", callerPath: "/generate/content" });
-    expect(mockGetAppKey).not.toHaveBeenCalled();
-  });
-
-  it("should use getAppKey when keyMode is app", async () => {
-    await request(app)
-      .post("/generate/content")
-      .set("X-Org-Id", "org_test")
-      .send({
-        appId: "my-app",
-        prompt: "Write an email",
-        keyMode: "app",
-      })
-      .expect(200);
-
-    expect(mockGetAppKey).toHaveBeenCalledWith("my-app", "anthropic", { callerMethod: "POST", callerPath: "/generate/content" });
-    expect(mockGetByokKey).not.toHaveBeenCalled();
+    expect(mockDecryptKey).toHaveBeenCalledWith("anthropic", "org-internal-123", "user-internal-456", { callerMethod: "POST", callerPath: "/generate/content" });
   });
 
   it("should return 400 for missing prompt", async () => {
     const res = await request(app)
       .post("/generate/content")
-      .set("X-Org-Id", "org_test")
-      .send({
-        appId: "my-app",
-        keyMode: "byok",
-      })
-      .expect(400);
-
-    expect(res.body.error).toBeDefined();
-  });
-
-  it("should return 400 for invalid keyMode", async () => {
-    const res = await request(app)
-      .post("/generate/content")
-      .set("X-Org-Id", "org_test")
-      .send({
-        appId: "my-app",
-        prompt: "Write an email",
-        keyMode: "invalid",
-      })
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
+      .send({})
       .expect(400);
 
     expect(res.body.error).toBeDefined();
@@ -214,11 +176,10 @@ describe("POST /generate/content", () => {
   it("should pass parentRunId to createRun when provided", async () => {
     await request(app)
       .post("/generate/content")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({
-        appId: "my-app",
         prompt: "Write an email",
-        keyMode: "byok",
         parentRunId: "parent-run-abc",
       })
       .expect(200);

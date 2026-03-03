@@ -46,9 +46,6 @@
       "UpsertPromptRequest": {
         "type": "object",
         "properties": {
-          "appId": {
-            "type": "string"
-          },
           "type": {
             "type": "string",
             "description": "Prompt type, e.g. 'email' or 'calendar'"
@@ -66,7 +63,6 @@
           }
         },
         "required": [
-          "appId",
           "type",
           "prompt",
           "variables"
@@ -78,7 +74,7 @@
           "id": {
             "type": "string"
           },
-          "appId": {
+          "orgId": {
             "type": "string"
           },
           "type": {
@@ -99,7 +95,7 @@
         },
         "required": [
           "id",
-          "appId",
+          "orgId",
           "type",
           "variables",
           "createdAt",
@@ -109,9 +105,6 @@
       "GenerateRequest": {
         "type": "object",
         "properties": {
-          "appId": {
-            "type": "string"
-          },
           "type": {
             "type": "string",
             "description": "Which stored prompt to use, e.g. 'email' or 'calendar'"
@@ -122,13 +115,6 @@
               "nullable": true
             },
             "description": "Variable values to substitute into the prompt template. Non-string values (arrays, objects) are coerced to strings."
-          },
-          "keyMode": {
-            "type": "string",
-            "enum": [
-              "byok",
-              "app"
-            ]
           },
           "runId": {
             "type": "string"
@@ -159,10 +145,8 @@
           }
         },
         "required": [
-          "appId",
           "type",
           "variables",
-          "keyMode",
           "runId"
         ]
       },
@@ -252,9 +236,6 @@
       "GenerateContentRequest": {
         "type": "object",
         "properties": {
-          "appId": {
-            "type": "string"
-          },
           "prompt": {
             "type": "string"
           },
@@ -273,13 +254,6 @@
             "default": false,
             "description": "When true, appends a small AI-generated disclaimer to the email body"
           },
-          "keyMode": {
-            "type": "string",
-            "enum": [
-              "byok",
-              "app"
-            ]
-          },
           "parentRunId": {
             "type": "string"
           },
@@ -288,9 +262,7 @@
           }
         },
         "required": [
-          "appId",
-          "prompt",
-          "keyMode"
+          "prompt"
         ]
       },
       "GenerateContentResponse": {
@@ -327,18 +299,8 @@
       "GenerateCalendarRequest": {
         "type": "object",
         "properties": {
-          "appId": {
-            "type": "string"
-          },
           "prompt": {
             "type": "string"
-          },
-          "keyMode": {
-            "type": "string",
-            "enum": [
-              "byok",
-              "app"
-            ]
           },
           "parentRunId": {
             "type": "string"
@@ -348,9 +310,7 @@
           }
         },
         "required": [
-          "appId",
-          "prompt",
-          "keyMode"
+          "prompt"
         ]
       },
       "GenerateCalendarResponse": {
@@ -394,9 +354,6 @@
               "type": "string"
             }
           },
-          "appId": {
-            "type": "string"
-          },
           "brandId": {
             "type": "string"
           },
@@ -434,9 +391,6 @@
             }
           },
           "orgId": {
-            "type": "string"
-          },
-          "appId": {
             "type": "string"
           },
           "brandId": {
@@ -482,6 +436,9 @@
       },
       "OrgId": {
         "type": "string"
+      },
+      "UserId": {
+        "type": "string"
       }
     },
     "parameters": {
@@ -491,6 +448,14 @@
         },
         "required": true,
         "name": "X-Org-Id",
+        "in": "header"
+      },
+      "UserId": {
+        "schema": {
+          "$ref": "#/components/schemas/UserId"
+        },
+        "required": true,
+        "name": "X-User-Id",
         "in": "header"
       }
     },
@@ -528,7 +493,7 @@
         "tags": [
           "Prompts"
         ],
-        "summary": "Register or update a prompt template for an app (idempotent)",
+        "summary": "Register or update a prompt template for an org (idempotent)",
         "parameters": [
           {
             "schema": {
@@ -536,6 +501,14 @@
             },
             "required": true,
             "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
             "in": "header"
           }
         ],
@@ -587,6 +560,14 @@
             "required": true,
             "name": "x-org-id",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -631,7 +612,7 @@
             }
           },
           "404": {
-            "description": "Prompt not found for this app + type",
+            "description": "Prompt not found for this org + type",
             "content": {
               "application/json": {
                 "schema": {
@@ -671,14 +652,6 @@
               "type": "string"
             },
             "required": false,
-            "name": "appId",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
             "name": "brandId",
             "in": "query"
           },
@@ -688,6 +661,14 @@
             },
             "required": true,
             "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
             "in": "header"
           }
         ],
@@ -737,6 +718,14 @@
             "required": true,
             "name": "x-org-id",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
           }
         ],
         "responses": {
@@ -785,6 +774,14 @@
             "required": true,
             "name": "x-org-id",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
           }
         ],
         "responses": {
@@ -824,6 +821,14 @@
             },
             "required": true,
             "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
             "in": "header"
           }
         ],
@@ -885,6 +890,14 @@
             "required": true,
             "name": "x-org-id",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -944,6 +957,14 @@
             },
             "required": true,
             "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
             "in": "header"
           }
         ],

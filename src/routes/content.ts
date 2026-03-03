@@ -4,26 +4,11 @@ import { contentGenerations } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { generateContent } from "../lib/content-client.js";
 import { generateCalendar } from "../lib/content-client.js";
-import { getByokKey, getAppKey, type CallerContext } from "../lib/key-client.js";
+import { decryptKey, type CallerContext } from "../lib/key-client.js";
 import { createRun, updateRun, addCosts } from "../lib/runs-client.js";
 import { GenerateContentRequestSchema, GenerateCalendarRequestSchema } from "../schemas.js";
 
 const router = Router();
-
-/**
- * Resolve the Anthropic API key based on keyMode.
- */
-async function resolveApiKey(
-  keyMode: "byok" | "app",
-  orgId: string,
-  appId: string,
-  caller: CallerContext
-): Promise<string> {
-  if (keyMode === "byok") {
-    return getByokKey(orgId, "anthropic", caller);
-  }
-  return getAppKey(appId, "anthropic", caller);
-}
 
 /**
  * POST /generate/content — Generate email content from a free-text prompt
@@ -35,10 +20,10 @@ router.post("/generate/content", serviceAuth, async (req: AuthenticatedRequest, 
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
 
-    const { appId, prompt, variables, includeFooter, includeAiDisclaimer, keyMode, parentRunId, workflowName } = parsed.data;
+    const { prompt, variables, includeFooter, includeAiDisclaimer, parentRunId, workflowName } = parsed.data;
 
     // Get Anthropic API key
-    const apiKey = await resolveApiKey(keyMode, req.externalOrgId!, appId, {
+    const { key: apiKey, keySource } = await decryptKey("anthropic", req.orgId!, req.userId!, {
       callerMethod: "POST",
       callerPath: "/generate/content",
     });
@@ -48,8 +33,8 @@ router.post("/generate/content", serviceAuth, async (req: AuthenticatedRequest, 
 
     // Create run in runs-service — MUST succeed or we fail the request
     const genRun = await createRun({
-      orgId: req.externalOrgId!,
-      appId,
+      orgId: req.orgId!,
+      userId: req.userId,
       serviceName: "content-generation-service",
       taskName: "content-generation",
       parentRunId,
@@ -61,9 +46,7 @@ router.post("/generate/content", serviceAuth, async (req: AuthenticatedRequest, 
       .insert(contentGenerations)
       .values({
         orgId: req.orgId!,
-        appId,
         type: "email",
-        keyMode,
         prompt,
         variables: variables ?? null,
         includeFooter: includeFooter ?? false,
@@ -84,10 +67,10 @@ router.post("/generate/content", serviceAuth, async (req: AuthenticatedRequest, 
     // Track costs — MUST succeed
     const costItems = [];
     if (result.tokensInput) {
-      costItems.push({ costName: "anthropic-sonnet-4.6-tokens-input", quantity: result.tokensInput });
+      costItems.push({ costName: "anthropic-sonnet-4.6-tokens-input", quantity: result.tokensInput, costSource: keySource });
     }
     if (result.tokensOutput) {
-      costItems.push({ costName: "anthropic-sonnet-4.6-tokens-output", quantity: result.tokensOutput });
+      costItems.push({ costName: "anthropic-sonnet-4.6-tokens-output", quantity: result.tokensOutput, costSource: keySource });
     }
     if (costItems.length > 0) {
       await addCosts(genRun.id, costItems);
@@ -118,10 +101,10 @@ router.post("/generate/calendar", serviceAuth, async (req: AuthenticatedRequest,
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
 
-    const { appId, prompt, keyMode, parentRunId, workflowName } = parsed.data;
+    const { prompt, parentRunId, workflowName } = parsed.data;
 
     // Get Anthropic API key
-    const apiKey = await resolveApiKey(keyMode, req.externalOrgId!, appId, {
+    const { key: apiKey, keySource } = await decryptKey("anthropic", req.orgId!, req.userId!, {
       callerMethod: "POST",
       callerPath: "/generate/calendar",
     });
@@ -131,8 +114,8 @@ router.post("/generate/calendar", serviceAuth, async (req: AuthenticatedRequest,
 
     // Create run in runs-service — MUST succeed or we fail the request
     const genRun = await createRun({
-      orgId: req.externalOrgId!,
-      appId,
+      orgId: req.orgId!,
+      userId: req.userId,
       serviceName: "content-generation-service",
       taskName: "calendar-generation",
       parentRunId,
@@ -144,9 +127,7 @@ router.post("/generate/calendar", serviceAuth, async (req: AuthenticatedRequest,
       .insert(contentGenerations)
       .values({
         orgId: req.orgId!,
-        appId,
         type: "calendar",
-        keyMode,
         prompt,
         title: result.title,
         description: result.description,
@@ -165,10 +146,10 @@ router.post("/generate/calendar", serviceAuth, async (req: AuthenticatedRequest,
     // Track costs — MUST succeed
     const costItems = [];
     if (result.tokensInput) {
-      costItems.push({ costName: "anthropic-sonnet-4.6-tokens-input", quantity: result.tokensInput });
+      costItems.push({ costName: "anthropic-sonnet-4.6-tokens-input", quantity: result.tokensInput, costSource: keySource });
     }
     if (result.tokensOutput) {
-      costItems.push({ costName: "anthropic-sonnet-4.6-tokens-output", quantity: result.tokensOutput });
+      costItems.push({ costName: "anthropic-sonnet-4.6-tokens-output", quantity: result.tokensOutput, costSource: keySource });
     }
     if (costItems.length > 0) {
       await addCosts(genRun.id, costItems);
