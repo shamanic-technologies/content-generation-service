@@ -23,7 +23,6 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     const {
       type,
       variables,
-      runId,
       brandId,
       campaignId,
       apolloEnrichmentId,
@@ -84,7 +83,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       .insert(emailGenerations)
       .values({
         orgId: req.orgId!,
-        runId,
+        runId: req.runId!,
         apolloEnrichmentId: apolloEnrichmentId ?? null,
         promptType: type,
         brandId: brandId ?? "",
@@ -119,7 +118,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         campaignId,
         serviceName: "content-generation-service",
         taskName: "single-generation",
-        parentRunId: runId,
+        parentRunId: req.runId!,
         workflowName,
       });
 
@@ -142,7 +141,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       await updateRun(genRun.id, "completed");
     } catch (err) {
       console.error("[content-gen] COST TRACKING FAILED — costs will be missing from campaign totals.", {
-        runId,
+        runId: req.runId,
         apolloEnrichmentId,
         tokensInput: result.tokensInput,
         tokensOutput: result.tokensOutput,

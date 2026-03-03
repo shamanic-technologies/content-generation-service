@@ -18,6 +18,7 @@ vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = req.headers["x-org-id"] || "org-internal-123";
     req.userId = req.headers["x-user-id"] || "user-internal-456";
+    req.runId = req.headers["x-run-id"] || "run-caller-123";
     next();
   },
 }));
@@ -173,14 +174,14 @@ describe("POST /generate/content", () => {
     expect(res.body.error).toBeDefined();
   });
 
-  it("should pass parentRunId to createRun when provided", async () => {
+  it("should pass x-run-id header as parentRunId to createRun", async () => {
     await request(app)
       .post("/generate/content")
       .set("X-Org-Id", "org-internal-123")
       .set("X-User-Id", "user-internal-456")
+      .set("X-Run-Id", "parent-run-abc")
       .send({
         prompt: "Write an email",
-        parentRunId: "parent-run-abc",
       })
       .expect(200);
 

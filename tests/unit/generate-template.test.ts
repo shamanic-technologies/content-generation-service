@@ -18,6 +18,7 @@ vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = req.headers["x-org-id"] || "org-internal-123";
     req.userId = req.headers["x-user-id"] || "user-internal-456";
+    req.runId = req.headers["x-run-id"] || "run-caller-123";
     next();
   },
 }));
@@ -111,7 +112,6 @@ describe("POST /generate (template-based)", () => {
           recipientInfo: "Name: John Doe\nCompany: Acme Corp",
           senderInfo: "Name: MyBrand\nURL: https://mybrand.com",
         },
-        runId: "run-parent-1",
       })
       .expect(200);
 
@@ -143,7 +143,6 @@ describe("POST /generate (template-based)", () => {
       .send({
         type: "email",
         variables: {},
-        runId: "run-1",
       })
       .expect(404);
 
@@ -167,7 +166,6 @@ describe("POST /generate (template-based)", () => {
       .send({
         type: "email",
         variables: { recipientInfo: "test", senderInfo: "test" },
-        runId: "run-1",
         brandId: "brand-1",
         campaignId: "campaign-1",
         apolloEnrichmentId: "enrich-1",
@@ -183,7 +181,6 @@ describe("POST /generate (template-based)", () => {
       .send({
         type: "email",
         variables: { recipientInfo: "test", senderInfo: "test" },
-        runId: "run-1",
       })
       .expect(200);
 
@@ -204,7 +201,6 @@ describe("POST /generate (template-based)", () => {
           searchParams: { qKeywords: "blockchain OR web3" },
           tags: ["sales", "outreach"],
         },
-        runId: "run-1",
       })
       .expect(200);
 

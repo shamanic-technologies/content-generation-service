@@ -116,9 +116,6 @@
             },
             "description": "Variable values to substitute into the prompt template. Non-string values (arrays, objects) are coerced to strings."
           },
-          "runId": {
-            "type": "string"
-          },
           "brandId": {
             "type": "string"
           },
@@ -146,8 +143,7 @@
         },
         "required": [
           "type",
-          "variables",
-          "runId"
+          "variables"
         ]
       },
       "GenerateResponse": {
@@ -254,9 +250,6 @@
             "default": false,
             "description": "When true, appends a small AI-generated disclaimer to the email body"
           },
-          "parentRunId": {
-            "type": "string"
-          },
           "workflowName": {
             "type": "string"
           }
@@ -300,9 +293,6 @@
         "type": "object",
         "properties": {
           "prompt": {
-            "type": "string"
-          },
-          "parentRunId": {
             "type": "string"
           },
           "workflowName": {
@@ -439,6 +429,9 @@
       },
       "UserId": {
         "type": "string"
+      },
+      "RunId": {
+        "type": "string"
       }
     },
     "parameters": {
@@ -456,6 +449,14 @@
         },
         "required": true,
         "name": "X-User-Id",
+        "in": "header"
+      },
+      "RunId": {
+        "schema": {
+          "$ref": "#/components/schemas/RunId"
+        },
+        "required": true,
+        "name": "X-Run-Id",
         "in": "header"
       }
     },
@@ -509,6 +510,14 @@
             },
             "required": true,
             "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
             "in": "header"
           }
         ],
@@ -567,6 +576,14 @@
             },
             "required": true,
             "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
             "in": "header"
           }
         ],
@@ -670,6 +687,14 @@
             "required": true,
             "name": "x-user-id",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
           }
         ],
         "responses": {
@@ -725,6 +750,14 @@
             },
             "required": true,
             "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
             "in": "header"
           }
         ],
@@ -782,6 +815,14 @@
             "required": true,
             "name": "x-user-id",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
           }
         ],
         "responses": {
@@ -829,6 +870,14 @@
             },
             "required": true,
             "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
             "in": "header"
           }
         ],
@@ -898,6 +947,14 @@
             "required": true,
             "name": "x-user-id",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -965,6 +1022,14 @@
             },
             "required": true,
             "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
             "in": "header"
           }
         ],

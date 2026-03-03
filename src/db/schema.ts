@@ -109,7 +109,6 @@ export const contentGenerations = pgTable(
 
     // Cost tracking
     generationRunId: text("generation_run_id"),
-    parentRunId: text("parent_run_id"),
 
     // Workflow tracking
     workflowName: text("workflow_name"),

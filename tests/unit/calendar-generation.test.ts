@@ -18,6 +18,7 @@ vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = req.headers["x-org-id"] || "org-internal-123";
     req.userId = req.headers["x-user-id"] || "user-internal-456";
+    req.runId = req.headers["x-run-id"] || "run-caller-123";
     next();
   },
 }));
@@ -120,14 +121,14 @@ describe("POST /generate/calendar", () => {
     expect(res.body.error).toBeDefined();
   });
 
-  it("should create run with calendar-generation task name", async () => {
+  it("should create run with calendar-generation task name and x-run-id as parentRunId", async () => {
     await request(app)
       .post("/generate/calendar")
       .set("X-Org-Id", "org-internal-123")
       .set("X-User-Id", "user-internal-456")
+      .set("X-Run-Id", "parent-run-xyz")
       .send({
         prompt: "Generate calendar event",
-        parentRunId: "parent-run-xyz",
       })
       .expect(200);
 

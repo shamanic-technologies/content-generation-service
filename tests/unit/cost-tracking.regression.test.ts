@@ -35,6 +35,7 @@ vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = req.headers["x-org-id"] || "org-internal-123";
     req.userId = req.headers["x-user-id"] || "user-internal-456";
+    req.runId = req.headers["x-run-id"] || "run-caller-123";
     next();
   },
 }));
@@ -109,7 +110,6 @@ function createTestApp() {
 const VALID_REQUEST = {
   type: "email",
   variables: { recipientName: "John at Acme", senderName: "MyCompany" },
-  runId: "run-parent-123",
 };
 
 describe("Email generation cost tracking", () => {
@@ -202,12 +202,13 @@ describe("Email generation cost tracking", () => {
     errorSpy.mockRestore();
   });
 
-  it("should create child run with correct parentRunId linking to campaign run", async () => {
+  it("should create child run with x-run-id header as parentRunId", async () => {
     await request(app)
       .post("/generate")
       .set("X-Org-Id", "org-internal-123")
       .set("X-User-Id", "user-internal-456")
-      .send({ ...VALID_REQUEST, runId: "campaign-run-abc" })
+      .set("X-Run-Id", "campaign-run-abc")
+      .send(VALID_REQUEST)
       .expect(200);
 
     expect(mockCreateRun).toHaveBeenCalledWith(

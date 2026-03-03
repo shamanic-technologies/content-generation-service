@@ -20,7 +20,7 @@ router.post("/generate/content", serviceAuth, async (req: AuthenticatedRequest, 
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
 
-    const { prompt, variables, includeFooter, includeAiDisclaimer, parentRunId, workflowName } = parsed.data;
+    const { prompt, variables, includeFooter, includeAiDisclaimer, workflowName } = parsed.data;
 
     // Get Anthropic API key
     const { key: apiKey, keySource } = await decryptKey("anthropic", req.orgId!, req.userId!, {
@@ -37,7 +37,7 @@ router.post("/generate/content", serviceAuth, async (req: AuthenticatedRequest, 
       userId: req.userId,
       serviceName: "content-generation-service",
       taskName: "content-generation",
-      parentRunId,
+      parentRunId: req.runId!,
       workflowName,
     });
 
@@ -54,7 +54,6 @@ router.post("/generate/content", serviceAuth, async (req: AuthenticatedRequest, 
         bodyHtml: result.bodyHtml,
         bodyText: result.bodyText,
         generationRunId: genRun.id,
-        parentRunId: parentRunId ?? null,
         workflowName: workflowName ?? null,
         model: "claude-sonnet-4-6",
         tokensInput: result.tokensInput,
@@ -101,7 +100,7 @@ router.post("/generate/calendar", serviceAuth, async (req: AuthenticatedRequest,
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
 
-    const { prompt, parentRunId, workflowName } = parsed.data;
+    const { prompt, workflowName } = parsed.data;
 
     // Get Anthropic API key
     const { key: apiKey, keySource } = await decryptKey("anthropic", req.orgId!, req.userId!, {
@@ -118,7 +117,7 @@ router.post("/generate/calendar", serviceAuth, async (req: AuthenticatedRequest,
       userId: req.userId,
       serviceName: "content-generation-service",
       taskName: "calendar-generation",
-      parentRunId,
+      parentRunId: req.runId!,
       workflowName,
     });
 
@@ -133,7 +132,6 @@ router.post("/generate/calendar", serviceAuth, async (req: AuthenticatedRequest,
         description: result.description,
         location: result.location,
         generationRunId: genRun.id,
-        parentRunId: parentRunId ?? null,
         workflowName: workflowName ?? null,
         model: "claude-sonnet-4-6",
         tokensInput: result.tokensInput,
