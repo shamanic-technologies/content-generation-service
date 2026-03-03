@@ -23,6 +23,7 @@ vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = req.headers["x-org-id"] || "org-internal-123";
     req.userId = req.headers["x-user-id"] || "user-internal-456";
+    req.runId = req.headers["x-run-id"] || "run-caller-123";
     next();
   },
 }));
@@ -135,7 +136,6 @@ describe("workflowName propagation", () => {
         .send({
           type: "email",
           variables: { recipientName: "John" },
-          runId: "run-parent-123",
           workflowName: "cold-email-outreach",
         })
         .expect(200);
@@ -155,7 +155,6 @@ describe("workflowName propagation", () => {
         .send({
           type: "email",
           variables: { recipientName: "John" },
-          runId: "run-parent-123",
           workflowName: "cold-email-outreach",
         })
         .expect(200);
@@ -175,7 +174,6 @@ describe("workflowName propagation", () => {
         .send({
           type: "email",
           variables: { recipientName: "John" },
-          runId: "run-parent-123",
         })
         .expect(200);
 

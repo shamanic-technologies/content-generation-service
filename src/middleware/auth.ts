@@ -3,6 +3,7 @@ import { Request, Response, NextFunction } from "express";
 export interface AuthenticatedRequest extends Request {
   orgId?: string;
   userId?: string;
+  runId?: string;
 }
 
 const API_KEY = process.env.CONTENT_GENERATION_SERVICE_API_KEY;
@@ -35,6 +36,7 @@ export async function serviceAuth(
 ) {
   const orgId = req.headers["x-org-id"] as string;
   const userId = req.headers["x-user-id"] as string;
+  const runId = req.headers["x-run-id"] as string;
 
   if (!orgId) {
     return res.status(400).json({ error: "x-org-id header required" });
@@ -44,7 +46,12 @@ export async function serviceAuth(
     return res.status(400).json({ error: "x-user-id header required" });
   }
 
+  if (!runId) {
+    return res.status(400).json({ error: "x-run-id header required" });
+  }
+
   req.orgId = orgId;
   req.userId = userId;
+  req.runId = runId;
   next();
 }

@@ -18,6 +18,7 @@ vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
     req.orgId = req.headers["x-org-id"] || "org-internal-123";
     req.userId = req.headers["x-user-id"] || "user-internal-456";
+    req.runId = req.headers["x-run-id"] || "run-caller-123";
     next();
   },
 }));
@@ -115,7 +116,6 @@ describe("POST /generate — lead/client column population", () => {
           leadCompanyIndustry: "IT consulting",
           clientCompanyName: "MyBrand",
         },
-        runId: "run-1",
       })
       .expect(200);
 
@@ -136,7 +136,6 @@ describe("POST /generate — lead/client column population", () => {
       .send({
         type: "email",
         variables: { someOtherVar: "value" },
-        runId: "run-1",
       })
       .expect(200);
 
@@ -162,7 +161,6 @@ describe("POST /generate — lead/client column population", () => {
           leadCompanyName: { nested: true },
           leadTitle: "Valid Title",
         },
-        runId: "run-1",
       })
       .expect(200);
 
@@ -184,7 +182,6 @@ describe("POST /generate — lead/client column population", () => {
           leadFirstName: "",
           leadLastName: "Chen",
         },
-        runId: "run-1",
       })
       .expect(200);
 
@@ -207,7 +204,6 @@ describe("POST /generate — lead/client column population", () => {
       .send({
         type: "email",
         variables,
-        runId: "run-1",
       })
       .expect(200);
 
