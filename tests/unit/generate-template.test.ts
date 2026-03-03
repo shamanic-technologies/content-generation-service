@@ -16,8 +16,8 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 // Mock auth middleware
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
-    req.orgId = "org-internal-123";
-    req.externalOrgId = req.headers["x-org-id"] || "org_test";
+    req.orgId = req.headers["x-org-id"] || "org-internal-123";
+    req.userId = req.headers["x-user-id"] || "user-internal-456";
     next();
   },
 }));
@@ -47,15 +47,13 @@ vi.mock("../../src/db/index.js", () => ({
 
 vi.mock("../../src/db/schema.js", () => ({
   emailGenerations: { id: { name: "id" } },
-  prompts: { appId: { name: "app_id" }, type: { name: "type" } },
+  prompts: { orgId: { name: "org_id" }, type: { name: "type" } },
 }));
 
-const mockGetByokKey = vi.fn().mockResolvedValue("fake-anthropic-key");
-const mockGetAppKey = vi.fn().mockResolvedValue("fake-app-key");
+const mockDecryptKey = vi.fn().mockResolvedValue({ key: "fake-anthropic-key", keySource: "platform" as const });
 
 vi.mock("../../src/lib/key-client.js", () => ({
-  getByokKey: (...args: unknown[]) => mockGetByokKey(...args),
-  getAppKey: (...args: unknown[]) => mockGetAppKey(...args),
+  decryptKey: (...args: unknown[]) => mockDecryptKey(...args),
 }));
 
 // Mock anthropic client — capture what prompt was sent
@@ -91,7 +89,7 @@ describe("POST /generate (template-based)", () => {
     mockCreateRun.mockResolvedValue({ id: "run-456" });
     mockPromptFindFirst.mockResolvedValue({
       id: "prompt-1",
-      appId: "my-app",
+      orgId: "org-internal-123",
       type: "email",
       prompt: "Write an email.\n\n## Recipient\n{{recipientInfo}}\n\n## Sender\n{{senderInfo}}",
       variables: ["recipientInfo", "senderInfo"],
@@ -105,15 +103,14 @@ describe("POST /generate (template-based)", () => {
   it("looks up stored prompt and passes template + variables to generateFromTemplate", async () => {
     const res = await request(app)
       .post("/generate")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({
-        appId: "my-app",
         type: "email",
         variables: {
           recipientInfo: "Name: John Doe\nCompany: Acme Corp",
           senderInfo: "Name: MyBrand\nURL: https://mybrand.com",
         },
-        keyMode: "byok",
         runId: "run-parent-1",
       })
       .expect(200);
@@ -123,7 +120,6 @@ describe("POST /generate (template-based)", () => {
     expect(res.body.sequence[0].bodyText).toBe("Test body");
     expect(res.body.id).toBe("gen-789");
 
-    // Verify generateFromTemplate was called with the stored prompt template + variables
     expect(mockGenerateFromTemplate).toHaveBeenCalledWith(
       "fake-anthropic-key",
       {
@@ -137,17 +133,16 @@ describe("POST /generate (template-based)", () => {
     );
   });
 
-  it("returns 404 when no prompt found for app + type", async () => {
+  it("returns 404 when no prompt found for org + type", async () => {
     mockPromptFindFirst.mockResolvedValue(null);
 
     const res = await request(app)
       .post("/generate")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({
-        appId: "unknown-app",
         type: "email",
         variables: {},
-        keyMode: "byok",
         runId: "run-1",
       })
       .expect(404);
@@ -158,20 +153,20 @@ describe("POST /generate (template-based)", () => {
   it("returns 400 when required fields are missing", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Org-Id", "org_test")
-      .send({ appId: "my-app" }) // missing type, variables, runId
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
+      .send({})
       .expect(400);
   });
 
   it("works with optional fields (brandId, campaignId, apolloEnrichmentId)", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({
-        appId: "my-app",
         type: "email",
         variables: { recipientInfo: "test", senderInfo: "test" },
-        keyMode: "byok",
         runId: "run-1",
         brandId: "brand-1",
         campaignId: "campaign-1",
@@ -180,62 +175,27 @@ describe("POST /generate (template-based)", () => {
       .expect(200);
   });
 
-  it("uses getByokKey when keyMode is byok", async () => {
+  it("calls decryptKey with correct parameters", async () => {
     await request(app)
       .post("/generate")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({
-        appId: "my-app",
         type: "email",
         variables: { recipientInfo: "test", senderInfo: "test" },
-        keyMode: "byok",
         runId: "run-1",
       })
       .expect(200);
 
-    expect(mockGetByokKey).toHaveBeenCalledWith("org_test", "anthropic", { callerMethod: "POST", callerPath: "/generate" });
-    expect(mockGetAppKey).not.toHaveBeenCalled();
-  });
-
-  it("uses getAppKey when keyMode is app", async () => {
-    await request(app)
-      .post("/generate")
-      .set("X-Org-Id", "org_test")
-      .send({
-        appId: "my-app",
-        type: "email",
-        variables: { recipientInfo: "test", senderInfo: "test" },
-        keyMode: "app",
-        runId: "run-1",
-      })
-      .expect(200);
-
-    expect(mockGetAppKey).toHaveBeenCalledWith("my-app", "anthropic", { callerMethod: "POST", callerPath: "/generate" });
-    expect(mockGetByokKey).not.toHaveBeenCalled();
-  });
-
-  it("returns 400 for invalid keyMode", async () => {
-    const res = await request(app)
-      .post("/generate")
-      .set("X-Org-Id", "org_test")
-      .send({
-        appId: "my-app",
-        type: "email",
-        variables: { recipientInfo: "test", senderInfo: "test" },
-        keyMode: "invalid",
-        runId: "run-1",
-      })
-      .expect(400);
-
-    expect(res.body.error).toBeDefined();
+    expect(mockDecryptKey).toHaveBeenCalledWith("anthropic", "org-internal-123", "user-internal-456", { callerMethod: "POST", callerPath: "/generate" });
   });
 
   it("accepts array and object variable values (regression: windmill sends non-strings)", async () => {
     const res = await request(app)
       .post("/generate")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({
-        appId: "my-app",
         type: "email",
         variables: {
           recipientInfo: "Name: John",
@@ -244,7 +204,6 @@ describe("POST /generate (template-based)", () => {
           searchParams: { qKeywords: "blockchain OR web3" },
           tags: ["sales", "outreach"],
         },
-        keyMode: "byok",
         runId: "run-1",
       })
       .expect(200);

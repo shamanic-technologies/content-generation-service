@@ -5,8 +5,8 @@ import request from "supertest";
 // Mock auth middleware
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
-    req.orgId = "org-internal-123";
-    req.externalOrgId = req.headers["x-org-id"] || "org_test";
+    req.orgId = req.headers["x-org-id"] || "org-internal-123";
+    req.userId = req.headers["x-user-id"] || "user-internal-456";
     next();
   },
 }));
@@ -41,7 +41,7 @@ vi.mock("../../src/db/index.js", () => ({
 }));
 
 vi.mock("../../src/db/schema.js", () => ({
-  prompts: { appId: { name: "app_id" }, type: { name: "type" } },
+  prompts: { orgId: { name: "org_id" }, type: { name: "type" } },
 }));
 
 function createTestApp() {
@@ -64,7 +64,7 @@ describe("PUT /prompts", () => {
     mockFindFirst.mockResolvedValue(null);
     mockInsertReturning.mockResolvedValue([{
       id: "prompt-1",
-      appId: "my-app",
+      orgId: "org-internal-123",
       type: "email",
       prompt: "Write an email to {{recipient}}",
       variables: ["recipient"],
@@ -74,9 +74,9 @@ describe("PUT /prompts", () => {
 
     const res = await request(app)
       .put("/prompts")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({
-        appId: "my-app",
         type: "email",
         prompt: "Write an email to {{recipient}}",
         variables: ["recipient"],
@@ -84,7 +84,7 @@ describe("PUT /prompts", () => {
       .expect(200);
 
     expect(res.body.id).toBe("prompt-1");
-    expect(res.body.appId).toBe("my-app");
+    expect(res.body.orgId).toBe("org-internal-123");
     expect(res.body.type).toBe("email");
     expect(res.body.variables).toEqual(["recipient"]);
   });
@@ -92,14 +92,14 @@ describe("PUT /prompts", () => {
   it("updates an existing prompt", async () => {
     mockFindFirst.mockResolvedValue({
       id: "prompt-1",
-      appId: "my-app",
+      orgId: "org-internal-123",
       type: "email",
       prompt: "old prompt",
       variables: ["old"],
     });
     mockUpdateReturning.mockResolvedValue([{
       id: "prompt-1",
-      appId: "my-app",
+      orgId: "org-internal-123",
       type: "email",
       prompt: "new prompt with {{newVar}}",
       variables: ["newVar"],
@@ -109,9 +109,9 @@ describe("PUT /prompts", () => {
 
     const res = await request(app)
       .put("/prompts")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({
-        appId: "my-app",
         type: "email",
         prompt: "new prompt with {{newVar}}",
         variables: ["newVar"],
@@ -124,8 +124,9 @@ describe("PUT /prompts", () => {
   it("returns 400 for missing required fields", async () => {
     await request(app)
       .put("/prompts")
-      .set("X-Org-Id", "org_test")
-      .send({ appId: "my-app" }) // missing type, prompt, variables
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
+      .send({}) // missing type, prompt, variables
       .expect(400);
   });
 });
@@ -143,7 +144,7 @@ describe("GET /prompts", () => {
   it("returns stored prompt", async () => {
     mockFindFirst.mockResolvedValue({
       id: "prompt-1",
-      appId: "my-app",
+      orgId: "org-internal-123",
       type: "email",
       prompt: "Write an email to {{recipient}}",
       variables: ["recipient"],
@@ -152,8 +153,9 @@ describe("GET /prompts", () => {
     });
 
     const res = await request(app)
-      .get("/prompts?appId=my-app&type=email")
-      .set("X-Org-Id", "org_test")
+      .get("/prompts?type=email")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .expect(200);
 
     expect(res.body.prompt).toBe("Write an email to {{recipient}}");
@@ -164,15 +166,17 @@ describe("GET /prompts", () => {
     mockFindFirst.mockResolvedValue(null);
 
     await request(app)
-      .get("/prompts?appId=unknown&type=email")
-      .set("X-Org-Id", "org_test")
+      .get("/prompts?type=email")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .expect(404);
   });
 
-  it("returns 400 when appId or type missing", async () => {
+  it("returns 400 when type missing", async () => {
     await request(app)
-      .get("/prompts?appId=my-app")
-      .set("X-Org-Id", "org_test")
+      .get("/prompts")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .expect(400);
   });
 });

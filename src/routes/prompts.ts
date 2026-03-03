@@ -8,7 +8,7 @@ import { UpsertPromptRequestSchema } from "../schemas.js";
 const router = Router();
 
 /**
- * PUT /prompts — Upsert a prompt template for an app (idempotent)
+ * PUT /prompts — Upsert a prompt template for an org (idempotent)
  */
 router.put("/prompts", serviceAuth, async (req: AuthenticatedRequest, res) => {
   try {
@@ -17,11 +17,11 @@ router.put("/prompts", serviceAuth, async (req: AuthenticatedRequest, res) => {
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
 
-    const { appId, type, prompt, variables } = parsed.data;
+    const { type, prompt, variables } = parsed.data;
 
-    // Upsert: insert or update on (appId, type) conflict
+    // Upsert: insert or update on (orgId, type) conflict
     const existing = await db.query.prompts.findFirst({
-      where: and(eq(prompts.appId, appId), eq(prompts.type, type)),
+      where: and(eq(prompts.orgId, req.orgId!), eq(prompts.type, type)),
     });
 
     let result;
@@ -29,18 +29,18 @@ router.put("/prompts", serviceAuth, async (req: AuthenticatedRequest, res) => {
       [result] = await db
         .update(prompts)
         .set({ prompt, variables, updatedAt: new Date() })
-        .where(and(eq(prompts.appId, appId), eq(prompts.type, type)))
+        .where(and(eq(prompts.orgId, req.orgId!), eq(prompts.type, type)))
         .returning();
     } else {
       [result] = await db
         .insert(prompts)
-        .values({ appId, type, prompt, variables })
+        .values({ orgId: req.orgId!, type, prompt, variables })
         .returning();
     }
 
     res.json({
       id: result.id,
-      appId: result.appId,
+      orgId: result.orgId,
       type: result.type,
       variables: result.variables,
       createdAt: result.createdAt.toISOString(),
@@ -53,27 +53,27 @@ router.put("/prompts", serviceAuth, async (req: AuthenticatedRequest, res) => {
 });
 
 /**
- * GET /prompts?appId&type — Get a stored prompt template
+ * GET /prompts?type — Get a stored prompt template
  */
 router.get("/prompts", serviceAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const { appId, type } = req.query as { appId?: string; type?: string };
+    const { type } = req.query as { type?: string };
 
-    if (!appId || !type) {
-      return res.status(400).json({ error: "appId and type query params required" });
+    if (!type) {
+      return res.status(400).json({ error: "type query param required" });
     }
 
     const result = await db.query.prompts.findFirst({
-      where: and(eq(prompts.appId, appId), eq(prompts.type, type)),
+      where: and(eq(prompts.orgId, req.orgId!), eq(prompts.type, type)),
     });
 
     if (!result) {
-      return res.status(404).json({ error: `No prompt found for appId=${appId}, type=${type}` });
+      return res.status(404).json({ error: `No prompt found for type=${type}` });
     }
 
     res.json({
       id: result.id,
-      appId: result.appId,
+      orgId: result.orgId,
       type: result.type,
       prompt: result.prompt,
       variables: result.variables,

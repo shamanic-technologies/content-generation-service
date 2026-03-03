@@ -9,11 +9,16 @@ extendZodWithOpenApi(z);
 export const registry = new OpenAPIRegistry();
 
 // ---------------------------------------------------------------------------
-// Shared header param
+// Shared header params
 // ---------------------------------------------------------------------------
 const OrgIdHeader = registry.registerParameter(
   "OrgId",
   z.string().openapi({ param: { name: "X-Org-Id", in: "header" } })
+);
+
+const UserIdHeader = registry.registerParameter(
+  "UserId",
+  z.string().openapi({ param: { name: "X-User-Id", in: "header" } })
 );
 
 // ---------------------------------------------------------------------------
@@ -51,13 +56,12 @@ registry.registerPath({
 });
 
 // ---------------------------------------------------------------------------
-// PUT /prompts — Upsert a prompt template for an app
+// PUT /prompts — Upsert a prompt template for an org
 // ---------------------------------------------------------------------------
 export const UpsertPromptRequestSchema = registry.register(
   "UpsertPromptRequest",
   z
     .object({
-      appId: z.string(),
       type: z.string().describe("Prompt type, e.g. 'email' or 'calendar'"),
       prompt: z.string().describe("Prompt template text with {{variable}} placeholders"),
       variables: z.array(z.string()).describe("List of expected variable names used in the prompt"),
@@ -70,7 +74,7 @@ const UpsertPromptResponseSchema = registry.register(
   z
     .object({
       id: z.string(),
-      appId: z.string(),
+      orgId: z.string(),
       type: z.string(),
       variables: z.array(z.string()),
       createdAt: z.string(),
@@ -83,9 +87,9 @@ registry.registerPath({
   method: "put",
   path: "/prompts",
   tags: ["Prompts"],
-  summary: "Register or update a prompt template for an app (idempotent)",
+  summary: "Register or update a prompt template for an org (idempotent)",
   request: {
-    headers: z.object({ "x-org-id": z.string() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string() }),
     body: {
       required: true,
       content: { "application/json": { schema: UpsertPromptRequestSchema } },
@@ -110,10 +114,8 @@ export const GenerateRequestSchema = registry.register(
   "GenerateRequest",
   z
     .object({
-      appId: z.string(),
       type: z.string().describe("Which stored prompt to use, e.g. 'email' or 'calendar'"),
       variables: z.record(z.string(), z.unknown()).describe("Variable values to substitute into the prompt template. Non-string values (arrays, objects) are coerced to strings."),
-      keyMode: z.enum(["byok", "app"]),
       // Tracking / linking
       runId: z.string(),
       brandId: z.string().optional(),
@@ -153,7 +155,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Generate content using a stored prompt template with variable substitution",
   request: {
-    headers: z.object({ "x-org-id": z.string() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string() }),
     body: {
       required: true,
       content: { "application/json": { schema: GenerateRequestSchema } },
@@ -173,14 +175,14 @@ registry.registerPath({
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     404: {
-      description: "Prompt not found for this app + type",
+      description: "Prompt not found for this org + type",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },
 });
 
 // ---------------------------------------------------------------------------
-// GET /generations?runId&campaignId&appId&brandId
+// GET /generations?runId&campaignId&brandId
 // ---------------------------------------------------------------------------
 const GenerationsListResponseSchema = registry.register(
   "GenerationsListResponse",
@@ -197,11 +199,10 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "List generations with filters",
   request: {
-    headers: z.object({ "x-org-id": z.string() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string() }),
     query: z.object({
       runId: z.string().optional(),
       campaignId: z.string().optional(),
-      appId: z.string().optional(),
       brandId: z.string().optional(),
     }),
   },
@@ -237,7 +238,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Get generation by enrichment ID",
   request: {
-    headers: z.object({ "x-org-id": z.string() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string() }),
     params: z.object({ apolloEnrichmentId: z.string() }),
   },
   responses: {
@@ -263,7 +264,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Get generation by lead-service correlation ID",
   request: {
-    headers: z.object({ "x-org-id": z.string() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string() }),
     params: z.object({ leadId: z.string() }),
   },
   responses: {
@@ -287,12 +288,10 @@ export const GenerateContentRequestSchema = registry.register(
   "GenerateContentRequest",
   z
     .object({
-      appId: z.string(),
       prompt: z.string(),
       variables: z.array(z.string()).optional(),
       includeFooter: z.boolean().optional().default(false),
       includeAiDisclaimer: z.boolean().optional().default(false).describe("When true, appends a small AI-generated disclaimer to the email body"),
-      keyMode: z.enum(["byok", "app"]),
       parentRunId: z.string().optional(),
       workflowName: z.string().optional(),
     })
@@ -319,7 +318,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Generate email content from a free-text prompt",
   request: {
-    headers: z.object({ "x-org-id": z.string() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string() }),
     body: {
       required: true,
       content: { "application/json": { schema: GenerateContentRequestSchema } },
@@ -348,9 +347,7 @@ export const GenerateCalendarRequestSchema = registry.register(
   "GenerateCalendarRequest",
   z
     .object({
-      appId: z.string(),
       prompt: z.string(),
-      keyMode: z.enum(["byok", "app"]),
       parentRunId: z.string().optional(),
       workflowName: z.string().optional(),
     })
@@ -377,7 +374,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Generate calendar event fields from a free-text prompt",
   request: {
-    headers: z.object({ "x-org-id": z.string() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string() }),
     body: {
       required: true,
       content: { "application/json": { schema: GenerateCalendarRequestSchema } },
@@ -407,7 +404,6 @@ export const StatsRequestSchema = registry.register(
   z
     .object({
       runIds: z.array(z.string()).optional(),
-      appId: z.string().optional(),
       brandId: z.string().optional(),
       campaignId: z.string().optional(),
     })
@@ -431,7 +427,7 @@ registry.registerPath({
   tags: ["Stats"],
   summary: "Get aggregated stats by filters",
   request: {
-    headers: z.object({ "x-org-id": z.string() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string() }),
     body: {
       required: true,
       content: { "application/json": { schema: StatsRequestSchema } },
@@ -458,7 +454,6 @@ export const StatsByModelRequestSchema = registry.register(
     .object({
       runIds: z.array(z.string()).optional(),
       orgId: z.string().optional(),
-      appId: z.string().optional(),
       brandId: z.string().optional(),
       campaignId: z.string().optional(),
     })

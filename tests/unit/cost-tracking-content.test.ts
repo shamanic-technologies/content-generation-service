@@ -24,8 +24,8 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 // Mock auth middleware
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
-    req.orgId = "org-internal-123";
-    req.externalOrgId = req.headers["x-org-id"] || "org_test";
+    req.orgId = req.headers["x-org-id"] || "org-internal-123";
+    req.userId = req.headers["x-user-id"] || "user-internal-456";
     next();
   },
 }));
@@ -47,8 +47,7 @@ vi.mock("../../src/db/schema.js", () => ({
 
 // Mock key-client
 vi.mock("../../src/lib/key-client.js", () => ({
-  getByokKey: vi.fn().mockResolvedValue("fake-key"),
-  getAppKey: vi.fn().mockResolvedValue("fake-key"),
+  decryptKey: vi.fn().mockResolvedValue({ key: "fake-key", keySource: "platform" as const }),
 }));
 
 // Mock content-client
@@ -83,15 +82,11 @@ function createTestApp() {
 }
 
 const CONTENT_BODY = {
-  appId: "my-app",
   prompt: "Write an email",
-  keyMode: "byok" as const,
 };
 
 const CALENDAR_BODY = {
-  appId: "my-app",
   prompt: "Generate calendar event",
-  keyMode: "byok" as const,
 };
 
 describe("Content generation cost tracking", () => {
@@ -117,7 +112,8 @@ describe("Content generation cost tracking", () => {
 
     const res = await request(app)
       .post("/generate/content")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send(CONTENT_BODY)
       .expect(500);
 
@@ -133,7 +129,8 @@ describe("Content generation cost tracking", () => {
 
     const res = await request(app)
       .post("/generate/content")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send(CONTENT_BODY)
       .expect(500);
 
@@ -145,7 +142,8 @@ describe("Content generation cost tracking", () => {
   it("should use anthropic-sonnet-4.6 cost names for /generate/content", async () => {
     await request(app)
       .post("/generate/content")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send(CONTENT_BODY)
       .expect(200);
 
@@ -159,7 +157,8 @@ describe("Content generation cost tracking", () => {
   it("should post raw token quantities for /generate/content", async () => {
     await request(app)
       .post("/generate/content")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send(CONTENT_BODY)
       .expect(200);
 
@@ -172,6 +171,20 @@ describe("Content generation cost tracking", () => {
     expect(Number.isInteger(inputCost.quantity)).toBe(true);
   });
 
+  it("should include costSource on each cost item", async () => {
+    await request(app)
+      .post("/generate/content")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
+      .send(CONTENT_BODY)
+      .expect(200);
+
+    const [, costItems] = mockAddCosts.mock.calls[0];
+    for (const item of costItems) {
+      expect(item.costSource).toBe("platform");
+    }
+  });
+
   // ─── /generate/calendar ────────────────────────────────────────────────────
 
   it("should return 500 when createRun fails for /generate/calendar", async () => {
@@ -181,7 +194,8 @@ describe("Content generation cost tracking", () => {
 
     const res = await request(app)
       .post("/generate/calendar")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send(CALENDAR_BODY)
       .expect(500);
 
@@ -197,7 +211,8 @@ describe("Content generation cost tracking", () => {
 
     const res = await request(app)
       .post("/generate/calendar")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send(CALENDAR_BODY)
       .expect(500);
 
@@ -209,7 +224,8 @@ describe("Content generation cost tracking", () => {
   it("should use anthropic-sonnet-4.6 cost names for /generate/calendar", async () => {
     await request(app)
       .post("/generate/calendar")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send(CALENDAR_BODY)
       .expect(200);
 

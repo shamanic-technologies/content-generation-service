@@ -37,7 +37,6 @@ describe("runs-client retry logic", () => {
 
     const result = await createRun({
       orgId: "org_1",
-      appId: "app-1",
       serviceName: "test",
       taskName: "test",
     });
@@ -54,7 +53,7 @@ describe("runs-client retry logic", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const result = await addCosts("run-1", [
-      { costName: "anthropic-sonnet-4.6-tokens-input", quantity: 100 },
+      { costName: "anthropic-sonnet-4.6-tokens-input", quantity: 100, costSource: "platform" as const },
     ]);
 
     expect(result).toEqual({ costs: [] });
@@ -104,7 +103,7 @@ describe("runs-client retry logic", () => {
     );
 
     await expect(
-      addCosts("run-1", [{ costName: "bad", quantity: 1 }])
+      addCosts("run-1", [{ costName: "bad", quantity: 1, costSource: "platform" as const }])
     ).rejects.toThrow("runs-service POST /v1/runs/run-1/costs failed: 400");
 
     expect(mockFetch).toHaveBeenCalledTimes(1);

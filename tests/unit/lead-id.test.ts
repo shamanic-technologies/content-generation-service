@@ -16,8 +16,8 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 // Mock auth middleware
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
-    req.orgId = "org-internal-123";
-    req.externalOrgId = req.headers["x-org-id"] || "org_test";
+    req.orgId = req.headers["x-org-id"] || "org-internal-123";
+    req.userId = req.headers["x-user-id"] || "user-internal-456";
     next();
   },
 }));
@@ -58,12 +58,11 @@ vi.mock("../../src/db/schema.js", () => ({
     idempotencyKey: { name: "idempotency_key" },
     leadId: { name: "lead_id" },
   },
-  prompts: { appId: { name: "app_id" }, type: { name: "type" } },
+  prompts: { orgId: { name: "org_id" }, type: { name: "type" } },
 }));
 
 vi.mock("../../src/lib/key-client.js", () => ({
-  getByokKey: vi.fn().mockResolvedValue("fake-anthropic-key"),
-  getAppKey: vi.fn().mockResolvedValue("fake-app-key"),
+  decryptKey: vi.fn().mockResolvedValue({ key: "fake-anthropic-key", keySource: "platform" as const }),
 }));
 
 vi.mock("../../src/lib/anthropic-client.js", () => ({
@@ -87,10 +86,8 @@ function createTestApp() {
 }
 
 const validBody = {
-  appId: "my-app",
   type: "email",
   variables: { recipientInfo: "John Doe" },
-  keyMode: "byok" as const,
   runId: "run-parent-1",
 };
 
@@ -104,7 +101,7 @@ describe("leadId support", () => {
     });
     mockPromptFindFirst.mockResolvedValue({
       id: "prompt-1",
-      appId: "my-app",
+      orgId: "org-internal-123",
       type: "email",
       prompt: "Write an email.\n\n{{recipientInfo}}",
       variables: ["recipientInfo"],
@@ -120,7 +117,8 @@ describe("leadId support", () => {
     it("stores leadId in DB when provided", async () => {
       await request(app)
         .post("/generate")
-        .set("X-Org-Id", "org_test")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
         .send({ ...validBody, leadId: "lead-abc-123" })
         .expect(200);
 
@@ -131,7 +129,8 @@ describe("leadId support", () => {
     it("stores leadId as null when not provided (backward compat)", async () => {
       await request(app)
         .post("/generate")
-        .set("X-Org-Id", "org_test")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
         .send(validBody)
         .expect(200);
 
@@ -152,7 +151,8 @@ describe("leadId support", () => {
 
       const res = await request(app)
         .get("/generations/by-lead/lead-abc-123")
-        .set("X-Org-Id", "org_test")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
         .expect(200);
 
       expect(res.body.generation.id).toBe("gen-found");
@@ -164,7 +164,8 @@ describe("leadId support", () => {
 
       const res = await request(app)
         .get("/generations/by-lead/lead-nonexistent")
-        .set("X-Org-Id", "org_test")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
         .expect(404);
 
       expect(res.body.error).toBe("Generation not found");

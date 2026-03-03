@@ -16,8 +16,8 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 // Mock auth middleware
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
-    req.orgId = "org-internal-123";
-    req.externalOrgId = req.headers["x-org-id"] || "org_test";
+    req.orgId = req.headers["x-org-id"] || "org-internal-123";
+    req.userId = req.headers["x-user-id"] || "user-internal-456";
     next();
   },
 }));
@@ -38,12 +38,10 @@ vi.mock("../../src/db/schema.js", () => ({
 }));
 
 // Mock key-client
-const mockGetByokKey = vi.fn().mockResolvedValue("fake-byok-key");
-const mockGetAppKey = vi.fn().mockResolvedValue("fake-app-key");
+const mockDecryptKey = vi.fn().mockResolvedValue({ key: "fake-anthropic-key", keySource: "platform" as const });
 
 vi.mock("../../src/lib/key-client.js", () => ({
-  getByokKey: (...args: unknown[]) => mockGetByokKey(...args),
-  getAppKey: (...args: unknown[]) => mockGetAppKey(...args),
+  decryptKey: (...args: unknown[]) => mockDecryptKey(...args),
 }));
 
 // Mock content-client
@@ -83,11 +81,10 @@ describe("POST /generate/calendar", () => {
   it("should return generated calendar event fields", async () => {
     const res = await request(app)
       .post("/generate/calendar")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({
-        appId: "polaritycourse",
         prompt: "Generate calendar event for a webinar about sexual polarity with Kevin & Maria",
-        keyMode: "app",
       })
       .expect(200);
 
@@ -99,44 +96,25 @@ describe("POST /generate/calendar", () => {
     expect(res.body.tokensOutput).toBe(200);
   });
 
-  it("should use getAppKey when keyMode is app", async () => {
+  it("should call decryptKey with correct parameters", async () => {
     await request(app)
       .post("/generate/calendar")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({
-        appId: "polaritycourse",
         prompt: "Generate calendar event",
-        keyMode: "app",
       })
       .expect(200);
 
-    expect(mockGetAppKey).toHaveBeenCalledWith("polaritycourse", "anthropic", { callerMethod: "POST", callerPath: "/generate/calendar" });
-    expect(mockGetByokKey).not.toHaveBeenCalled();
-  });
-
-  it("should use getByokKey when keyMode is byok", async () => {
-    await request(app)
-      .post("/generate/calendar")
-      .set("X-Org-Id", "org_test")
-      .send({
-        appId: "polaritycourse",
-        prompt: "Generate calendar event",
-        keyMode: "byok",
-      })
-      .expect(200);
-
-    expect(mockGetByokKey).toHaveBeenCalledWith("org_test", "anthropic", { callerMethod: "POST", callerPath: "/generate/calendar" });
-    expect(mockGetAppKey).not.toHaveBeenCalled();
+    expect(mockDecryptKey).toHaveBeenCalledWith("anthropic", "org-internal-123", "user-internal-456", { callerMethod: "POST", callerPath: "/generate/calendar" });
   });
 
   it("should return 400 for missing required fields", async () => {
     const res = await request(app)
       .post("/generate/calendar")
-      .set("X-Org-Id", "org_test")
-      .send({
-        appId: "polaritycourse",
-        // missing prompt and keyMode
-      })
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
+      .send({})
       .expect(400);
 
     expect(res.body.error).toBeDefined();
@@ -145,11 +123,10 @@ describe("POST /generate/calendar", () => {
   it("should create run with calendar-generation task name", async () => {
     await request(app)
       .post("/generate/calendar")
-      .set("X-Org-Id", "org_test")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
       .send({
-        appId: "polaritycourse",
         prompt: "Generate calendar event",
-        keyMode: "app",
         parentRunId: "parent-run-xyz",
       })
       .expect(200);

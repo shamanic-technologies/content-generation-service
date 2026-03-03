@@ -21,8 +21,8 @@ vi.mock("../../src/lib/runs-client.js", () => ({
 // Mock auth middleware
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
-    req.orgId = "org-internal-123";
-    req.externalOrgId = req.headers["x-org-id"] || "org_test";
+    req.orgId = req.headers["x-org-id"] || "org-internal-123";
+    req.userId = req.headers["x-user-id"] || "user-internal-456";
     next();
   },
 }));
@@ -51,7 +51,7 @@ vi.mock("../../src/db/index.js", () => ({
       prompts: {
         findFirst: vi.fn().mockResolvedValue({
           id: "prompt-1",
-          appId: "app-1",
+          orgId: "org-internal-123",
           type: "email",
           prompt: "Write an email to {{recipientName}}",
           variables: ["recipientName"],
@@ -64,12 +64,11 @@ vi.mock("../../src/db/index.js", () => ({
 vi.mock("../../src/db/schema.js", () => ({
   emailGenerations: { id: { name: "id" }, orgId: { name: "org_id" }, idempotencyKey: { name: "idempotency_key" } },
   contentGenerations: { id: { name: "id" } },
-  prompts: { appId: { name: "app_id" }, type: { name: "type" } },
+  prompts: { orgId: { name: "org_id" }, type: { name: "type" } },
 }));
 
 vi.mock("../../src/lib/key-client.js", () => ({
-  getByokKey: vi.fn().mockResolvedValue("fake-anthropic-key"),
-  getAppKey: vi.fn().mockResolvedValue("fake-app-key"),
+  decryptKey: vi.fn().mockResolvedValue({ key: "fake-anthropic-key", keySource: "platform" as const }),
 }));
 
 vi.mock("../../src/lib/anthropic-client.js", () => ({
@@ -131,12 +130,11 @@ describe("workflowName propagation", () => {
     it("should pass workflowName to createRun when provided", async () => {
       await request(app)
         .post("/generate")
-        .set("X-Org-Id", "org_test")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
         .send({
-          appId: "app-1",
           type: "email",
           variables: { recipientName: "John" },
-          keyMode: "byok",
           runId: "run-parent-123",
           workflowName: "cold-email-outreach",
         })
@@ -152,12 +150,11 @@ describe("workflowName propagation", () => {
     it("should store workflowName in the database", async () => {
       await request(app)
         .post("/generate")
-        .set("X-Org-Id", "org_test")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
         .send({
-          appId: "app-1",
           type: "email",
           variables: { recipientName: "John" },
-          keyMode: "byok",
           runId: "run-parent-123",
           workflowName: "cold-email-outreach",
         })
@@ -173,12 +170,11 @@ describe("workflowName propagation", () => {
     it("should work without workflowName (optional)", async () => {
       await request(app)
         .post("/generate")
-        .set("X-Org-Id", "org_test")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
         .send({
-          appId: "app-1",
           type: "email",
           variables: { recipientName: "John" },
-          keyMode: "byok",
           runId: "run-parent-123",
         })
         .expect(200);
@@ -208,11 +204,10 @@ describe("workflowName propagation", () => {
     it("should pass workflowName to createRun", async () => {
       await request(app)
         .post("/generate/content")
-        .set("X-Org-Id", "org_test")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
         .send({
-          appId: "app-1",
           prompt: "Write a cold email",
-          keyMode: "byok",
           workflowName: "content-workflow",
         })
         .expect(200);
@@ -227,11 +222,10 @@ describe("workflowName propagation", () => {
     it("should store workflowName in the database", async () => {
       await request(app)
         .post("/generate/content")
-        .set("X-Org-Id", "org_test")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
         .send({
-          appId: "app-1",
           prompt: "Write a cold email",
-          keyMode: "byok",
           workflowName: "content-workflow",
         })
         .expect(200);
@@ -256,11 +250,10 @@ describe("workflowName propagation", () => {
     it("should pass workflowName to createRun", async () => {
       await request(app)
         .post("/generate/calendar")
-        .set("X-Org-Id", "org_test")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
         .send({
-          appId: "app-1",
           prompt: "Schedule a team sync",
-          keyMode: "byok",
           workflowName: "calendar-workflow",
         })
         .expect(200);
@@ -275,11 +268,10 @@ describe("workflowName propagation", () => {
     it("should store workflowName in the database", async () => {
       await request(app)
         .post("/generate/calendar")
-        .set("X-Org-Id", "org_test")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
         .send({
-          appId: "app-1",
           prompt: "Schedule a team sync",
-          keyMode: "byok",
           workflowName: "calendar-workflow",
         })
         .expect(200);

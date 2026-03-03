@@ -1,41 +1,11 @@
 import { pgTable, uuid, text, timestamp, uniqueIndex, index, integer, jsonb, boolean } from "drizzle-orm/pg-core";
 
-// Local users table (maps external user IDs to internal UUIDs)
-export const users = pgTable(
-  "users",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    externalUserId: text("external_user_id").notNull().unique(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    uniqueIndex("idx_users_external_id").on(table.externalUserId),
-  ]
-);
-
-// Local orgs table (maps external org IDs to internal UUIDs)
-export const orgs = pgTable(
-  "orgs",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    externalOrgId: text("external_org_id").notNull().unique(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    uniqueIndex("idx_orgs_external_id").on(table.externalOrgId),
-  ]
-);
-
 // Email generations
 export const emailGenerations = pgTable(
   "email_generations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    orgId: uuid("org_id")
-      .notNull()
-      .references(() => orgs.id, { onDelete: "cascade" }),
+    orgId: uuid("org_id").notNull(),
     runId: text("run_id").notNull(),
     apolloEnrichmentId: text("apollo_enrichment_id"),
     promptType: text("prompt_type"), // which stored prompt was used
@@ -55,7 +25,6 @@ export const emailGenerations = pgTable(
     variablesRaw: jsonb("variables_raw"),
 
     // External references
-    appId: text("app_id").notNull(),
     brandId: text("brand_id").notNull(),
     campaignId: text("campaign_id").notNull(),
 
@@ -98,12 +67,12 @@ export const emailGenerations = pgTable(
   ]
 );
 
-// Prompt templates (registered by apps at startup)
+// Prompt templates (registered by orgs at startup)
 export const prompts = pgTable(
   "prompts",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    appId: text("app_id").notNull(),
+    orgId: uuid("org_id").notNull(),
     type: text("type").notNull(), // "email" | "calendar" | custom types
     prompt: text("prompt").notNull(), // template text with {{variables}}
     variables: jsonb("variables").$type<string[]>().notNull().default([]), // expected variable names
@@ -111,7 +80,7 @@ export const prompts = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("idx_prompts_app_type").on(table.appId, table.type),
+    uniqueIndex("idx_prompts_org_type").on(table.orgId, table.type),
   ]
 );
 
@@ -120,12 +89,8 @@ export const contentGenerations = pgTable(
   "content_generations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    orgId: uuid("org_id")
-      .notNull()
-      .references(() => orgs.id, { onDelete: "cascade" }),
-    appId: text("app_id").notNull(),
+    orgId: uuid("org_id").notNull(),
     type: text("type").notNull(), // "email" | "calendar"
-    keyMode: text("key_mode").notNull(), // "byok" | "app"
 
     // Input
     prompt: text("prompt").notNull(),
@@ -162,14 +127,9 @@ export const contentGenerations = pgTable(
   },
   (table) => [
     index("idx_contentgen_org").on(table.orgId),
-    index("idx_contentgen_app").on(table.appId),
   ]
 );
 
-export type User = typeof users.$inferSelect;
-export type NewUser = typeof users.$inferInsert;
-export type Org = typeof orgs.$inferSelect;
-export type NewOrg = typeof orgs.$inferInsert;
 export type EmailGeneration = typeof emailGenerations.$inferSelect;
 export type NewEmailGeneration = typeof emailGenerations.$inferInsert;
 export type ContentGeneration = typeof contentGenerations.$inferSelect;

@@ -1,25 +1,11 @@
 import { db, sql } from "../../src/db/index.js";
-import { orgs, emailGenerations } from "../../src/db/schema.js";
+import { emailGenerations } from "../../src/db/schema.js";
 
 /**
  * Clean all test data from the database
  */
 export async function cleanTestData() {
   await db.delete(emailGenerations);
-  await db.delete(orgs);
-}
-
-/**
- * Insert a test org
- */
-export async function insertTestOrg(data: { externalOrgId?: string } = {}) {
-  const [org] = await db
-    .insert(orgs)
-    .values({
-      externalOrgId: data.externalOrgId || `test-org-${Date.now()}`,
-    })
-    .returning();
-  return org;
 }
 
 /**
@@ -32,7 +18,6 @@ export async function insertTestEmailGeneration(
     apolloEnrichmentId?: string;
     subject?: string;
     bodyText?: string;
-    appId?: string;
     brandId?: string;
     campaignId?: string;
   } = {}
@@ -45,7 +30,6 @@ export async function insertTestEmailGeneration(
       apolloEnrichmentId: data.apolloEnrichmentId || `test-enrichment-${Date.now()}`,
       subject: data.subject || "Test Subject",
       bodyText: data.bodyText || "Test body content",
-      appId: data.appId || "test-app",
       brandId: data.brandId || "test-brand",
       campaignId: data.campaignId || "test-campaign",
     })

@@ -4,7 +4,7 @@ import { db } from "../db/index.js";
 import { emailGenerations, prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { generateFromTemplate } from "../lib/anthropic-client.js";
-import { getByokKey, getAppKey } from "../lib/key-client.js";
+import { decryptKey } from "../lib/key-client.js";
 import { createRun, updateRun, addCosts } from "../lib/runs-client.js";
 import { GenerateRequestSchema, StatsRequestSchema } from "../schemas.js";
 
@@ -21,10 +21,8 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     }
 
     const {
-      appId,
       type,
       variables,
-      keyMode,
       runId,
       brandId,
       campaignId,
@@ -55,22 +53,20 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       }
     }
 
-    // Look up the stored prompt for this app + type
+    // Look up the stored prompt for this org + type
     const storedPrompt = await db.query.prompts.findFirst({
-      where: and(eq(prompts.appId, appId), eq(prompts.type, type)),
+      where: and(eq(prompts.orgId, req.orgId!), eq(prompts.type, type)),
     });
 
     if (!storedPrompt) {
       return res.status(404).json({
-        error: `No prompt found for appId=${appId}, type=${type}. Register one via PUT /prompts first.`,
+        error: `No prompt found for type=${type}. Register one via PUT /prompts first.`,
       });
     }
 
     // Get Anthropic API key
     const caller = { callerMethod: "POST", callerPath: "/generate" };
-    const anthropicApiKey = keyMode === "byok"
-      ? await getByokKey(req.externalOrgId!, "anthropic", caller)
-      : await getAppKey(appId, "anthropic", caller);
+    const { key: anthropicApiKey, keySource } = await decryptKey("anthropic", req.orgId!, req.userId!, caller);
 
     // Generate using the stored prompt + variable substitution
     const result = await generateFromTemplate(anthropicApiKey, {
@@ -91,7 +87,6 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         runId,
         apolloEnrichmentId: apolloEnrichmentId ?? null,
         promptType: type,
-        appId,
         brandId: brandId ?? "",
         campaignId: campaignId ?? "",
         variablesRaw: variables,
@@ -118,8 +113,8 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     // Track run + costs in runs-service
     try {
       const genRun = await createRun({
-        orgId: req.externalOrgId!,
-        appId,
+        orgId: req.orgId!,
+        userId: req.userId,
         brandId,
         campaignId,
         serviceName: "content-generation-service",
@@ -136,10 +131,10 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
 
       const costItems = [];
       if (result.tokensInput) {
-        costItems.push({ costName: "anthropic-sonnet-4.6-tokens-input", quantity: result.tokensInput });
+        costItems.push({ costName: "anthropic-sonnet-4.6-tokens-input", quantity: result.tokensInput, costSource: keySource });
       }
       if (result.tokensOutput) {
-        costItems.push({ costName: "anthropic-sonnet-4.6-tokens-output", quantity: result.tokensOutput });
+        costItems.push({ costName: "anthropic-sonnet-4.6-tokens-output", quantity: result.tokensOutput, costSource: keySource });
       }
       if (costItems.length > 0) {
         await addCosts(genRun.id, costItems);
@@ -171,25 +166,23 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
 
 /**
  * GET /generations - List generations with filters
- * Query params: runId, campaignId, appId, brandId (at least one required)
+ * Query params: runId, campaignId, brandId (at least one required)
  */
 router.get("/generations", serviceAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const { runId, campaignId, appId, brandId } = req.query as {
+    const { runId, campaignId, brandId } = req.query as {
       runId?: string;
       campaignId?: string;
-      appId?: string;
       brandId?: string;
     };
 
-    if (!runId && !campaignId && !appId && !brandId) {
-      return res.status(400).json({ error: "At least one filter required: runId, campaignId, appId, or brandId" });
+    if (!runId && !campaignId && !brandId) {
+      return res.status(400).json({ error: "At least one filter required: runId, campaignId, or brandId" });
     }
 
     const conditions: SQL[] = [eq(emailGenerations.orgId, req.orgId!)];
     if (runId) conditions.push(eq(emailGenerations.runId, runId));
     if (campaignId) conditions.push(eq(emailGenerations.campaignId, campaignId));
-    if (appId) conditions.push(eq(emailGenerations.appId, appId));
     if (brandId) conditions.push(eq(emailGenerations.brandId, brandId));
 
     const generations = await db.query.emailGenerations.findMany({
@@ -266,19 +259,18 @@ router.post("/stats", serviceAuth, async (req: AuthenticatedRequest, res) => {
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
 
-    const { runIds, appId, brandId, campaignId } = parsed.data;
+    const { runIds, brandId, campaignId } = parsed.data;
 
     const hasRunIds = Array.isArray(runIds) && runIds.length > 0;
 
-    if (!hasRunIds && !appId && !brandId && !campaignId) {
-      return res.status(400).json({ error: "At least one filter required: runIds, appId, brandId, or campaignId" });
+    if (!hasRunIds && !brandId && !campaignId) {
+      return res.status(400).json({ error: "At least one filter required: runIds, brandId, or campaignId" });
     }
 
     const conditions: SQL[] = [
       eq(emailGenerations.orgId, req.orgId!),
     ];
     if (hasRunIds) conditions.push(inArray(emailGenerations.runId, runIds!));
-    if (appId) conditions.push(eq(emailGenerations.appId, appId));
     if (brandId) conditions.push(eq(emailGenerations.brandId, brandId));
     if (campaignId) conditions.push(eq(emailGenerations.campaignId, campaignId));
 
