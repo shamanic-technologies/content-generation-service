@@ -54,14 +54,18 @@ export interface RunWithCosts extends Run {
   descendantRuns: DescendantRun[];
 }
 
-export interface CreateRunParams {
+/** Identity headers forwarded on every downstream call. */
+export interface IdentityHeaders {
   orgId: string;
+  userId: string;
+  runId?: string;
+}
+
+export interface CreateRunParams {
   serviceName: string;
   taskName: string;
-  userId?: string;
   brandId?: string;
   campaignId?: string;
-  parentRunId?: string;
   workflowName?: string;
 }
 
@@ -72,7 +76,6 @@ export interface CostItem {
 }
 
 export interface ListRunsParams {
-  orgId: string;
   userId?: string;
   brandId?: string;
   campaignId?: string;
@@ -87,7 +90,6 @@ export interface ListRunsParams {
 }
 
 export interface RunSummaryParams {
-  orgId: string;
   serviceName?: string;
   startedAfter?: string;
   startedBefore?: string;
@@ -117,14 +119,22 @@ async function sleep(ms: number): Promise<void> {
 
 async function runsRequest<T>(
   path: string,
-  options: { method?: string; body?: unknown } = {}
+  options: { method?: string; body?: unknown; identity?: IdentityHeaders } = {}
 ): Promise<T> {
-  const { method = "GET", body } = options;
+  const { method = "GET", body, identity } = options;
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-API-Key": RUNS_SERVICE_API_KEY,
   };
+
+  if (identity) {
+    headers["x-org-id"] = identity.orgId;
+    headers["x-user-id"] = identity.userId;
+    if (identity.runId) {
+      headers["x-run-id"] = identity.runId;
+    }
+  }
 
   let lastError: Error | undefined;
 
@@ -160,11 +170,13 @@ async function runsRequest<T>(
 
 /**
  * Create a new run in runs-service.
+ * Identity headers supply orgId, userId, and parentRunId (via x-run-id).
  */
-export async function createRun(params: CreateRunParams): Promise<Run> {
+export async function createRun(params: CreateRunParams, identity: IdentityHeaders): Promise<Run> {
   return runsRequest<Run>("/v1/runs", {
     method: "POST",
     body: params,
+    identity,
   });
 }
 
@@ -173,11 +185,13 @@ export async function createRun(params: CreateRunParams): Promise<Run> {
  */
 export async function updateRun(
   runId: string,
-  status: "completed" | "failed"
+  status: "completed" | "failed",
+  identity: IdentityHeaders
 ): Promise<Run> {
   return runsRequest<Run>(`/v1/runs/${runId}`, {
     method: "PATCH",
     body: { status },
+    identity,
   });
 }
 
@@ -187,29 +201,31 @@ export async function updateRun(
  */
 export async function addCosts(
   runId: string,
-  items: CostItem[]
+  items: CostItem[],
+  identity: IdentityHeaders
 ): Promise<{ costs: RunCost[] }> {
   return runsRequest<{ costs: RunCost[] }>(`/v1/runs/${runId}/costs`, {
     method: "POST",
     body: { items },
+    identity,
   });
 }
 
 /**
  * Get a single run with costs (including recursive children costs).
  */
-export async function getRun(runId: string): Promise<RunWithCosts> {
-  return runsRequest<RunWithCosts>(`/v1/runs/${runId}`);
+export async function getRun(runId: string, identity: IdentityHeaders): Promise<RunWithCosts> {
+  return runsRequest<RunWithCosts>(`/v1/runs/${runId}`, { identity });
 }
 
 /**
  * List runs with filters.
  */
 export async function listRuns(
-  params: ListRunsParams
+  params: ListRunsParams,
+  identity: IdentityHeaders
 ): Promise<{ runs: (Run & { ownCostInUsdCents: string })[]; limit: number; offset: number }> {
   const searchParams = new URLSearchParams();
-  searchParams.set("orgId", params.orgId);
   if (params.userId) searchParams.set("userId", params.userId);
   if (params.brandId) searchParams.set("brandId", params.brandId);
   if (params.campaignId) searchParams.set("campaignId", params.campaignId);
@@ -223,7 +239,8 @@ export async function listRuns(
   if (params.offset) searchParams.set("offset", String(params.offset));
 
   return runsRequest<{ runs: (Run & { ownCostInUsdCents: string })[]; limit: number; offset: number }>(
-    `/v1/runs?${searchParams.toString()}`
+    `/v1/runs?${searchParams.toString()}`,
+    { identity }
   );
 }
 
@@ -232,10 +249,11 @@ export async function listRuns(
  * Returns a Map of runId → RunWithCosts.
  */
 export async function getRunsBatch(
-  runIds: string[]
+  runIds: string[],
+  identity: IdentityHeaders
 ): Promise<Map<string, RunWithCosts>> {
   if (runIds.length === 0) return new Map();
-  const results = await Promise.all(runIds.map((id) => getRun(id)));
+  const results = await Promise.all(runIds.map((id) => getRun(id, identity)));
   return new Map(results.map((r) => [r.id, r]));
 }
 
@@ -243,16 +261,17 @@ export async function getRunsBatch(
  * Get aggregated cost summary.
  */
 export async function getRunSummary(
-  params: RunSummaryParams
+  params: RunSummaryParams,
+  identity: IdentityHeaders
 ): Promise<{ breakdown: SummaryBreakdown[] }> {
   const searchParams = new URLSearchParams();
-  searchParams.set("orgId", params.orgId);
   if (params.serviceName) searchParams.set("serviceName", params.serviceName);
   if (params.startedAfter) searchParams.set("startedAfter", params.startedAfter);
   if (params.startedBefore) searchParams.set("startedBefore", params.startedBefore);
   if (params.groupBy) searchParams.set("groupBy", params.groupBy);
 
   return runsRequest<{ breakdown: SummaryBreakdown[] }>(
-    `/v1/runs/summary?${searchParams.toString()}`
+    `/v1/runs/summary?${searchParams.toString()}`,
+    { identity }
   );
 }

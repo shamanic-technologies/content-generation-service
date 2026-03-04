@@ -143,6 +143,10 @@ describe("workflowName propagation", () => {
       expect(mockCreateRun).toHaveBeenCalledWith(
         expect.objectContaining({
           workflowName: "cold-email-outreach",
+        }),
+        expect.objectContaining({
+          orgId: "org-internal-123",
+          userId: "user-internal-456",
         })
       );
     });
@@ -180,6 +184,10 @@ describe("workflowName propagation", () => {
       expect(mockCreateRun).toHaveBeenCalledWith(
         expect.objectContaining({
           workflowName: undefined,
+        }),
+        expect.objectContaining({
+          orgId: "org-internal-123",
+          userId: "user-internal-456",
         })
       );
       expect(mockInsertValues[0]).toEqual(
@@ -213,6 +221,10 @@ describe("workflowName propagation", () => {
       expect(mockCreateRun).toHaveBeenCalledWith(
         expect.objectContaining({
           workflowName: "content-workflow",
+        }),
+        expect.objectContaining({
+          orgId: "org-internal-123",
+          userId: "user-internal-456",
         })
       );
     });
@@ -259,6 +271,10 @@ describe("workflowName propagation", () => {
       expect(mockCreateRun).toHaveBeenCalledWith(
         expect.objectContaining({
           workflowName: "calendar-workflow",
+        }),
+        expect.objectContaining({
+          orgId: "org-internal-123",
+          userId: "user-internal-456",
         })
       );
     });

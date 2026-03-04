@@ -121,7 +121,7 @@ describe("POST /generate/calendar", () => {
     expect(res.body.error).toBeDefined();
   });
 
-  it("should create run with calendar-generation task name and x-run-id as parentRunId", async () => {
+  it("should create run with calendar-generation task name and x-run-id as parentRunId via identity headers", async () => {
     await request(app)
       .post("/generate/calendar")
       .set("X-Org-Id", "org-internal-123")
@@ -136,7 +136,11 @@ describe("POST /generate/calendar", () => {
       expect.objectContaining({
         serviceName: "content-generation-service",
         taskName: "calendar-generation",
-        parentRunId: "parent-run-xyz",
+      }),
+      expect.objectContaining({
+        orgId: "org-internal-123",
+        userId: "user-internal-456",
+        runId: "parent-run-xyz",
       })
     );
   });

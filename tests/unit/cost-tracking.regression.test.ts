@@ -202,7 +202,7 @@ describe("Email generation cost tracking", () => {
     errorSpy.mockRestore();
   });
 
-  it("should create child run with x-run-id header as parentRunId", async () => {
+  it("should create child run with x-run-id header as parentRunId via identity headers", async () => {
     await request(app)
       .post("/generate")
       .set("X-Org-Id", "org-internal-123")
@@ -213,9 +213,13 @@ describe("Email generation cost tracking", () => {
 
     expect(mockCreateRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        parentRunId: "campaign-run-abc",
         serviceName: "content-generation-service",
         taskName: "single-generation",
+      }),
+      expect.objectContaining({
+        orgId: "org-internal-123",
+        userId: "user-internal-456",
+        runId: "campaign-run-abc",
       })
     );
   });
