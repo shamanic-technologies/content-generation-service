@@ -174,7 +174,7 @@ describe("POST /generate/content", () => {
     expect(res.body.error).toBeDefined();
   });
 
-  it("should pass x-run-id header as parentRunId to createRun", async () => {
+  it("should pass x-run-id header as parentRunId via identity headers to createRun", async () => {
     await request(app)
       .post("/generate/content")
       .set("X-Org-Id", "org-internal-123")
@@ -187,9 +187,13 @@ describe("POST /generate/content", () => {
 
     expect(mockCreateRun).toHaveBeenCalledWith(
       expect.objectContaining({
-        parentRunId: "parent-run-abc",
         serviceName: "content-generation-service",
         taskName: "content-generation",
+      }),
+      expect.objectContaining({
+        orgId: "org-internal-123",
+        userId: "user-internal-456",
+        runId: "parent-run-abc",
       })
     );
   });

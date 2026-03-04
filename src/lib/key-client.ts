@@ -11,9 +11,15 @@ export interface DecryptResult {
   keySource: "platform" | "org";
 }
 
-function buildHeaders(caller: CallerContext): Record<string, string> {
+function buildHeaders(
+  orgId: string,
+  userId: string,
+  caller: CallerContext
+): Record<string, string> {
   return {
     ...(KEY_SERVICE_API_KEY ? { "X-Api-Key": KEY_SERVICE_API_KEY } : {}),
+    "x-org-id": orgId,
+    "x-user-id": userId,
     "X-Caller-Service": "content-generation",
     "X-Caller-Method": caller.callerMethod,
     "X-Caller-Path": caller.callerPath,
@@ -22,7 +28,7 @@ function buildHeaders(caller: CallerContext): Record<string, string> {
 
 /**
  * Decrypt an API key from key-service.
- * Resolves the key for the given provider using org/user context.
+ * Resolves the key for the given provider using org/user context (via headers).
  * Returns the key and its source ("platform" or "org").
  */
 export async function decryptKey(
@@ -32,8 +38,8 @@ export async function decryptKey(
   caller: CallerContext
 ): Promise<DecryptResult> {
   const response = await fetch(
-    `${KEY_SERVICE_URL}/keys/${provider}/decrypt?orgId=${orgId}&userId=${userId}`,
-    { headers: buildHeaders(caller) }
+    `${KEY_SERVICE_URL}/keys/${provider}/decrypt`,
+    { headers: buildHeaders(orgId, userId, caller) }
   );
 
   if (!response.ok) {

@@ -32,14 +32,15 @@ router.post("/generate/content", serviceAuth, async (req: AuthenticatedRequest, 
     const result = await generateContent(apiKey, { prompt, variables, includeFooter, includeAiDisclaimer });
 
     // Create run in runs-service — MUST succeed or we fail the request
+    // x-run-id = incoming runId so runs-service sets it as parentRunId
     const genRun = await createRun({
-      orgId: req.orgId!,
-      userId: req.userId,
       serviceName: "content-generation-service",
       taskName: "content-generation",
-      parentRunId: req.runId!,
       workflowName,
-    });
+    }, { orgId: req.orgId!, userId: req.userId!, runId: req.runId! });
+
+    // Subsequent calls use genRun.id as x-run-id (the newly created run)
+    const runIdentity = { orgId: req.orgId!, userId: req.userId!, runId: genRun.id };
 
     // Store in database
     const [generation] = await db
@@ -72,9 +73,9 @@ router.post("/generate/content", serviceAuth, async (req: AuthenticatedRequest, 
       costItems.push({ costName: "anthropic-sonnet-4.6-tokens-output", quantity: result.tokensOutput, costSource: keySource });
     }
     if (costItems.length > 0) {
-      await addCosts(genRun.id, costItems);
+      await addCosts(genRun.id, costItems, runIdentity);
     }
-    await updateRun(genRun.id, "completed");
+    await updateRun(genRun.id, "completed", runIdentity);
 
     res.json({
       id: generation.id,
@@ -112,14 +113,15 @@ router.post("/generate/calendar", serviceAuth, async (req: AuthenticatedRequest,
     const result = await generateCalendar(apiKey, { prompt });
 
     // Create run in runs-service — MUST succeed or we fail the request
+    // x-run-id = incoming runId so runs-service sets it as parentRunId
     const genRun = await createRun({
-      orgId: req.orgId!,
-      userId: req.userId,
       serviceName: "content-generation-service",
       taskName: "calendar-generation",
-      parentRunId: req.runId!,
       workflowName,
-    });
+    }, { orgId: req.orgId!, userId: req.userId!, runId: req.runId! });
+
+    // Subsequent calls use genRun.id as x-run-id (the newly created run)
+    const runIdentity = { orgId: req.orgId!, userId: req.userId!, runId: genRun.id };
 
     // Store in database
     const [generation] = await db
@@ -150,9 +152,9 @@ router.post("/generate/calendar", serviceAuth, async (req: AuthenticatedRequest,
       costItems.push({ costName: "anthropic-sonnet-4.6-tokens-output", quantity: result.tokensOutput, costSource: keySource });
     }
     if (costItems.length > 0) {
-      await addCosts(genRun.id, costItems);
+      await addCosts(genRun.id, costItems, runIdentity);
     }
-    await updateRun(genRun.id, "completed");
+    await updateRun(genRun.id, "completed", runIdentity);
 
     res.json({
       id: generation.id,

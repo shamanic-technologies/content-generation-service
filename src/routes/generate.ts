@@ -111,22 +111,23 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
 
     // Track run + costs in runs-service
     try {
+      // x-run-id = incoming runId so runs-service sets it as parentRunId
       const genRun = await createRun({
-        orgId: req.orgId!,
-        userId: req.userId,
         brandId,
         campaignId,
         serviceName: "content-generation-service",
         taskName: "single-generation",
-        parentRunId: req.runId!,
         workflowName,
-      });
+      }, { orgId: req.orgId!, userId: req.userId!, runId: req.runId! });
 
       // Link generation run to email record IMMEDIATELY so per-item cost
       // lookups work even if addCosts/updateRun fail below
       await db.update(emailGenerations)
         .set({ generationRunId: genRun.id })
         .where(eq(emailGenerations.id, generation.id));
+
+      // Subsequent calls use genRun.id as x-run-id (the newly created run)
+      const runIdentity = { orgId: req.orgId!, userId: req.userId!, runId: genRun.id };
 
       const costItems = [];
       if (result.tokensInput) {
@@ -136,9 +137,9 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         costItems.push({ costName: "anthropic-sonnet-4.6-tokens-output", quantity: result.tokensOutput, costSource: keySource });
       }
       if (costItems.length > 0) {
-        await addCosts(genRun.id, costItems);
+        await addCosts(genRun.id, costItems, runIdentity);
       }
-      await updateRun(genRun.id, "completed");
+      await updateRun(genRun.id, "completed", runIdentity);
     } catch (err) {
       console.error("[content-gen] COST TRACKING FAILED — costs will be missing from campaign totals.", {
         runId: req.runId,

@@ -35,14 +35,28 @@ describe("runs-client retry logic", () => {
   it("should succeed on first attempt without retrying", async () => {
     mockFetch.mockResolvedValueOnce(jsonResponse(200, { id: "run-1" }));
 
-    const result = await createRun({
-      orgId: "org_1",
-      serviceName: "test",
-      taskName: "test",
-    });
+    const result = await createRun(
+      { serviceName: "test", taskName: "test" },
+      { orgId: "org_1", userId: "user_1" }
+    );
 
     expect(result).toEqual({ id: "run-1" });
     expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("should send x-org-id, x-user-id, x-run-id headers from identity", async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse(201, { id: "run-1" }));
+
+    await createRun(
+      { serviceName: "test", taskName: "test" },
+      { orgId: "org-abc", userId: "user-xyz", runId: "parent-run-123" }
+    );
+
+    const [, opts] = mockFetch.mock.calls[0];
+    const headers = opts.headers;
+    expect(headers["x-org-id"]).toBe("org-abc");
+    expect(headers["x-user-id"]).toBe("user-xyz");
+    expect(headers["x-run-id"]).toBe("parent-run-123");
   });
 
   it("should retry on 502 and succeed on second attempt", async () => {
@@ -54,7 +68,7 @@ describe("runs-client retry logic", () => {
 
     const result = await addCosts("run-1", [
       { costName: "anthropic-sonnet-4.6-tokens-input", quantity: 100, costSource: "platform" as const },
-    ]);
+    ], { orgId: "org_1", userId: "user_1" });
 
     expect(result).toEqual({ costs: [] });
     expect(mockFetch).toHaveBeenCalledTimes(2);
@@ -73,7 +87,7 @@ describe("runs-client retry logic", () => {
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const result = await getRun("run-1");
+    const result = await getRun("run-1", { orgId: "org_1", userId: "user_1" });
 
     expect(result).toEqual({ id: "run-1" });
     expect(mockFetch).toHaveBeenCalledTimes(3);
@@ -88,7 +102,7 @@ describe("runs-client retry logic", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     await expect(
-      updateRun("run-1", "completed")
+      updateRun("run-1", "completed", { orgId: "org_1", userId: "user_1" })
     ).rejects.toThrow("runs-service PATCH /v1/runs/run-1 failed: 502");
 
     // 1 initial + 3 retries = 4 total attempts
@@ -103,7 +117,7 @@ describe("runs-client retry logic", () => {
     );
 
     await expect(
-      addCosts("run-1", [{ costName: "bad", quantity: 1, costSource: "platform" as const }])
+      addCosts("run-1", [{ costName: "bad", quantity: 1, costSource: "platform" as const }], { orgId: "org_1", userId: "user_1" })
     ).rejects.toThrow("runs-service POST /v1/runs/run-1/costs failed: 400");
 
     expect(mockFetch).toHaveBeenCalledTimes(1);
@@ -114,7 +128,7 @@ describe("runs-client retry logic", () => {
       jsonResponse(404, { error: "Not Found" })
     );
 
-    await expect(getRun("nonexistent")).rejects.toThrow(
+    await expect(getRun("nonexistent", { orgId: "org_1", userId: "user_1" })).rejects.toThrow(
       "runs-service GET /v1/runs/nonexistent failed: 404"
     );
 
@@ -128,7 +142,7 @@ describe("runs-client retry logic", () => {
 
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const result = await getRun("run-1");
+    const result = await getRun("run-1", { orgId: "org_1", userId: "user_1" });
 
     expect(result).toEqual({ id: "run-1" });
     expect(mockFetch).toHaveBeenCalledTimes(2);
