@@ -7,9 +7,11 @@ const mockCreate = vi.fn().mockResolvedValue({
       type: "text" as const,
       text: JSON.stringify({
         subject: "Quick question",
-        body: "Hey Sarah,\n\nMost nonprofits treat community as a vanity metric — but the ones that last are built around shared purpose, not headcount.\n\nA client of mine is looking for a handful of organizers to help launch public goods initiatives. Would 30 minutes be worth a conversation?",
-        followup1: "Hey Sarah,\n\nJust circling back on my last note. Would love to connect for a quick chat.",
-        followup2: "Hey Sarah,\n\nDifferent angle — what if the biggest barrier to lasting community impact is actually thinking too small?",
+        emails: [
+          { body: "Hey Sarah,\n\nMost nonprofits treat community as a vanity metric — but the ones that last are built around shared purpose, not headcount.\n\nA client of mine is looking for a handful of organizers to help launch public goods initiatives. Would 30 minutes be worth a conversation?", daysSinceLastStep: 0 },
+          { body: "Hey Sarah,\n\nJust circling back on my last note. Would love to connect for a quick chat.", daysSinceLastStep: 3 },
+          { body: "Hey Sarah,\n\nDifferent angle — what if the biggest barrier to lasting community impact is actually thinking too small?", daysSinceLastStep: 7 },
+        ],
       }),
     },
   ],
@@ -41,11 +43,20 @@ describe("structured JSON output", () => {
           type: "object",
           properties: {
             subject: { type: "string" },
-            body: { type: "string" },
-            followup1: { type: "string" },
-            followup2: { type: "string" },
+            emails: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  body: { type: "string" },
+                  daysSinceLastStep: { type: "number" },
+                },
+                required: ["body", "daysSinceLastStep"],
+                additionalProperties: false,
+              },
+            },
           },
-          required: ["subject", "body", "followup1", "followup2"],
+          required: ["subject", "emails"],
           additionalProperties: false,
         },
       },
@@ -75,24 +86,13 @@ describe("structured JSON output", () => {
     expect(result.sequence[2].daysSinceLastStep).toBe(7);
   });
 
-  it("includes output rule in system prompt requiring emails-only response", async () => {
+  it("does not send a system prompt (prompt is fully client-defined)", async () => {
     await generateFromTemplate("fake-key", {
       promptTemplate: "Write an email to {{recipientName}}",
       variables: { recipientName: "Sarah" },
     });
 
     const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.system).toContain("Always respond with the 3 emails");
-    expect(callArgs.system).toContain("Never respond with commentary");
-  });
-
-  it("includes current date in system prompt", async () => {
-    await generateFromTemplate("fake-key", {
-      promptTemplate: "Write an email to {{recipientName}}",
-      variables: { recipientName: "Sarah" },
-    });
-
-    const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.system).toMatch(/Today is \d{4}-\d{2}-\d{2}/);
+    expect(callArgs.system).toBeUndefined();
   });
 });

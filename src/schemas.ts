@@ -67,7 +67,7 @@ export const UpsertPromptRequestSchema = registry.register(
   "UpsertPromptRequest",
   z
     .object({
-      type: z.string().describe("Prompt type, e.g. 'email' or 'calendar'"),
+      type: z.string().describe("Prompt type, e.g. 'cold-email' or 'welcome-email'"),
       prompt: z.string().describe("Prompt template text with {{variable}} placeholders"),
       variables: z.array(z.string()).describe("List of expected variable names used in the prompt"),
     })
@@ -119,7 +119,7 @@ export const GenerateRequestSchema = registry.register(
   "GenerateRequest",
   z
     .object({
-      type: z.string().describe("Which stored prompt to use, e.g. 'email' or 'calendar'"),
+      type: z.string().describe("Which stored prompt to use, e.g. 'cold-email' or 'welcome-email'"),
       variables: z.record(z.string(), z.unknown()).describe("Variable values to substitute into the prompt template. Non-string values (arrays, objects) are coerced to strings."),
       // Tracking / linking
       brandId: z.string().optional(),
@@ -280,119 +280,6 @@ registry.registerPath({
     },
     404: {
       description: "No generation found for this leadId",
-      content: { "application/json": { schema: ErrorResponseSchema } },
-    },
-  },
-});
-
-// ---------------------------------------------------------------------------
-// POST /generate/content
-// ---------------------------------------------------------------------------
-export const GenerateContentRequestSchema = registry.register(
-  "GenerateContentRequest",
-  z
-    .object({
-      prompt: z.string(),
-      variables: z.array(z.string()).optional(),
-      includeFooter: z.boolean().optional().default(false),
-      includeAiDisclaimer: z.boolean().optional().default(false).describe("When true, appends a small AI-generated disclaimer to the email body"),
-      workflowName: z.string().optional(),
-    })
-    .openapi("GenerateContentRequest")
-);
-
-const GenerateContentResponseSchema = registry.register(
-  "GenerateContentResponse",
-  z
-    .object({
-      id: z.string(),
-      subject: z.string(),
-      bodyHtml: z.string(),
-      bodyText: z.string(),
-      tokensInput: z.number(),
-      tokensOutput: z.number(),
-    })
-    .openapi("GenerateContentResponse")
-);
-
-registry.registerPath({
-  method: "post",
-  path: "/generate/content",
-  tags: ["Content Generation"],
-  summary: "Generate email content from a free-text prompt",
-  request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
-    body: {
-      required: true,
-      content: { "application/json": { schema: GenerateContentRequestSchema } },
-    },
-  },
-  responses: {
-    200: {
-      description: "Generated email content",
-      content: { "application/json": { schema: GenerateContentResponseSchema } },
-    },
-    400: {
-      description: "Invalid request",
-      content: { "application/json": { schema: ErrorResponseSchema } },
-    },
-    401: {
-      description: "Unauthorized",
-      content: { "application/json": { schema: ErrorResponseSchema } },
-    },
-  },
-});
-
-// ---------------------------------------------------------------------------
-// POST /generate/calendar
-// ---------------------------------------------------------------------------
-export const GenerateCalendarRequestSchema = registry.register(
-  "GenerateCalendarRequest",
-  z
-    .object({
-      prompt: z.string(),
-      workflowName: z.string().optional(),
-    })
-    .openapi("GenerateCalendarRequest")
-);
-
-const GenerateCalendarResponseSchema = registry.register(
-  "GenerateCalendarResponse",
-  z
-    .object({
-      id: z.string(),
-      title: z.string(),
-      description: z.string(),
-      location: z.string().nullable(),
-      tokensInput: z.number(),
-      tokensOutput: z.number(),
-    })
-    .openapi("GenerateCalendarResponse")
-);
-
-registry.registerPath({
-  method: "post",
-  path: "/generate/calendar",
-  tags: ["Content Generation"],
-  summary: "Generate calendar event fields from a free-text prompt",
-  request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
-    body: {
-      required: true,
-      content: { "application/json": { schema: GenerateCalendarRequestSchema } },
-    },
-  },
-  responses: {
-    200: {
-      description: "Generated calendar event",
-      content: { "application/json": { schema: GenerateCalendarResponseSchema } },
-    },
-    400: {
-      description: "Invalid request",
-      content: { "application/json": { schema: ErrorResponseSchema } },
-    },
-    401: {
-      description: "Unauthorized",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },
