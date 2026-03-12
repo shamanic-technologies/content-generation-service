@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, and, inArray, type SQL } from "drizzle-orm";
+import { eq, and, inArray, isNull, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
@@ -52,14 +52,20 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       }
     }
 
-    // Look up the stored prompt for this org + type
-    const storedPrompt = await db.query.prompts.findFirst({
+    // Look up the stored prompt: org-specific first, then platform fallback
+    let storedPrompt = await db.query.prompts.findFirst({
       where: and(eq(prompts.orgId, req.orgId!), eq(prompts.type, type)),
     });
 
     if (!storedPrompt) {
+      storedPrompt = await db.query.prompts.findFirst({
+        where: and(isNull(prompts.orgId), eq(prompts.type, type)),
+      });
+    }
+
+    if (!storedPrompt) {
       return res.status(404).json({
-        error: `No prompt found for type=${type}. Register one via PUT /prompts first.`,
+        error: `No prompt found for type=${type}. Register one via PUT /prompts or PUT /platform-prompts first.`,
       });
     }
 
