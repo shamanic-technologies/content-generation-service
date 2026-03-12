@@ -48,7 +48,7 @@
         "properties": {
           "type": {
             "type": "string",
-            "description": "Prompt type, e.g. 'email' or 'calendar'"
+            "description": "Prompt type, e.g. 'cold-email' or 'welcome-email'"
           },
           "prompt": {
             "type": "string",
@@ -107,7 +107,7 @@
         "properties": {
           "type": {
             "type": "string",
-            "description": "Which stored prompt to use, e.g. 'email' or 'calendar'"
+            "description": "Which stored prompt to use, e.g. 'cold-email' or 'welcome-email'"
           },
           "variables": {
             "type": "object",
@@ -227,112 +227,6 @@
         },
         "required": [
           "generation"
-        ]
-      },
-      "GenerateContentRequest": {
-        "type": "object",
-        "properties": {
-          "prompt": {
-            "type": "string"
-          },
-          "variables": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "includeFooter": {
-            "type": "boolean",
-            "default": false
-          },
-          "includeAiDisclaimer": {
-            "type": "boolean",
-            "default": false,
-            "description": "When true, appends a small AI-generated disclaimer to the email body"
-          },
-          "workflowName": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "prompt"
-        ]
-      },
-      "GenerateContentResponse": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "bodyHtml": {
-            "type": "string"
-          },
-          "bodyText": {
-            "type": "string"
-          },
-          "tokensInput": {
-            "type": "number"
-          },
-          "tokensOutput": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "id",
-          "subject",
-          "bodyHtml",
-          "bodyText",
-          "tokensInput",
-          "tokensOutput"
-        ]
-      },
-      "GenerateCalendarRequest": {
-        "type": "object",
-        "properties": {
-          "prompt": {
-            "type": "string"
-          },
-          "workflowName": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "prompt"
-        ]
-      },
-      "GenerateCalendarResponse": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "title": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "location": {
-            "type": "string",
-            "nullable": true
-          },
-          "tokensInput": {
-            "type": "number"
-          },
-          "tokensOutput": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "id",
-          "title",
-          "description",
-          "location",
-          "tokensInput",
-          "tokensOutput"
         ]
       },
       "StatsRequest": {
@@ -838,158 +732,6 @@
           },
           "404": {
             "description": "No generation found for this leadId",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/generate/content": {
-      "post": {
-        "tags": [
-          "Content Generation"
-        ],
-        "summary": "Generate email content from a free-text prompt",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "x-org-id",
-            "in": "header"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "x-user-id",
-            "in": "header"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "x-run-id",
-            "in": "header"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GenerateContentRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Generated email content",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GenerateContentResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/generate/calendar": {
-      "post": {
-        "tags": [
-          "Content Generation"
-        ],
-        "summary": "Generate calendar event fields from a free-text prompt",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "x-org-id",
-            "in": "header"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "x-user-id",
-            "in": "header"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": true,
-            "name": "x-run-id",
-            "in": "header"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GenerateCalendarRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Generated calendar event",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GenerateCalendarResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
             "content": {
               "application/json": {
                 "schema": {

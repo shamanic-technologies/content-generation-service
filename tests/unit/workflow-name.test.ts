@@ -64,7 +64,6 @@ vi.mock("../../src/db/index.js", () => ({
 
 vi.mock("../../src/db/schema.js", () => ({
   emailGenerations: { id: { name: "id" }, orgId: { name: "org_id" }, idempotencyKey: { name: "idempotency_key" } },
-  contentGenerations: { id: { name: "id" } },
   prompts: { orgId: { name: "org_id" }, type: { name: "type" } },
 }));
 
@@ -85,26 +84,6 @@ vi.mock("../../src/lib/anthropic-client.js", () => ({
   }),
 }));
 
-vi.mock("../../src/lib/content-client.js", () => ({
-  generateContent: vi.fn().mockResolvedValue({
-    subject: "Content subject",
-    bodyHtml: "<p>Content</p>",
-    bodyText: "Content",
-    tokensInput: 200,
-    tokensOutput: 100,
-    promptRaw: "content prompt",
-    responseRaw: {},
-  }),
-  generateCalendar: vi.fn().mockResolvedValue({
-    title: "Meeting",
-    description: "Team sync",
-    location: "Zoom",
-    tokensInput: 150,
-    tokensOutput: 75,
-    promptRaw: "calendar prompt",
-    responseRaw: {},
-  }),
-}));
 
 function createTestApp() {
   const app = express();
@@ -198,103 +177,4 @@ describe("workflowName propagation", () => {
     });
   });
 
-  describe("POST /generate/content", () => {
-    let app: express.Express;
-
-    beforeEach(async () => {
-      app = createTestApp();
-      const { default: contentRoutes } = await import("../../src/routes/content.js");
-      app.use(contentRoutes);
-    });
-
-    it("should pass workflowName to createRun", async () => {
-      await request(app)
-        .post("/generate/content")
-        .set("X-Org-Id", "org-internal-123")
-        .set("X-User-Id", "user-internal-456")
-        .send({
-          prompt: "Write a cold email",
-          workflowName: "content-workflow",
-        })
-        .expect(200);
-
-      expect(mockCreateRun).toHaveBeenCalledWith(
-        expect.objectContaining({
-          workflowName: "content-workflow",
-        }),
-        expect.objectContaining({
-          orgId: "org-internal-123",
-          userId: "user-internal-456",
-        })
-      );
-    });
-
-    it("should store workflowName in the database", async () => {
-      await request(app)
-        .post("/generate/content")
-        .set("X-Org-Id", "org-internal-123")
-        .set("X-User-Id", "user-internal-456")
-        .send({
-          prompt: "Write a cold email",
-          workflowName: "content-workflow",
-        })
-        .expect(200);
-
-      expect(mockInsertValues[0]).toEqual(
-        expect.objectContaining({
-          workflowName: "content-workflow",
-        })
-      );
-    });
-  });
-
-  describe("POST /generate/calendar", () => {
-    let app: express.Express;
-
-    beforeEach(async () => {
-      app = createTestApp();
-      const { default: contentRoutes } = await import("../../src/routes/content.js");
-      app.use(contentRoutes);
-    });
-
-    it("should pass workflowName to createRun", async () => {
-      await request(app)
-        .post("/generate/calendar")
-        .set("X-Org-Id", "org-internal-123")
-        .set("X-User-Id", "user-internal-456")
-        .send({
-          prompt: "Schedule a team sync",
-          workflowName: "calendar-workflow",
-        })
-        .expect(200);
-
-      expect(mockCreateRun).toHaveBeenCalledWith(
-        expect.objectContaining({
-          workflowName: "calendar-workflow",
-        }),
-        expect.objectContaining({
-          orgId: "org-internal-123",
-          userId: "user-internal-456",
-        })
-      );
-    });
-
-    it("should store workflowName in the database", async () => {
-      await request(app)
-        .post("/generate/calendar")
-        .set("X-Org-Id", "org-internal-123")
-        .set("X-User-Id", "user-internal-456")
-        .send({
-          prompt: "Schedule a team sync",
-          workflowName: "calendar-workflow",
-        })
-        .expect(200);
-
-      expect(mockInsertValues[0]).toEqual(
-        expect.objectContaining({
-          workflowName: "calendar-workflow",
-        })
-      );
-    });
-  });
 });

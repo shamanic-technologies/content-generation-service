@@ -9,7 +9,6 @@ import { db } from "./db/index.js";
 import { apiKeyAuth } from "./middleware/auth.js";
 import healthRoutes from "./routes/health.js";
 import generateRoutes from "./routes/generate.js";
-import contentRoutes from "./routes/content.js";
 import statsRoutes from "./routes/stats.js";
 import promptRoutes from "./routes/prompts.js";
 
@@ -41,7 +40,6 @@ app.use(apiKeyAuth);
 
 // Protected routes
 app.use(generateRoutes);
-app.use(contentRoutes);
 app.use(statsRoutes);
 app.use(promptRoutes);
 

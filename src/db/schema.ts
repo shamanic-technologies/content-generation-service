@@ -84,7 +84,7 @@ export const prompts = pgTable(
   ]
 );
 
-// Content generations (generic prompt-based)
+/** @deprecated No longer used after calendar/content endpoint removal. Kept for historical data. */
 export const contentGenerations = pgTable(
   "content_generations",
   {
@@ -131,7 +131,9 @@ export const contentGenerations = pgTable(
 
 export type EmailGeneration = typeof emailGenerations.$inferSelect;
 export type NewEmailGeneration = typeof emailGenerations.$inferInsert;
+/** @deprecated */
 export type ContentGeneration = typeof contentGenerations.$inferSelect;
+/** @deprecated */
 export type NewContentGeneration = typeof contentGenerations.$inferInsert;
 export type Prompt = typeof prompts.$inferSelect;
 export type NewPrompt = typeof prompts.$inferInsert;

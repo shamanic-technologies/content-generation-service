@@ -32,9 +32,11 @@ describe("appendAiDisclaimer", () => {
 
 const MOCK_RESPONSE = JSON.stringify({
   subject: "Quick question",
-  body: "Hey Sarah,\n\nMost nonprofits treat community as a vanity metric.",
-  followup1: "Just circling back on my last note.",
-  followup2: "Last attempt — different angle this time.",
+  emails: [
+    { body: "Hey Sarah,\n\nMost nonprofits treat community as a vanity metric.", daysSinceLastStep: 0 },
+    { body: "Just circling back on my last note.", daysSinceLastStep: 3 },
+    { body: "Last attempt — different angle this time.", daysSinceLastStep: 7 },
+  ],
 });
 
 vi.mock("@anthropic-ai/sdk", () => ({
