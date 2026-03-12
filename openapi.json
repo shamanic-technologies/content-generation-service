@@ -102,6 +102,36 @@
           "updatedAt"
         ]
       },
+      "PlatformPromptResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "variables",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
       "GenerateRequest": {
         "type": "object",
         "properties": {
@@ -432,6 +462,47 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UpsertPromptResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform-prompts": {
+      "put": {
+        "tags": [
+          "Prompts"
+        ],
+        "summary": "Register or update a platform-wide prompt template (idempotent, API key auth only)",
+        "description": "Platform prompts are used as fallback when an org has no prompt registered for a given type. Called at cold start, same pattern as key-service POST /platform-keys.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertPromptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Platform prompt upserted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformPromptResponse"
                 }
               }
             }

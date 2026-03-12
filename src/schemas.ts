@@ -113,6 +113,46 @@ registry.registerPath({
 });
 
 // ---------------------------------------------------------------------------
+// PUT /platform-prompts — Upsert a platform-wide prompt template
+// ---------------------------------------------------------------------------
+const PlatformPromptResponseSchema = registry.register(
+  "PlatformPromptResponse",
+  z
+    .object({
+      id: z.string(),
+      type: z.string(),
+      variables: z.array(z.string()),
+      createdAt: z.string(),
+      updatedAt: z.string(),
+    })
+    .openapi("PlatformPromptResponse")
+);
+
+registry.registerPath({
+  method: "put",
+  path: "/platform-prompts",
+  tags: ["Prompts"],
+  summary: "Register or update a platform-wide prompt template (idempotent, API key auth only)",
+  description: "Platform prompts are used as fallback when an org has no prompt registered for a given type. Called at cold start, same pattern as key-service POST /platform-keys.",
+  request: {
+    body: {
+      required: true,
+      content: { "application/json": { schema: UpsertPromptRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Platform prompt upserted",
+      content: { "application/json": { schema: PlatformPromptResponseSchema } },
+    },
+    400: {
+      description: "Invalid request",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
 // POST /generate — Generate content using a stored prompt + variables
 // ---------------------------------------------------------------------------
 export const GenerateRequestSchema = registry.register(
