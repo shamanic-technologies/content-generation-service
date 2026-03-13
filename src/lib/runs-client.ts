@@ -59,6 +59,9 @@ export interface IdentityHeaders {
   orgId: string;
   userId: string;
   runId?: string;
+  campaignId?: string;
+  brandId?: string;
+  workflowName?: string;
 }
 
 export interface CreateRunParams {
@@ -133,6 +136,15 @@ async function runsRequest<T>(
     headers["x-user-id"] = identity.userId;
     if (identity.runId) {
       headers["x-run-id"] = identity.runId;
+    }
+    if (identity.campaignId) {
+      headers["x-campaign-id"] = identity.campaignId;
+    }
+    if (identity.brandId) {
+      headers["x-brand-id"] = identity.brandId;
+    }
+    if (identity.workflowName) {
+      headers["x-workflow-name"] = identity.workflowName;
     }
   }
 

@@ -4,6 +4,9 @@ const KEY_SERVICE_API_KEY = process.env.KEY_SERVICE_API_KEY;
 export interface CallerContext {
   callerMethod: string;
   callerPath: string;
+  campaignId?: string;
+  brandId?: string;
+  workflowName?: string;
 }
 
 export interface DecryptResult {
@@ -16,7 +19,7 @@ function buildHeaders(
   userId: string,
   caller: CallerContext
 ): Record<string, string> {
-  return {
+  const h: Record<string, string> = {
     ...(KEY_SERVICE_API_KEY ? { "X-Api-Key": KEY_SERVICE_API_KEY } : {}),
     "x-org-id": orgId,
     "x-user-id": userId,
@@ -24,6 +27,10 @@ function buildHeaders(
     "X-Caller-Method": caller.callerMethod,
     "X-Caller-Path": caller.callerPath,
   };
+  if (caller.campaignId) h["x-campaign-id"] = caller.campaignId;
+  if (caller.brandId) h["x-brand-id"] = caller.brandId;
+  if (caller.workflowName) h["x-workflow-name"] = caller.workflowName;
+  return h;
 }
 
 /**
