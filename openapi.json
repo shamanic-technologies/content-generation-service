@@ -259,6 +259,85 @@
           "generation"
         ]
       },
+      "StatsQuery": {
+        "type": "object",
+        "properties": {
+          "campaignId": {
+            "type": "string"
+          },
+          "brandId": {
+            "type": "string"
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "runIds": {
+            "type": "string",
+            "description": "Comma-separated list of run IDs"
+          },
+          "groupBy": {
+            "type": "string",
+            "enum": [
+              "campaignId",
+              "model"
+            ]
+          }
+        }
+      },
+      "StatsGetFlatResponse": {
+        "type": "object",
+        "properties": {
+          "stats": {
+            "type": "object",
+            "properties": {
+              "emailsGenerated": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "emailsGenerated"
+            ]
+          }
+        },
+        "required": [
+          "stats"
+        ]
+      },
+      "StatsGetGroupedResponse": {
+        "type": "object",
+        "properties": {
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "stats": {
+                  "type": "object",
+                  "properties": {
+                    "emailsGenerated": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "emailsGenerated"
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "stats"
+              ]
+            }
+          }
+        },
+        "required": [
+          "groups"
+        ]
+      },
       "StatsRequest": {
         "type": "object",
         "properties": {
@@ -971,6 +1050,114 @@
       }
     },
     "/stats": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Get aggregated stats with optional grouping",
+        "description": "Filters: campaignId, brandId, orgId, runIds (comma-separated). Without groupBy returns { stats: { emailsGenerated } }. With groupBy returns { groups: [{ key, stats: { emailsGenerated } }] }.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "campaignId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "brandId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "orgId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated list of run IDs"
+            },
+            "required": false,
+            "description": "Comma-separated list of run IDs",
+            "name": "runIds",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "campaignId",
+                "model"
+              ]
+            },
+            "required": false,
+            "name": "groupBy",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stats (flat or grouped depending on groupBy param)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/StatsGetFlatResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StatsGetGroupedResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing required filter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
           "Stats"
