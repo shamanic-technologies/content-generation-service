@@ -341,7 +341,75 @@ registry.registerPath({
 });
 
 // ---------------------------------------------------------------------------
-// POST /stats
+// GET /stats — new standardised endpoint
+// ---------------------------------------------------------------------------
+export const StatsQuerySchema = registry.register(
+  "StatsQuery",
+  z
+    .object({
+      campaignId: z.string().optional(),
+      brandId: z.string().optional(),
+      orgId: z.string().optional(),
+      runIds: z.string().optional().describe("Comma-separated list of run IDs"),
+      groupBy: z.enum(["campaignId", "model"]).optional(),
+    })
+    .openapi("StatsQuery")
+);
+
+const StatsGroupSchema = z.object({
+  key: z.string().nullable(),
+  stats: z.object({ emailsGenerated: z.number() }),
+});
+
+const StatsGetFlatResponseSchema = registry.register(
+  "StatsGetFlatResponse",
+  z
+    .object({
+      stats: z.object({ emailsGenerated: z.number() }),
+    })
+    .openapi("StatsGetFlatResponse")
+);
+
+const StatsGetGroupedResponseSchema = registry.register(
+  "StatsGetGroupedResponse",
+  z
+    .object({
+      groups: z.array(StatsGroupSchema),
+    })
+    .openapi("StatsGetGroupedResponse")
+);
+
+registry.registerPath({
+  method: "get",
+  path: "/stats",
+  tags: ["Stats"],
+  summary: "Get aggregated stats with optional grouping",
+  description:
+    "Filters: campaignId, brandId, orgId, runIds (comma-separated). " +
+    "Without groupBy returns { stats: { emailsGenerated } }. " +
+    "With groupBy returns { groups: [{ key, stats: { emailsGenerated } }] }.",
+  request: {
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
+    query: StatsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Stats (flat or grouped depending on groupBy param)",
+      content: {
+        "application/json": {
+          schema: z.union([StatsGetFlatResponseSchema, StatsGetGroupedResponseSchema]),
+        },
+      },
+    },
+    400: {
+      description: "Missing required filter",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// POST /stats (deprecated — use GET /stats)
 // ---------------------------------------------------------------------------
 export const StatsRequestSchema = registry.register(
   "StatsRequest",

@@ -1,12 +1,12 @@
 import { Router } from "express";
-import { eq, and, inArray, isNull, type SQL } from "drizzle-orm";
+import { eq, and, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { generateFromTemplate } from "../lib/anthropic-client.js";
 import { decryptKey } from "../lib/key-client.js";
 import { createRun, updateRun, addCosts } from "../lib/runs-client.js";
-import { GenerateRequestSchema, StatsRequestSchema } from "../schemas.js";
+import { GenerateRequestSchema, StatsRequestSchema, StatsQuerySchema } from "../schemas.js";
 
 const router = Router();
 
@@ -261,7 +261,86 @@ router.get("/generations/by-lead/:leadId", serviceAuth, async (req: Authenticate
 });
 
 /**
+ * GET /stats - Get aggregated stats with query-param filters + optional groupBy
+ */
+router.get("/stats", serviceAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const parsed = StatsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
+    }
+
+    const { campaignId, brandId, orgId, runIds, groupBy } = parsed.data;
+
+    if (!campaignId && !brandId && !orgId && !runIds) {
+      return res.status(400).json({ error: "At least one filter required: campaignId, brandId, orgId, or runIds" });
+    }
+
+    const conditions: SQL[] = [];
+    if (campaignId) conditions.push(eq(emailGenerations.campaignId, campaignId));
+    if (brandId) conditions.push(eq(emailGenerations.brandId, brandId));
+    if (orgId) conditions.push(eq(emailGenerations.orgId, orgId));
+    if (runIds) {
+      const ids = runIds.split(",").map((s) => s.trim()).filter(Boolean);
+      if (ids.length > 0) conditions.push(inArray(emailGenerations.runId, ids));
+    }
+
+    if (groupBy === "campaignId") {
+      const results = await db
+        .select({
+          key: emailGenerations.campaignId,
+          emailsGenerated: sql<number>`count(*)::int`,
+        })
+        .from(emailGenerations)
+        .where(and(...conditions))
+        .groupBy(emailGenerations.campaignId);
+
+      return res.json({
+        groups: results.map((r) => ({
+          key: r.key,
+          stats: { emailsGenerated: r.emailsGenerated },
+        })),
+      });
+    }
+
+    if (groupBy === "model") {
+      const results = await db
+        .select({
+          key: emailGenerations.model,
+          emailsGenerated: sql<number>`count(*)::int`,
+        })
+        .from(emailGenerations)
+        .where(and(...conditions))
+        .groupBy(emailGenerations.model);
+
+      return res.json({
+        groups: results.map((r) => ({
+          key: r.key,
+          stats: { emailsGenerated: r.emailsGenerated },
+        })),
+      });
+    }
+
+    // No groupBy — flat stats
+    const results = await db
+      .select({
+        emailsGenerated: sql<number>`count(*)::int`,
+      })
+      .from(emailGenerations)
+      .where(and(...conditions));
+
+    res.json({
+      stats: { emailsGenerated: results[0]?.emailsGenerated ?? 0 },
+    });
+  } catch (error) {
+    console.error("GET /stats error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
  * POST /stats - Get aggregated stats for multiple run IDs
+ * @deprecated Use GET /stats with query params instead
  */
 router.post("/stats", serviceAuth, async (req: AuthenticatedRequest, res) => {
   try {
