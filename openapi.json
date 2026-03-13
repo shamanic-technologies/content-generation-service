@@ -356,6 +356,15 @@
       },
       "RunId": {
         "type": "string"
+      },
+      "CampaignId": {
+        "type": "string"
+      },
+      "BrandId": {
+        "type": "string"
+      },
+      "WorkflowName": {
+        "type": "string"
       }
     },
     "parameters": {
@@ -382,6 +391,33 @@
         "required": true,
         "name": "X-Run-Id",
         "in": "header"
+      },
+      "CampaignId": {
+        "schema": {
+          "$ref": "#/components/schemas/CampaignId"
+        },
+        "required": false,
+        "name": "X-Campaign-Id",
+        "in": "header",
+        "description": "Campaign ID injected by workflow-service"
+      },
+      "BrandId": {
+        "schema": {
+          "$ref": "#/components/schemas/BrandId"
+        },
+        "required": false,
+        "name": "X-Brand-Id",
+        "in": "header",
+        "description": "Brand ID injected by workflow-service"
+      },
+      "WorkflowName": {
+        "schema": {
+          "$ref": "#/components/schemas/WorkflowName"
+        },
+        "required": false,
+        "name": "X-Workflow-Name",
+        "in": "header",
+        "description": "Workflow name injected by workflow-service"
       }
     },
     "securitySchemes": {
@@ -442,6 +478,30 @@
             },
             "required": true,
             "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-workflow-name",
             "in": "header"
           }
         ],
@@ -549,6 +609,30 @@
             },
             "required": true,
             "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-workflow-name",
             "in": "header"
           }
         ],
@@ -660,6 +744,30 @@
             "required": true,
             "name": "x-run-id",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-workflow-name",
+            "in": "header"
           }
         ],
         "responses": {
@@ -723,6 +831,30 @@
             },
             "required": true,
             "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-workflow-name",
             "in": "header"
           }
         ],
@@ -788,6 +920,30 @@
             "required": true,
             "name": "x-run-id",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-workflow-name",
+            "in": "header"
           }
         ],
         "responses": {
@@ -843,6 +999,30 @@
             },
             "required": true,
             "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-workflow-name",
             "in": "header"
           }
         ],

@@ -26,6 +26,21 @@ const RunIdHeader = registry.registerParameter(
   z.string().openapi({ param: { name: "X-Run-Id", in: "header" } })
 );
 
+const CampaignIdHeader = registry.registerParameter(
+  "CampaignId",
+  z.string().optional().openapi({ param: { name: "X-Campaign-Id", in: "header", required: false, description: "Campaign ID injected by workflow-service" } })
+);
+
+const BrandIdHeader = registry.registerParameter(
+  "BrandId",
+  z.string().optional().openapi({ param: { name: "X-Brand-Id", in: "header", required: false, description: "Brand ID injected by workflow-service" } })
+);
+
+const WorkflowNameHeader = registry.registerParameter(
+  "WorkflowName",
+  z.string().optional().openapi({ param: { name: "X-Workflow-Name", in: "header", required: false, description: "Workflow name injected by workflow-service" } })
+);
+
 // ---------------------------------------------------------------------------
 // Error response
 // ---------------------------------------------------------------------------
@@ -94,7 +109,7 @@ registry.registerPath({
   tags: ["Prompts"],
   summary: "Register or update a prompt template for an org (idempotent)",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional() }),
     body: {
       required: true,
       content: { "application/json": { schema: UpsertPromptRequestSchema } },
@@ -199,7 +214,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Generate content using a stored prompt template with variable substitution",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional() }),
     body: {
       required: true,
       content: { "application/json": { schema: GenerateRequestSchema } },
@@ -243,7 +258,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "List generations with filters",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional() }),
     query: z.object({
       runId: z.string().optional(),
       campaignId: z.string().optional(),
@@ -282,7 +297,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Get generation by enrichment ID",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional() }),
     params: z.object({ apolloEnrichmentId: z.string() }),
   },
   responses: {
@@ -308,7 +323,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Get generation by lead-service correlation ID",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional() }),
     params: z.object({ leadId: z.string() }),
   },
   responses: {
@@ -356,7 +371,7 @@ registry.registerPath({
   tags: ["Stats"],
   summary: "Get aggregated stats by filters",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional() }),
     body: {
       required: true,
       content: { "application/json": { schema: StatsRequestSchema } },

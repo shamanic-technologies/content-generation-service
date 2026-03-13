@@ -4,6 +4,9 @@ export interface AuthenticatedRequest extends Request {
   orgId?: string;
   userId?: string;
   runId?: string;
+  campaignId?: string;
+  brandId?: string;
+  workflowName?: string;
 }
 
 const API_KEY = process.env.CONTENT_GENERATION_SERVICE_API_KEY;
@@ -53,5 +56,14 @@ export async function serviceAuth(
   req.orgId = orgId;
   req.userId = userId;
   req.runId = runId;
+
+  // Optional tracking headers injected by workflow-service
+  const campaignId = req.headers["x-campaign-id"] as string | undefined;
+  const brandId = req.headers["x-brand-id"] as string | undefined;
+  const workflowName = req.headers["x-workflow-name"] as string | undefined;
+  if (campaignId) req.campaignId = campaignId;
+  if (brandId) req.brandId = brandId;
+  if (workflowName) req.workflowName = workflowName;
+
   next();
 }

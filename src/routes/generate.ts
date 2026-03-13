@@ -23,14 +23,19 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     const {
       type,
       variables,
-      brandId,
-      campaignId,
+      brandId: bodyBrandId,
+      campaignId: bodyCampaignId,
       apolloEnrichmentId,
       leadId,
       idempotencyKey,
-      workflowName,
+      workflowName: bodyWorkflowName,
       includeAiDisclaimer,
     } = parsed.data;
+
+    // Header values (from workflow-service) serve as fallback when body values are missing
+    const brandId = bodyBrandId || req.brandId;
+    const campaignId = bodyCampaignId || req.campaignId;
+    const workflowName = bodyWorkflowName || req.workflowName;
 
     // Idempotency: return existing generation if key matches
     if (idempotencyKey) {
@@ -70,7 +75,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     }
 
     // Get Anthropic API key
-    const caller = { callerMethod: "POST", callerPath: "/generate" };
+    const caller = { callerMethod: "POST", callerPath: "/generate", campaignId, brandId, workflowName };
     const { key: anthropicApiKey, keySource } = await decryptKey("anthropic", req.orgId!, req.userId!, caller);
 
     // Generate using the stored prompt + variable substitution
@@ -124,7 +129,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         serviceName: "content-generation-service",
         taskName: "single-generation",
         workflowName,
-      }, { orgId: req.orgId!, userId: req.userId!, runId: req.runId! });
+      }, { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowName });
 
       // Link generation run to email record IMMEDIATELY so per-item cost
       // lookups work even if addCosts/updateRun fail below
@@ -133,7 +138,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         .where(eq(emailGenerations.id, generation.id));
 
       // Subsequent calls use genRun.id as x-run-id (the newly created run)
-      const runIdentity = { orgId: req.orgId!, userId: req.userId!, runId: genRun.id };
+      const runIdentity = { orgId: req.orgId!, userId: req.userId!, runId: genRun.id, campaignId, brandId, workflowName };
 
       const costItems = [];
       if (result.tokensInput) {
