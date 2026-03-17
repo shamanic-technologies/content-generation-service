@@ -174,16 +174,12 @@ router.put("/prompts", serviceAuth, async (req: AuthenticatedRequest, res) => {
 
     const { sourceType, prompt, variables } = parsed.data;
 
-    // Verify source prompt exists
+    // If sourceType doesn't exist yet, create it directly with that type
     const source = await db.query.prompts.findFirst({
       where: eq(prompts.type, sourceType),
     });
 
-    if (!source) {
-      return res.status(404).json({ error: `Source prompt not found for type=${sourceType}` });
-    }
-
-    const newType = await findNextVersionType(sourceType);
+    const newType = source ? await findNextVersionType(sourceType) : sourceType;
 
     const [result] = await db
       .insert(prompts)
