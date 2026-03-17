@@ -241,11 +241,12 @@ registry.registerPath({
   method: "put",
   path: "/prompts",
   tags: ["Prompts"],
-  summary: "Create a new version of a prompt (auto-increments type name)",
+  summary: "Create or version a prompt (auto-increments type name if sourceType exists)",
   description:
-    "Creates a new prompt with an auto-incremented type name based on sourceType. " +
+    "If sourceType already exists, creates a new prompt with an auto-incremented type name. " +
     "E.g. sourceType 'cold-email' → creates 'cold-email-v2'. " +
     "sourceType 'cold-email-v5' → creates 'cold-email-v6'. " +
+    "If sourceType does not exist, creates the prompt with that type directly. " +
     "The source prompt is never modified.",
   request: {
     headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
@@ -261,10 +262,6 @@ registry.registerPath({
     },
     400: {
       description: "Invalid request",
-      content: { "application/json": { schema: ErrorResponseSchema } },
-    },
-    404: {
-      description: "Source prompt not found",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },

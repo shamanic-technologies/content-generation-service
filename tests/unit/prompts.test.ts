@@ -420,21 +420,31 @@ describe("PUT /prompts", () => {
     expect(res.body.type).toBe("cold-email-v6");
   });
 
-  it("returns 404 when source prompt not found", async () => {
+  it("creates prompt directly when sourceType does not exist", async () => {
     mockFindFirst.mockResolvedValue(null);
+    mockInsertReturning.mockResolvedValue([{
+      id: "prompt-new",
+      orgId: "org-internal-123",
+      type: "brand-intro",
+      prompt: "Introduce {{brandName}}",
+      variables: ["brandName"],
+      createdAt: NOW,
+      updatedAt: NOW,
+    }]);
 
     const res = await request(app)
       .put("/prompts")
       .set("X-Org-Id", "org-internal-123")
       .set("X-User-Id", "user-internal-456")
       .send({
-        sourceType: "nonexistent",
-        prompt: "New prompt",
-        variables: ["name"],
+        sourceType: "brand-intro",
+        prompt: "Introduce {{brandName}}",
+        variables: ["brandName"],
       })
-      .expect(404);
+      .expect(201);
 
-    expect(res.body.error).toContain("Source prompt not found");
+    expect(res.body.type).toBe("brand-intro");
+    expect(mockFindMany).not.toHaveBeenCalled();
   });
 
   it("returns 400 for missing required fields", async () => {
