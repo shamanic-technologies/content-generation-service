@@ -43,16 +43,16 @@
           "service"
         ]
       },
-      "UpsertPromptRequest": {
+      "CreatePromptRequest": {
         "type": "object",
         "properties": {
           "type": {
             "type": "string",
-            "description": "Prompt type, e.g. 'cold-email' or 'welcome-email'"
+            "description": "Unique prompt identifier, e.g. 'cold-email' or 'welcome-email'"
           },
           "prompt": {
             "type": "string",
-            "description": "Prompt template text with {{variable}} placeholders"
+            "description": "Prompt template text with {{variable}} placeholders. Must NOT contain company-specific data — only {{variables}}."
           },
           "variables": {
             "type": "array",
@@ -68,47 +68,41 @@
           "variables"
         ]
       },
-      "UpsertPromptResponse": {
+      "VersionPromptRequest": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
+          "sourceType": {
+            "type": "string",
+            "description": "The type of the prompt to create a new version from, e.g. 'cold-email'"
           },
-          "orgId": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string"
+          "prompt": {
+            "type": "string",
+            "description": "New prompt template text with {{variable}} placeholders. Must NOT contain company-specific data — only {{variables}}."
           },
           "variables": {
             "type": "array",
             "items": {
               "type": "string"
-            }
-          },
-          "createdAt": {
-            "type": "string"
-          },
-          "updatedAt": {
-            "type": "string"
+            },
+            "description": "List of expected variable names used in the prompt"
           }
         },
         "required": [
-          "id",
-          "orgId",
-          "type",
-          "variables",
-          "createdAt",
-          "updatedAt"
+          "sourceType",
+          "prompt",
+          "variables"
         ]
       },
-      "PlatformPromptResponse": {
+      "PromptResponse": {
         "type": "object",
         "properties": {
           "id": {
             "type": "string"
           },
           "type": {
+            "type": "string"
+          },
+          "prompt": {
             "type": "string"
           },
           "variables": {
@@ -127,6 +121,7 @@
         "required": [
           "id",
           "type",
+          "prompt",
           "variables",
           "createdAt",
           "updatedAt"
@@ -662,11 +657,85 @@
       }
     },
     "/prompts": {
-      "put": {
+      "get": {
         "tags": [
           "Prompts"
         ],
-        "summary": "Register or update a prompt template for an org (idempotent)",
+        "summary": "Get a prompt template by type",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Prompt type to look up"
+            },
+            "required": true,
+            "description": "Prompt type to look up",
+            "name": "type",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prompt found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing type query param",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Prompt not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Prompts"
+        ],
+        "summary": "Create a prompt template (idempotent — no-op if type already exists)",
         "parameters": [
           {
             "schema": {
@@ -691,30 +760,6 @@
             "required": true,
             "name": "x-run-id",
             "in": "header"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "x-campaign-id",
-            "in": "header"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "x-brand-id",
-            "in": "header"
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "required": false,
-            "name": "x-workflow-name",
-            "in": "header"
           }
         ],
         "requestBody": {
@@ -722,18 +767,28 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpsertPromptRequest"
+                "$ref": "#/components/schemas/CreatePromptRequest"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Prompt upserted",
+            "description": "Prompt already exists (no-op)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UpsertPromptResponse"
+                  "$ref": "#/components/schemas/PromptResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Prompt created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptResponse"
                 }
               }
             }
@@ -749,32 +804,167 @@
             }
           }
         }
-      }
-    },
-    "/platform-prompts": {
+      },
       "put": {
         "tags": [
           "Prompts"
         ],
-        "summary": "Register or update a platform-wide prompt template (idempotent, API key auth only)",
-        "description": "Platform prompts are used as fallback when an org has no prompt registered for a given type. Called at cold start, same pattern as key-service POST /platform-keys.",
+        "summary": "Create a new version of a prompt (auto-increments type name)",
+        "description": "Creates a new prompt with an auto-incremented type name based on sourceType. E.g. sourceType 'cold-email' → creates 'cold-email-v2'. sourceType 'cold-email-v5' → creates 'cold-email-v6'. The source prompt is never modified.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpsertPromptRequest"
+                "$ref": "#/components/schemas/VersionPromptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "New versioned prompt created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Source prompt not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform-prompts": {
+      "get": {
+        "tags": [
+          "Prompts"
+        ],
+        "summary": "Get a prompt template by type (no identity headers required)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Prompt type to look up"
+            },
+            "required": true,
+            "description": "Prompt type to look up",
+            "name": "type",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Prompt found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing type query param",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Prompt not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Prompts"
+        ],
+        "summary": "Create a prompt template (idempotent — no-op if type already exists, no identity headers required)",
+        "description": "Used at cold start to register prompt templates. Same pattern as key-service POST /platform-keys.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePromptRequest"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Platform prompt upserted",
+            "description": "Prompt already exists (no-op)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlatformPromptResponse"
+                  "$ref": "#/components/schemas/PromptResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Prompt created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptResponse"
                 }
               }
             }

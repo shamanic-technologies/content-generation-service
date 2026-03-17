@@ -1,99 +1,109 @@
 import { Router } from "express";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, like } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
-import { UpsertPromptRequestSchema } from "../schemas.js";
+import { CreatePromptRequestSchema, VersionPromptRequestSchema } from "../schemas.js";
 
 const router = Router();
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatPromptResponse(row: typeof prompts.$inferSelect) {
+  return {
+    id: row.id,
+    type: row.type,
+    prompt: row.prompt,
+    variables: row.variables,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
 /**
- * PUT /prompts — Upsert a prompt template for an org (idempotent)
+ * Find the next available versioned type name.
+ * "cold-email" → "cold-email-v2"
+ * "cold-email-v5" → "cold-email-v6"
+ * If "cold-email-v2" already exists, keeps incrementing until a free slot is found.
  */
-router.put("/prompts", serviceAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    const parsed = UpsertPromptRequestSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
+async function findNextVersionType(sourceType: string): Promise<string> {
+  const match = sourceType.match(/^(.+)-v(\d+)$/);
+  const baseName = match ? match[1] : sourceType;
+
+  const existing = await db.query.prompts.findMany({
+    where: like(prompts.type, `${baseName}-v%`),
+    columns: { type: true },
+  });
+
+  let maxVersion = 1; // base type counts as v1
+  for (const p of existing) {
+    const m = p.type.match(/-v(\d+)$/);
+    if (m) {
+      maxVersion = Math.max(maxVersion, parseInt(m[1], 10));
     }
-
-    const { type, prompt, variables } = parsed.data;
-
-    // Upsert: insert or update on (orgId, type) conflict
-    const existing = await db.query.prompts.findFirst({
-      where: and(eq(prompts.orgId, req.orgId!), eq(prompts.type, type)),
-    });
-
-    let result;
-    if (existing) {
-      [result] = await db
-        .update(prompts)
-        .set({ prompt, variables, updatedAt: new Date() })
-        .where(and(eq(prompts.orgId, req.orgId!), eq(prompts.type, type)))
-        .returning();
-    } else {
-      [result] = await db
-        .insert(prompts)
-        .values({ orgId: req.orgId!, type, prompt, variables })
-        .returning();
-    }
-
-    res.json({
-      id: result.id,
-      orgId: result.orgId,
-      type: result.type,
-      variables: result.variables,
-      createdAt: result.createdAt.toISOString(),
-      updatedAt: result.updatedAt.toISOString(),
-    });
-  } catch (error) {
-    console.error("Upsert prompt error:", error);
-    res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
   }
-});
 
-/**
- * GET /prompts?type — Get a stored prompt template
- */
+  return `${baseName}-v${maxVersion + 1}`;
+}
+
+// ---------------------------------------------------------------------------
+// GET /prompts?type= — Read a prompt (with identity headers)
+// ---------------------------------------------------------------------------
 router.get("/prompts", serviceAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { type } = req.query as { type?: string };
-
     if (!type) {
       return res.status(400).json({ error: "type query param required" });
     }
 
     const result = await db.query.prompts.findFirst({
-      where: and(eq(prompts.orgId, req.orgId!), eq(prompts.type, type)),
+      where: eq(prompts.type, type),
     });
 
     if (!result) {
       return res.status(404).json({ error: `No prompt found for type=${type}` });
     }
 
-    res.json({
-      id: result.id,
-      orgId: result.orgId,
-      type: result.type,
-      prompt: result.prompt,
-      variables: result.variables,
-      createdAt: result.createdAt.toISOString(),
-      updatedAt: result.updatedAt.toISOString(),
-    });
+    res.json(formatPromptResponse(result));
   } catch (error) {
     console.error("Get prompt error:", error);
     res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
   }
 });
 
-/**
- * PUT /platform-prompts — Upsert a platform-wide prompt template (idempotent)
- * Auth: API key only (no x-org-id, x-user-id, x-run-id required)
- * Platform prompts are used as fallback when an org has no prompt for a given type.
- */
-router.put("/platform-prompts", async (req, res) => {
+// ---------------------------------------------------------------------------
+// GET /platform-prompts?type= — Read a prompt (no identity headers)
+// ---------------------------------------------------------------------------
+router.get("/platform-prompts", async (req, res) => {
   try {
-    const parsed = UpsertPromptRequestSchema.safeParse(req.body);
+    const { type } = req.query as { type?: string };
+    if (!type) {
+      return res.status(400).json({ error: "type query param required" });
+    }
+
+    const result = await db.query.prompts.findFirst({
+      where: eq(prompts.type, type),
+    });
+
+    if (!result) {
+      return res.status(404).json({ error: `No prompt found for type=${type}` });
+    }
+
+    res.json(formatPromptResponse(result));
+  } catch (error) {
+    console.error("Get platform prompt error:", error);
+    res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /prompts — Idempotent create (with identity headers)
+// ---------------------------------------------------------------------------
+router.post("/prompts", serviceAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const parsed = CreatePromptRequestSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
@@ -101,32 +111,88 @@ router.put("/platform-prompts", async (req, res) => {
     const { type, prompt, variables } = parsed.data;
 
     const existing = await db.query.prompts.findFirst({
-      where: and(isNull(prompts.orgId), eq(prompts.type, type)),
+      where: eq(prompts.type, type),
     });
 
-    let result;
     if (existing) {
-      [result] = await db
-        .update(prompts)
-        .set({ prompt, variables, updatedAt: new Date() })
-        .where(and(isNull(prompts.orgId), eq(prompts.type, type)))
-        .returning();
-    } else {
-      [result] = await db
-        .insert(prompts)
-        .values({ orgId: null, type, prompt, variables })
-        .returning();
+      return res.status(200).json(formatPromptResponse(existing));
     }
 
-    res.json({
-      id: result.id,
-      type: result.type,
-      variables: result.variables,
-      createdAt: result.createdAt.toISOString(),
-      updatedAt: result.updatedAt.toISOString(),
-    });
+    const [result] = await db
+      .insert(prompts)
+      .values({ orgId: req.orgId!, type, prompt, variables })
+      .returning();
+
+    res.status(201).json(formatPromptResponse(result));
   } catch (error) {
-    console.error("Upsert platform prompt error:", error);
+    console.error("Create prompt error:", error);
+    res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /platform-prompts — Idempotent create (no identity headers)
+// ---------------------------------------------------------------------------
+router.post("/platform-prompts", async (req, res) => {
+  try {
+    const parsed = CreatePromptRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
+    }
+
+    const { type, prompt, variables } = parsed.data;
+
+    const existing = await db.query.prompts.findFirst({
+      where: eq(prompts.type, type),
+    });
+
+    if (existing) {
+      return res.status(200).json(formatPromptResponse(existing));
+    }
+
+    const [result] = await db
+      .insert(prompts)
+      .values({ orgId: null, type, prompt, variables })
+      .returning();
+
+    res.status(201).json(formatPromptResponse(result));
+  } catch (error) {
+    console.error("Create platform prompt error:", error);
+    res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /prompts — Create new versioned prompt (with identity headers)
+// ---------------------------------------------------------------------------
+router.put("/prompts", serviceAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const parsed = VersionPromptRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
+    }
+
+    const { sourceType, prompt, variables } = parsed.data;
+
+    // Verify source prompt exists
+    const source = await db.query.prompts.findFirst({
+      where: eq(prompts.type, sourceType),
+    });
+
+    if (!source) {
+      return res.status(404).json({ error: `Source prompt not found for type=${sourceType}` });
+    }
+
+    const newType = await findNextVersionType(sourceType);
+
+    const [result] = await db
+      .insert(prompts)
+      .values({ orgId: req.orgId!, type: newType, prompt, variables })
+      .returning();
+
+    res.status(201).json(formatPromptResponse(result));
+  } catch (error) {
+    console.error("Version prompt error:", error);
     res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
   }
 });

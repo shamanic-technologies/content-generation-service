@@ -12,48 +12,23 @@ vi.mock("../../src/middleware/auth.js", () => ({
   },
 }));
 
-// Track DB operations
+const NOW = new Date("2026-03-12T00:00:00Z");
+
 const mockFindFirst = vi.fn();
-const mockInsertValues: Array<Record<string, unknown>> = [];
-const mockUpdateSetCalls: Array<Record<string, unknown>> = [];
+const mockFindMany = vi.fn();
+const mockInsertReturning = vi.fn();
 
 vi.mock("../../src/db/index.js", () => ({
   db: {
     insert: vi.fn().mockReturnValue({
-      values: vi.fn().mockImplementation((data: Record<string, unknown>) => {
-        mockInsertValues.push(data);
-        return {
-          returning: vi.fn().mockResolvedValue([{
-            id: "prompt-new",
-            orgId: data.orgId ?? null,
-            type: data.type,
-            variables: data.variables,
-            createdAt: new Date("2026-03-12"),
-            updatedAt: new Date("2026-03-12"),
-          }]),
-        };
-      }),
-    }),
-    update: vi.fn().mockReturnValue({
-      set: vi.fn().mockImplementation((data: Record<string, unknown>) => {
-        mockUpdateSetCalls.push(data);
-        return {
-          where: vi.fn().mockReturnValue({
-            returning: vi.fn().mockResolvedValue([{
-              id: "prompt-existing",
-              orgId: null,
-              type: "cold-email",
-              variables: data.variables ?? ["leadFirstName"],
-              createdAt: new Date("2026-03-10"),
-              updatedAt: new Date("2026-03-12"),
-            }]),
-          }),
-        };
+      values: vi.fn().mockReturnValue({
+        returning: (...args: unknown[]) => mockInsertReturning(...args),
       }),
     }),
     query: {
       prompts: {
         findFirst: (...args: unknown[]) => mockFindFirst(...args),
+        findMany: (...args: unknown[]) => mockFindMany(...args),
       },
     },
   },
@@ -69,89 +44,123 @@ function createTestApp() {
   return app;
 }
 
-describe("PUT /platform-prompts", () => {
+describe("GET /platform-prompts", () => {
   let app: express.Express;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    mockInsertValues.length = 0;
-    mockUpdateSetCalls.length = 0;
-
     app = createTestApp();
     const { default: promptRoutes } = await import("../../src/routes/prompts.js");
     app.use(promptRoutes);
   });
 
-  it("creates a new platform prompt (orgId = null)", async () => {
-    mockFindFirst.mockResolvedValueOnce(null); // no existing
+  it("returns prompt without identity headers", async () => {
+    mockFindFirst.mockResolvedValue({
+      id: "prompt-1",
+      orgId: null,
+      type: "cold-email",
+      prompt: "Write a cold email to {{leadFirstName}}",
+      variables: ["leadFirstName"],
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
 
     const res = await request(app)
-      .put("/platform-prompts")
+      .get("/platform-prompts?type=cold-email")
+      .expect(200);
+
+    expect(res.body.type).toBe("cold-email");
+    expect(res.body.prompt).toContain("{{leadFirstName}}");
+    expect(res.body).not.toHaveProperty("orgId");
+  });
+});
+
+describe("POST /platform-prompts", () => {
+  let app: express.Express;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = createTestApp();
+    const { default: promptRoutes } = await import("../../src/routes/prompts.js");
+    app.use(promptRoutes);
+  });
+
+  it("creates a new platform prompt (orgId = null) with 201", async () => {
+    mockFindFirst.mockResolvedValue(null);
+    mockInsertReturning.mockResolvedValue([{
+      id: "prompt-new",
+      orgId: null,
+      type: "cold-email",
+      prompt: "Write a cold email to {{leadFirstName}}",
+      variables: ["leadFirstName"],
+      createdAt: NOW,
+      updatedAt: NOW,
+    }]);
+
+    const res = await request(app)
+      .post("/platform-prompts")
       .send({
         type: "cold-email",
         prompt: "Write a cold email to {{leadFirstName}}",
         variables: ["leadFirstName"],
       })
-      .expect(200);
+      .expect(201);
 
     expect(res.body.id).toBe("prompt-new");
     expect(res.body.type).toBe("cold-email");
     expect(res.body).not.toHaveProperty("orgId");
-
-    // Verify orgId is null in the insert
-    expect(mockInsertValues[0]).toEqual(
-      expect.objectContaining({
-        orgId: null,
-        type: "cold-email",
-      })
-    );
   });
 
-  it("updates an existing platform prompt (idempotent)", async () => {
-    mockFindFirst.mockResolvedValueOnce({
+  it("returns 200 (no-op) when type already exists", async () => {
+    mockFindFirst.mockResolvedValue({
       id: "prompt-existing",
       orgId: null,
       type: "cold-email",
-      prompt: "Old prompt",
-      variables: ["old"],
+      prompt: "Existing prompt",
+      variables: ["leadFirstName"],
+      createdAt: NOW,
+      updatedAt: NOW,
     });
 
     const res = await request(app)
-      .put("/platform-prompts")
+      .post("/platform-prompts")
       .send({
         type: "cold-email",
-        prompt: "Updated prompt for {{leadFirstName}}",
+        prompt: "Different prompt content",
         variables: ["leadFirstName"],
       })
       .expect(200);
 
     expect(res.body.id).toBe("prompt-existing");
-    expect(mockUpdateSetCalls[0]).toEqual(
-      expect.objectContaining({
-        prompt: "Updated prompt for {{leadFirstName}}",
-        variables: ["leadFirstName"],
-      })
-    );
+    expect(mockInsertReturning).not.toHaveBeenCalled();
   });
 
   it("does not require x-org-id, x-user-id, x-run-id headers", async () => {
-    mockFindFirst.mockResolvedValueOnce(null);
+    mockFindFirst.mockResolvedValue(null);
+    mockInsertReturning.mockResolvedValue([{
+      id: "prompt-new",
+      orgId: null,
+      type: "cold-email",
+      prompt: "Write an email to {{name}}",
+      variables: ["name"],
+      createdAt: NOW,
+      updatedAt: NOW,
+    }]);
 
-    // Send without any identity headers — should still work
     await request(app)
-      .put("/platform-prompts")
+      .post("/platform-prompts")
       .send({
         type: "cold-email",
         prompt: "Write an email to {{name}}",
         variables: ["name"],
       })
-      .expect(200);
+      .expect(201);
   });
 
   it("returns 400 for invalid request body", async () => {
     await request(app)
-      .put("/platform-prompts")
-      .send({ type: "cold-email" }) // missing prompt and variables
+      .post("/platform-prompts")
+      .send({ type: "cold-email" })
       .expect(400);
   });
 });

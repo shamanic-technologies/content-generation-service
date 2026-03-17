@@ -76,49 +76,125 @@ registry.registerPath({
 });
 
 // ---------------------------------------------------------------------------
-// PUT /prompts — Upsert a prompt template for an org
+// Shared prompt schemas
 // ---------------------------------------------------------------------------
-export const UpsertPromptRequestSchema = registry.register(
-  "UpsertPromptRequest",
+export const CreatePromptRequestSchema = registry.register(
+  "CreatePromptRequest",
   z
     .object({
-      type: z.string().describe("Prompt type, e.g. 'cold-email' or 'welcome-email'"),
-      prompt: z.string().describe("Prompt template text with {{variable}} placeholders"),
+      type: z.string().describe("Unique prompt identifier, e.g. 'cold-email' or 'welcome-email'"),
+      prompt: z.string().describe("Prompt template text with {{variable}} placeholders. Must NOT contain company-specific data — only {{variables}}."),
       variables: z.array(z.string()).describe("List of expected variable names used in the prompt"),
     })
-    .openapi("UpsertPromptRequest")
+    .openapi("CreatePromptRequest")
 );
 
-const UpsertPromptResponseSchema = registry.register(
-  "UpsertPromptResponse",
+export const VersionPromptRequestSchema = registry.register(
+  "VersionPromptRequest",
+  z
+    .object({
+      sourceType: z.string().describe("The type of the prompt to create a new version from, e.g. 'cold-email'"),
+      prompt: z.string().describe("New prompt template text with {{variable}} placeholders. Must NOT contain company-specific data — only {{variables}}."),
+      variables: z.array(z.string()).describe("List of expected variable names used in the prompt"),
+    })
+    .openapi("VersionPromptRequest")
+);
+
+const PromptResponseSchema = registry.register(
+  "PromptResponse",
   z
     .object({
       id: z.string(),
-      orgId: z.string(),
       type: z.string(),
+      prompt: z.string(),
       variables: z.array(z.string()),
       createdAt: z.string(),
       updatedAt: z.string(),
     })
-    .openapi("UpsertPromptResponse")
+    .openapi("PromptResponse")
 );
 
+// Keep old name as alias for backward compat in generate.ts import
+export const UpsertPromptRequestSchema = CreatePromptRequestSchema;
+
+// ---------------------------------------------------------------------------
+// GET /prompts?type= — Read a prompt template (with identity headers)
+// ---------------------------------------------------------------------------
 registry.registerPath({
-  method: "put",
+  method: "get",
   path: "/prompts",
   tags: ["Prompts"],
-  summary: "Register or update a prompt template for an org (idempotent)",
+  summary: "Get a prompt template by type",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional() }),
-    body: {
-      required: true,
-      content: { "application/json": { schema: UpsertPromptRequestSchema } },
-    },
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
+    query: z.object({ type: z.string().describe("Prompt type to look up") }),
   },
   responses: {
     200: {
-      description: "Prompt upserted",
-      content: { "application/json": { schema: UpsertPromptResponseSchema } },
+      description: "Prompt found",
+      content: { "application/json": { schema: PromptResponseSchema } },
+    },
+    400: {
+      description: "Missing type query param",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: "Prompt not found",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// GET /platform-prompts?type= — Read a prompt template (no identity headers)
+// ---------------------------------------------------------------------------
+registry.registerPath({
+  method: "get",
+  path: "/platform-prompts",
+  tags: ["Prompts"],
+  summary: "Get a prompt template by type (no identity headers required)",
+  request: {
+    query: z.object({ type: z.string().describe("Prompt type to look up") }),
+  },
+  responses: {
+    200: {
+      description: "Prompt found",
+      content: { "application/json": { schema: PromptResponseSchema } },
+    },
+    400: {
+      description: "Missing type query param",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: "Prompt not found",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// POST /prompts — Idempotent prompt creation (with identity headers)
+// ---------------------------------------------------------------------------
+registry.registerPath({
+  method: "post",
+  path: "/prompts",
+  tags: ["Prompts"],
+  summary: "Create a prompt template (idempotent — no-op if type already exists)",
+  request: {
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
+    body: {
+      required: true,
+      content: { "application/json": { schema: CreatePromptRequestSchema } },
+    },
+  },
+  responses: {
+    201: {
+      description: "Prompt created",
+      content: { "application/json": { schema: PromptResponseSchema } },
+    },
+    200: {
+      description: "Prompt already exists (no-op)",
+      content: { "application/json": { schema: PromptResponseSchema } },
     },
     400: {
       description: "Invalid request",
@@ -128,40 +204,67 @@ registry.registerPath({
 });
 
 // ---------------------------------------------------------------------------
-// PUT /platform-prompts — Upsert a platform-wide prompt template
+// POST /platform-prompts — Idempotent prompt creation (no identity headers)
 // ---------------------------------------------------------------------------
-const PlatformPromptResponseSchema = registry.register(
-  "PlatformPromptResponse",
-  z
-    .object({
-      id: z.string(),
-      type: z.string(),
-      variables: z.array(z.string()),
-      createdAt: z.string(),
-      updatedAt: z.string(),
-    })
-    .openapi("PlatformPromptResponse")
-);
-
 registry.registerPath({
-  method: "put",
+  method: "post",
   path: "/platform-prompts",
   tags: ["Prompts"],
-  summary: "Register or update a platform-wide prompt template (idempotent, API key auth only)",
-  description: "Platform prompts are used as fallback when an org has no prompt registered for a given type. Called at cold start, same pattern as key-service POST /platform-keys.",
+  summary: "Create a prompt template (idempotent — no-op if type already exists, no identity headers required)",
+  description: "Used at cold start to register prompt templates. Same pattern as key-service POST /platform-keys.",
   request: {
     body: {
       required: true,
-      content: { "application/json": { schema: UpsertPromptRequestSchema } },
+      content: { "application/json": { schema: CreatePromptRequestSchema } },
     },
   },
   responses: {
+    201: {
+      description: "Prompt created",
+      content: { "application/json": { schema: PromptResponseSchema } },
+    },
     200: {
-      description: "Platform prompt upserted",
-      content: { "application/json": { schema: PlatformPromptResponseSchema } },
+      description: "Prompt already exists (no-op)",
+      content: { "application/json": { schema: PromptResponseSchema } },
     },
     400: {
       description: "Invalid request",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// PUT /prompts — Create a new versioned prompt from an existing one
+// ---------------------------------------------------------------------------
+registry.registerPath({
+  method: "put",
+  path: "/prompts",
+  tags: ["Prompts"],
+  summary: "Create a new version of a prompt (auto-increments type name)",
+  description:
+    "Creates a new prompt with an auto-incremented type name based on sourceType. " +
+    "E.g. sourceType 'cold-email' → creates 'cold-email-v2'. " +
+    "sourceType 'cold-email-v5' → creates 'cold-email-v6'. " +
+    "The source prompt is never modified.",
+  request: {
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
+    body: {
+      required: true,
+      content: { "application/json": { schema: VersionPromptRequestSchema } },
+    },
+  },
+  responses: {
+    201: {
+      description: "New versioned prompt created",
+      content: { "application/json": { schema: PromptResponseSchema } },
+    },
+    400: {
+      description: "Invalid request",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: "Source prompt not found",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },
