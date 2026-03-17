@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, and, isNull, like } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
