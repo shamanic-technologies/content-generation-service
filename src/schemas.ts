@@ -175,7 +175,13 @@ export const GenerateRequestSchema = registry.register(
   z
     .object({
       type: z.string().describe("Which stored prompt to use, e.g. 'cold-email' or 'welcome-email'"),
-      variables: z.record(z.string(), z.unknown()).describe("Variable values to substitute into the prompt template. Non-string values (arrays, objects) are coerced to strings."),
+      variables: z.record(z.string(), z.unknown()).describe(
+        "Variable values to substitute into the prompt template. " +
+        "Non-string values (arrays, objects) are coerced to strings. " +
+        "Recognised keys (used for dedicated DB columns and dashboard display): " +
+        "leadFirstName, leadLastName, leadTitle, leadCompanyName, leadCompanyIndustry, clientCompanyName. " +
+        "Keys must be flat — e.g. send { leadFirstName: \"Alice\" }, NOT { lead: { data: { firstName: \"Alice\" } } }."
+      ),
       // Tracking / linking
       brandId: z.string().optional(),
       campaignId: z.string().optional(),
@@ -241,13 +247,70 @@ registry.registerPath({
 });
 
 // ---------------------------------------------------------------------------
+// Shared EmailGeneration schema (mirrors Drizzle emailGenerations table)
+// ---------------------------------------------------------------------------
+const EmailGenerationSchema = registry.register(
+  "EmailGeneration",
+  z
+    .object({
+      id: z.string().uuid(),
+      orgId: z.string().uuid(),
+      runId: z.string(),
+      apolloEnrichmentId: z.string().nullable(),
+      promptType: z.string().nullable(),
+
+      // Lead info (populated from variables)
+      leadFirstName: z.string().nullable(),
+      leadLastName: z.string().nullable(),
+      leadCompany: z.string().nullable(),
+      leadTitle: z.string().nullable(),
+      leadIndustry: z.string().nullable(),
+
+      // Client info
+      clientCompanyName: z.string().nullable(),
+      clientCompanyDescription: z.string().nullable(),
+
+      // Full variable data for audit
+      variablesRaw: z.unknown().nullable(),
+
+      // External references
+      brandId: z.string(),
+      campaignId: z.string(),
+      generationRunId: z.string().nullable(),
+
+      // Generated email sequence
+      subject: z.string().nullable(),
+      bodyHtml: z.string().nullable(),
+      bodyText: z.string().nullable(),
+      sequence: z.unknown().nullable(),
+
+      // Model info
+      model: z.string(),
+      tokensInput: z.number().nullable(),
+      tokensOutput: z.number().nullable(),
+
+      // Raw data for debugging
+      promptRaw: z.string().nullable(),
+      responseRaw: z.unknown().nullable(),
+
+      // Workflow tracking
+      workflowName: z.string().nullable(),
+      leadId: z.string().nullable(),
+      idempotencyKey: z.string().nullable(),
+
+      createdAt: z.string(),
+    })
+    .openapi("EmailGeneration")
+);
+
+// ---------------------------------------------------------------------------
 // GET /generations?runId&campaignId&brandId
 // ---------------------------------------------------------------------------
 const GenerationsListResponseSchema = registry.register(
   "GenerationsListResponse",
   z
     .object({
-      generations: z.array(z.object({}).passthrough()),
+      generations: z.array(EmailGenerationSchema),
     })
     .openapi("GenerationsListResponse")
 );
@@ -286,7 +349,7 @@ const GenerationSingleResponseSchema = registry.register(
   "GenerationSingleResponse",
   z
     .object({
-      generation: z.object({}).passthrough(),
+      generation: EmailGenerationSchema,
     })
     .openapi("GenerationSingleResponse")
 );

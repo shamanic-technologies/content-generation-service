@@ -144,7 +144,7 @@
             "additionalProperties": {
               "nullable": true
             },
-            "description": "Variable values to substitute into the prompt template. Non-string values (arrays, objects) are coerced to strings."
+            "description": "Variable values to substitute into the prompt template. Non-string values (arrays, objects) are coerced to strings. Recognised keys (used for dedicated DB columns and dashboard display): leadFirstName, leadLastName, leadTitle, leadCompanyName, leadCompanyIndustry, clientCompanyName. Keys must be flat — e.g. send { leadFirstName: \"Alice\" }, NOT { lead: { data: { firstName: \"Alice\" } } }."
           },
           "brandId": {
             "type": "string"
@@ -226,17 +226,154 @@
           "tokensOutput"
         ]
       },
+      "EmailGeneration": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "orgId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "apolloEnrichmentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "promptType": {
+            "type": "string",
+            "nullable": true
+          },
+          "leadFirstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "leadLastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "leadCompany": {
+            "type": "string",
+            "nullable": true
+          },
+          "leadTitle": {
+            "type": "string",
+            "nullable": true
+          },
+          "leadIndustry": {
+            "type": "string",
+            "nullable": true
+          },
+          "clientCompanyName": {
+            "type": "string",
+            "nullable": true
+          },
+          "clientCompanyDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "variablesRaw": {
+            "nullable": true
+          },
+          "brandId": {
+            "type": "string"
+          },
+          "campaignId": {
+            "type": "string"
+          },
+          "generationRunId": {
+            "type": "string",
+            "nullable": true
+          },
+          "subject": {
+            "type": "string",
+            "nullable": true
+          },
+          "bodyHtml": {
+            "type": "string",
+            "nullable": true
+          },
+          "bodyText": {
+            "type": "string",
+            "nullable": true
+          },
+          "sequence": {
+            "nullable": true
+          },
+          "model": {
+            "type": "string"
+          },
+          "tokensInput": {
+            "type": "number",
+            "nullable": true
+          },
+          "tokensOutput": {
+            "type": "number",
+            "nullable": true
+          },
+          "promptRaw": {
+            "type": "string",
+            "nullable": true
+          },
+          "responseRaw": {
+            "nullable": true
+          },
+          "workflowName": {
+            "type": "string",
+            "nullable": true
+          },
+          "leadId": {
+            "type": "string",
+            "nullable": true
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "runId",
+          "apolloEnrichmentId",
+          "promptType",
+          "leadFirstName",
+          "leadLastName",
+          "leadCompany",
+          "leadTitle",
+          "leadIndustry",
+          "clientCompanyName",
+          "clientCompanyDescription",
+          "brandId",
+          "campaignId",
+          "generationRunId",
+          "subject",
+          "bodyHtml",
+          "bodyText",
+          "model",
+          "tokensInput",
+          "tokensOutput",
+          "promptRaw",
+          "workflowName",
+          "leadId",
+          "idempotencyKey",
+          "createdAt"
+        ]
+      },
       "GenerationsListResponse": {
         "type": "object",
         "properties": {
           "generations": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": {
-                "nullable": true
-              }
+              "$ref": "#/components/schemas/EmailGeneration"
             }
           }
         },
@@ -248,11 +385,7 @@
         "type": "object",
         "properties": {
           "generation": {
-            "type": "object",
-            "properties": {},
-            "additionalProperties": {
-              "nullable": true
-            }
+            "$ref": "#/components/schemas/EmailGeneration"
           }
         },
         "required": [
