@@ -1,5 +1,4 @@
 import { pgTable, uuid, text, timestamp, uniqueIndex, index, integer, jsonb, boolean } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
 
 // Email generations
 export const emailGenerations = pgTable(
@@ -68,14 +67,14 @@ export const emailGenerations = pgTable(
   ]
 );
 
-// Prompt templates (registered by orgs or at platform level)
-// orgId = NULL → platform-wide prompt (accessible to all orgs as fallback)
-// orgId = uuid → org-specific prompt (takes priority over platform prompt)
+// Prompt templates — type is the unique identifier (like an ID).
+// orgId is optional traceability: records who created the prompt, but does NOT scope visibility.
+// All prompts are globally accessible regardless of orgId.
 export const prompts = pgTable(
   "prompts",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    orgId: uuid("org_id"), // nullable: NULL = platform prompt
+    orgId: uuid("org_id"), // nullable: traceability only (who created it)
     type: text("type").notNull(),
     prompt: text("prompt").notNull(), // template text with {{variables}}
     variables: jsonb("variables").$type<string[]>().notNull().default([]),
@@ -83,14 +82,7 @@ export const prompts = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    // Org-specific prompts: one per (org, type)
-    uniqueIndex("idx_prompts_org_type")
-      .on(table.orgId, table.type)
-      .where(sql`org_id IS NOT NULL`),
-    // Platform prompts: one per type
-    uniqueIndex("idx_prompts_platform_type")
-      .on(table.type)
-      .where(sql`org_id IS NULL`),
+    uniqueIndex("idx_prompts_type").on(table.type),
   ]
 );
 
