@@ -343,7 +343,7 @@ registry.registerPath({
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     404: {
-      description: "Prompt not found for this org + type",
+      description: "Prompt not found for this type",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },
