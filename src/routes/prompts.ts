@@ -179,6 +179,15 @@ router.put("/prompts", serviceAuth, async (req: AuthenticatedRequest, res) => {
       where: eq(prompts.type, sourceType),
     });
 
+    // If source exists and content is identical, return it as-is (no new version)
+    if (
+      source &&
+      source.prompt === prompt &&
+      JSON.stringify(source.variables) === JSON.stringify(variables)
+    ) {
+      return res.status(200).json(formatPromptResponse(source));
+    }
+
     const newType = source ? await findNextVersionType(sourceType) : sourceType;
 
     const [result] = await db
