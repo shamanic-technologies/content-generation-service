@@ -810,7 +810,7 @@
           "Prompts"
         ],
         "summary": "Create or version a prompt (auto-increments type name if sourceType exists)",
-        "description": "If sourceType already exists, creates a new prompt with an auto-incremented type name. E.g. sourceType 'cold-email' → creates 'cold-email-v2'. sourceType 'cold-email-v5' → creates 'cold-email-v6'. If sourceType does not exist, creates the prompt with that type directly. The source prompt is never modified.",
+        "description": "If the prompt and variables are identical to the existing sourceType, returns the existing prompt as-is (200). If sourceType already exists but content differs, creates a new prompt with an auto-incremented type name (201). E.g. sourceType 'cold-email' → creates 'cold-email-v2'. sourceType 'cold-email-v5' → creates 'cold-email-v6'. If sourceType does not exist, creates the prompt with that type directly (201). The source prompt is never modified.",
         "parameters": [
           {
             "schema": {
@@ -848,6 +848,16 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "Prompt unchanged — returned existing version as-is",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptResponse"
+                }
+              }
+            }
+          },
           "201": {
             "description": "New versioned prompt created",
             "content": {

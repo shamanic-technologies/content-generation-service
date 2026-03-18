@@ -420,6 +420,35 @@ describe("PUT /prompts", () => {
     expect(res.body.type).toBe("cold-email-v6");
   });
 
+  it("returns 200 without creating a new version when prompt and variables are identical", async () => {
+    mockFindFirst.mockResolvedValue({
+      id: "prompt-source",
+      orgId: null,
+      type: "cold-email",
+      prompt: "Write an email to {{name}}",
+      variables: ["name"],
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+
+    const res = await request(app)
+      .put("/prompts")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
+      .send({
+        sourceType: "cold-email",
+        prompt: "Write an email to {{name}}",
+        variables: ["name"],
+      })
+      .expect(200);
+
+    expect(res.body.id).toBe("prompt-source");
+    expect(res.body.type).toBe("cold-email");
+    expect(res.body.prompt).toBe("Write an email to {{name}}");
+    expect(mockInsertReturning).not.toHaveBeenCalled();
+    expect(mockFindMany).not.toHaveBeenCalled();
+  });
+
   it("creates prompt directly when sourceType does not exist", async () => {
     mockFindFirst.mockResolvedValue(null);
     mockInsertReturning.mockResolvedValue([{
