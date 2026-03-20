@@ -23,7 +23,8 @@ FROM node:20-slim
 
 WORKDIR /app
 
-# Install pnpm
+# Install pnpm and ffmpeg
+RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 RUN npm install -g pnpm
 
 # Copy package files

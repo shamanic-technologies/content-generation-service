@@ -11,6 +11,7 @@ import healthRoutes from "./routes/health.js";
 import generateRoutes from "./routes/generate.js";
 import statsRoutes from "./routes/stats.js";
 import promptRoutes from "./routes/prompts.js";
+import composeRoutes from "./routes/compose.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -42,6 +43,7 @@ app.use(apiKeyAuth);
 app.use(generateRoutes);
 app.use(statsRoutes);
 app.use(promptRoutes);
+app.use(composeRoutes);
 
 // 404 handler
 app.use((req, res) => {
