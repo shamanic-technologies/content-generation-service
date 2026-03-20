@@ -466,6 +466,59 @@
           "groups"
         ]
       },
+      "ComposeRequest": {
+        "type": "object",
+        "properties": {
+          "videoUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public URL of the webcam video (e.g. Vercel Blob)"
+          },
+          "name": {
+            "type": "string",
+            "description": "First name of the person (displayed on the quote image)"
+          },
+          "age": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Age of the person"
+          },
+          "theme": {
+            "type": "string",
+            "description": "Theme of the quote (e.g. 'Loss of Desire')"
+          },
+          "text": {
+            "type": "string",
+            "description": "Quote text to display"
+          },
+          "outputBlobToken": {
+            "type": "string",
+            "description": "Vercel Blob token for uploading the composed video"
+          }
+        },
+        "required": [
+          "videoUrl",
+          "name",
+          "age",
+          "theme",
+          "text",
+          "outputBlobToken"
+        ]
+      },
+      "ComposeResponse": {
+        "type": "object",
+        "properties": {
+          "composedVideoUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public URL of the composed MP4 video"
+          }
+        },
+        "required": [
+          "composedVideoUrl"
+        ]
+      },
       "StatsRequest": {
         "type": "object",
         "properties": {
@@ -1559,6 +1612,57 @@
           },
           "400": {
             "description": "Missing required fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/compose": {
+      "post": {
+        "tags": [
+          "Video Composition"
+        ],
+        "summary": "Compose a split-screen vertical video (9:16) from a quote and webcam recording",
+        "description": "Downloads the source webcam video, generates a styled quote image (1080x768), and uses FFmpeg to compose a split-screen video (quote top 40%, webcam bottom 60%) at 1080x1920 30fps. The result is uploaded to Vercel Blob.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComposeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Video composed and uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComposeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or video download failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Composition failed",
             "content": {
               "application/json": {
                 "schema": {

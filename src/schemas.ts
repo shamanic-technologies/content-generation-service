@@ -577,6 +577,63 @@ registry.registerPath({
 });
 
 // ---------------------------------------------------------------------------
+// POST /compose — Compose a split-screen video (quote image + webcam)
+// ---------------------------------------------------------------------------
+export const ComposeRequestSchema = registry.register(
+  "ComposeRequest",
+  z
+    .object({
+      videoUrl: z.string().url().describe("Public URL of the webcam video (e.g. Vercel Blob)"),
+      name: z.string().describe("First name of the person (displayed on the quote image)"),
+      age: z.number().int().positive().describe("Age of the person"),
+      theme: z.string().describe("Theme of the quote (e.g. 'Loss of Desire')"),
+      text: z.string().describe("Quote text to display"),
+      outputBlobToken: z.string().describe("Vercel Blob token for uploading the composed video"),
+    })
+    .openapi("ComposeRequest")
+);
+
+const ComposeResponseSchema = registry.register(
+  "ComposeResponse",
+  z
+    .object({
+      composedVideoUrl: z.string().url().describe("Public URL of the composed MP4 video"),
+    })
+    .openapi("ComposeResponse")
+);
+
+registry.registerPath({
+  method: "post",
+  path: "/compose",
+  tags: ["Video Composition"],
+  summary: "Compose a split-screen vertical video (9:16) from a quote and webcam recording",
+  description:
+    "Downloads the source webcam video, generates a styled quote image (1080x768), " +
+    "and uses FFmpeg to compose a split-screen video (quote top 40%, webcam bottom 60%) " +
+    "at 1080x1920 30fps. The result is uploaded to Vercel Blob.",
+  request: {
+    body: {
+      required: true,
+      content: { "application/json": { schema: ComposeRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Video composed and uploaded successfully",
+      content: { "application/json": { schema: ComposeResponseSchema } },
+    },
+    400: {
+      description: "Invalid request or video download failed",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    500: {
+      description: "Composition failed",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
 // POST /stats (deprecated — use GET /stats)
 // ---------------------------------------------------------------------------
 export const StatsRequestSchema = registry.register(
