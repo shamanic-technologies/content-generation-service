@@ -58,8 +58,9 @@ vi.mock("../../src/lib/key-client.js", () => ({
 }));
 
 vi.mock("../../src/lib/billing-client.js", () => ({
-  authorizeCredits: vi.fn().mockResolvedValue({ sufficient: true, balance_cents: 5000 }),
-  estimateGenerationCostCents: vi.fn().mockReturnValue(6),
+  authorizeCredits: vi.fn().mockResolvedValue({ sufficient: true, balance_cents: 5000, required_cents: 1 }),
+  ESTIMATED_INPUT_TOKENS: 2000,
+  ESTIMATED_OUTPUT_TOKENS: 3072,
 }));
 
 // Mock anthropic client — capture what prompt was sent

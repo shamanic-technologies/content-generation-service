@@ -15,18 +15,25 @@ export interface BillingIdentity {
   workflowName?: string;
 }
 
+export interface BillingCostItem {
+  costName: string;
+  quantity: number;
+}
+
 export interface AuthorizeResult {
   sufficient: boolean;
   balance_cents: number;
+  required_cents: number;
 }
 
 /**
  * Request credit authorization from billing-service.
- * Returns { sufficient, balance_cents }.
+ * Sends costName + quantity items — billing-service resolves the price internally.
+ * Returns { sufficient, balance_cents, required_cents }.
  * Throws on network / unexpected errors.
  */
 export async function authorizeCredits(
-  requiredCents: number,
+  items: BillingCostItem[],
   description: string,
   identity: BillingIdentity
 ): Promise<AuthorizeResult> {
@@ -44,10 +51,7 @@ export async function authorizeCredits(
   const response = await fetch(`${BILLING_SERVICE_URL}/v1/credits/authorize`, {
     method: "POST",
     headers,
-    body: JSON.stringify({
-      required_cents: requiredCents,
-      description,
-    }),
+    body: JSON.stringify({ items, description }),
   });
 
   if (!response.ok) {
@@ -58,19 +62,6 @@ export async function authorizeCredits(
   return response.json() as Promise<AuthorizeResult>;
 }
 
-/**
- * Estimate cost in USD cents for a Claude Sonnet 4.6 generation.
- * Uses max_tokens (3072) as worst-case output estimate and a conservative
- * input estimate of ~2000 tokens.
- *
- * Pricing: $3/M input tokens, $15/M output tokens.
- */
-export function estimateGenerationCostCents(): number {
-  const estimatedInputTokens = 2000;
-  const maxOutputTokens = 3072;
-  const inputCostUsd = (estimatedInputTokens / 1_000_000) * 3;
-  const outputCostUsd = (maxOutputTokens / 1_000_000) * 15;
-  const totalCents = (inputCostUsd + outputCostUsd) * 100;
-  // Round up to nearest cent to be conservative
-  return Math.ceil(totalCents);
-}
+/** Conservative token estimates for pre-authorization (before the LLM call). */
+export const ESTIMATED_INPUT_TOKENS = 2000;
+export const ESTIMATED_OUTPUT_TOKENS = 3072; // matches max_tokens

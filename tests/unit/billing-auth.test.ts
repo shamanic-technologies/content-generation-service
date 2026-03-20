@@ -65,12 +65,12 @@ vi.mock("../../src/lib/key-client.js", () => ({
 }));
 
 // Mock billing-client
-const mockAuthorizeCredits = vi.fn().mockResolvedValue({ sufficient: true, balance_cents: 5000 });
-const mockEstimateGenerationCostCents = vi.fn().mockReturnValue(6);
+const mockAuthorizeCredits = vi.fn().mockResolvedValue({ sufficient: true, balance_cents: 5000, required_cents: 1 });
 
 vi.mock("../../src/lib/billing-client.js", () => ({
   authorizeCredits: (...args: unknown[]) => mockAuthorizeCredits(...args),
-  estimateGenerationCostCents: (...args: unknown[]) => mockEstimateGenerationCostCents(...args),
+  ESTIMATED_INPUT_TOKENS: 2000,
+  ESTIMATED_OUTPUT_TOKENS: 3072,
 }));
 
 // Mock anthropic client
@@ -109,15 +109,14 @@ describe("POST /generate — billing authorization gate", () => {
       variables: ["recipientInfo"],
     });
     mockDecryptKey.mockResolvedValue({ key: "fake-key", keySource: "platform" });
-    mockAuthorizeCredits.mockResolvedValue({ sufficient: true, balance_cents: 5000 });
-    mockEstimateGenerationCostCents.mockReturnValue(6);
+    mockAuthorizeCredits.mockResolvedValue({ sufficient: true, balance_cents: 5000, required_cents: 1 });
 
     app = createTestApp();
     const { default: generateRoutes } = await import("../../src/routes/generate.js");
     app.use(generateRoutes);
   });
 
-  it("calls authorizeCredits when keySource is 'platform'", async () => {
+  it("sends costName + quantity items to authorizeCredits when keySource is 'platform'", async () => {
     await request(app)
       .post("/generate")
       .set("X-Org-Id", "org-123")
@@ -130,7 +129,10 @@ describe("POST /generate — billing authorization gate", () => {
       .expect(200);
 
     expect(mockAuthorizeCredits).toHaveBeenCalledWith(
-      6,
+      [
+        { costName: "anthropic-sonnet-4.6-tokens-input", quantity: 2000 },
+        { costName: "anthropic-sonnet-4.6-tokens-output", quantity: 3072 },
+      ],
       "content-generation — claude-sonnet-4-6",
       {
         orgId: "org-123",
@@ -143,8 +145,8 @@ describe("POST /generate — billing authorization gate", () => {
     );
   });
 
-  it("returns 402 when billing says insufficient credits", async () => {
-    mockAuthorizeCredits.mockResolvedValue({ sufficient: false, balance_cents: 2 });
+  it("returns 402 with balance and required_cents from billing-service", async () => {
+    mockAuthorizeCredits.mockResolvedValue({ sufficient: false, balance_cents: 2, required_cents: 5 });
 
     const res = await request(app)
       .post("/generate")
@@ -157,7 +159,7 @@ describe("POST /generate — billing authorization gate", () => {
     expect(res.body).toEqual({
       error: "Insufficient credits",
       balance_cents: 2,
-      required_cents: 6,
+      required_cents: 5,
     });
 
     // Must NOT call the LLM
@@ -182,7 +184,7 @@ describe("POST /generate — billing authorization gate", () => {
   });
 
   it("proceeds with generation when billing authorizes", async () => {
-    mockAuthorizeCredits.mockResolvedValue({ sufficient: true, balance_cents: 10000 });
+    mockAuthorizeCredits.mockResolvedValue({ sufficient: true, balance_cents: 10000, required_cents: 1 });
 
     const res = await request(app)
       .post("/generate")
@@ -209,15 +211,5 @@ describe("POST /generate — billing authorization gate", () => {
 
     expect(res.body.error).toContain("billing-service");
     expect(mockGenerateFromTemplate).not.toHaveBeenCalled();
-  });
-});
-
-describe("estimateGenerationCostCents", () => {
-  it("returns a positive integer", async () => {
-    // Import the real function (not the mock)
-    const { estimateGenerationCostCents } = await import("../../src/lib/billing-client.js");
-    const cents = estimateGenerationCostCents();
-    expect(cents).toBeGreaterThan(0);
-    expect(Number.isInteger(cents)).toBe(true);
   });
 });
