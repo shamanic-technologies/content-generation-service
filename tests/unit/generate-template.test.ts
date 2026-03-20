@@ -57,6 +57,12 @@ vi.mock("../../src/lib/key-client.js", () => ({
   decryptKey: (...args: unknown[]) => mockDecryptKey(...args),
 }));
 
+vi.mock("../../src/lib/billing-client.js", () => ({
+  authorizeCredits: vi.fn().mockResolvedValue({ sufficient: true, balance_cents: 5000, required_cents: 1 }),
+  ESTIMATED_INPUT_TOKENS: 2000,
+  ESTIMATED_OUTPUT_TOKENS: 3072,
+}));
+
 // Mock anthropic client — capture what prompt was sent
 const mockGenerateFromTemplate = vi.fn().mockResolvedValue({
   subject: "Test subject",

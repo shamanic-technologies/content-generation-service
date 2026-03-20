@@ -49,6 +49,17 @@ const ErrorResponseSchema = registry.register(
   z.object({ error: z.string() }).openapi("ErrorResponse")
 );
 
+const InsufficientCreditsResponseSchema = registry.register(
+  "InsufficientCreditsResponse",
+  z
+    .object({
+      error: z.string(),
+      balance_cents: z.number(),
+      required_cents: z.number(),
+    })
+    .openapi("InsufficientCreditsResponse")
+);
+
 // ---------------------------------------------------------------------------
 // GET /health
 // ---------------------------------------------------------------------------
@@ -343,6 +354,10 @@ registry.registerPath({
     401: {
       description: "Unauthorized",
       content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    402: {
+      description: "Insufficient credits (platform costSource only)",
+      content: { "application/json": { schema: InsufficientCreditsResponseSchema } },
     },
     404: {
       description: "Prompt not found for this type",

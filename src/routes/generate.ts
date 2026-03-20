@@ -6,6 +6,7 @@ import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { generateFromTemplate } from "../lib/anthropic-client.js";
 import { decryptKey } from "../lib/key-client.js";
 import { createRun, updateRun, addCosts } from "../lib/runs-client.js";
+import { authorizeCredits, ESTIMATED_INPUT_TOKENS, ESTIMATED_OUTPUT_TOKENS } from "../lib/billing-client.js";
 import { GenerateRequestSchema, StatsRequestSchema, StatsQuerySchema } from "../schemas.js";
 
 const router = Router();
@@ -71,6 +72,25 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     // Get Anthropic API key
     const caller = { callerMethod: "POST", callerPath: "/generate", campaignId, brandId, workflowName };
     const { key: anthropicApiKey, keySource } = await decryptKey("anthropic", req.orgId!, req.userId!, caller);
+
+    // Billing gate: authorize credits before platform-paid operations
+    if (keySource === "platform") {
+      const { sufficient, balance_cents, required_cents } = await authorizeCredits(
+        [
+          { costName: "anthropic-sonnet-4.6-tokens-input", quantity: ESTIMATED_INPUT_TOKENS },
+          { costName: "anthropic-sonnet-4.6-tokens-output", quantity: ESTIMATED_OUTPUT_TOKENS },
+        ],
+        "content-generation — claude-sonnet-4-6",
+        { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowName }
+      );
+      if (!sufficient) {
+        return res.status(402).json({
+          error: "Insufficient credits",
+          balance_cents,
+          required_cents,
+        });
+      }
+    }
 
     // Generate using the stored prompt + variable substitution
     const result = await generateFromTemplate(anthropicApiKey, {

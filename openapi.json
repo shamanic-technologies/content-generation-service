@@ -28,6 +28,25 @@
           "error"
         ]
       },
+      "InsufficientCreditsResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "balance_cents": {
+            "type": "number"
+          },
+          "required_cents": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "error",
+          "balance_cents",
+          "required_cents"
+        ]
+      },
       "HealthResponse": {
         "type": "object",
         "properties": {
@@ -1128,6 +1147,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Insufficient credits (platform costSource only)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsufficientCreditsResponse"
                 }
               }
             }

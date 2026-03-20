@@ -64,6 +64,12 @@ vi.mock("../../src/lib/key-client.js", () => ({
   decryptKey: vi.fn().mockResolvedValue({ key: "fake-anthropic-key", keySource: "platform" as const }),
 }));
 
+vi.mock("../../src/lib/billing-client.js", () => ({
+  authorizeCredits: vi.fn().mockResolvedValue({ sufficient: true, balance_cents: 5000, required_cents: 1 }),
+  ESTIMATED_INPUT_TOKENS: 2000,
+  ESTIMATED_OUTPUT_TOKENS: 3072,
+}));
+
 const mockGenerateFromTemplate = vi.fn().mockResolvedValue({
   subject: "Fresh subject",
   sequence: [
