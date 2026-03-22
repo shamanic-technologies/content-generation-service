@@ -13,6 +13,8 @@ interface ComposeOptions {
   imageBuffer: Buffer;
   /** Video file extension (e.g. "mp4", "webm") */
   videoExt?: string;
+  /** Layout: "quote-top" (default) = quote 40% top + webcam 60% bottom; "webcam-top" = webcam 50% top + quote 50% bottom */
+  layout?: "quote-top" | "webcam-top";
 }
 
 /**
@@ -22,7 +24,7 @@ interface ComposeOptions {
  * Returns the composed MP4 buffer.
  */
 export async function composeSplitScreen(opts: ComposeOptions): Promise<Buffer> {
-  const { videoBuffer, imageBuffer, videoExt = "mp4" } = opts;
+  const { videoBuffer, imageBuffer, videoExt = "mp4", layout = "quote-top" } = opts;
   const tmp = await mkdtemp(join(tmpdir(), "compose-"));
 
   const videoPath = join(tmp, `input.${videoExt}`);
@@ -35,15 +37,20 @@ export async function composeSplitScreen(opts: ComposeOptions): Promise<Buffer> 
       writeFile(imagePath, imageBuffer),
     ]);
 
-    // FFmpeg filter:
-    // 1. Scale quote image to 1080x768 (top 40%)
-    // 2. Scale+crop webcam video to 1080x1152 (bottom 60%)
-    // 3. Stack vertically → 1080x1920
-    const filterComplex = [
-      "[1:v]scale=1080:768:force_original_aspect_ratio=disable[top]",
-      "[0:v]scale=1080:1152:force_original_aspect_ratio=increase,crop=1080:1152[bot]",
-      "[top][bot]vstack=inputs=2[out]",
-    ].join(";");
+    // FFmpeg filter: stack quote image + webcam vertically → 1080x1920
+    // "quote-top" (default): quote 768px top (40%) + webcam 1152px bottom (60%)
+    // "webcam-top": webcam 960px top (50%) + quote 960px bottom (50%)
+    const filterComplex = layout === "webcam-top"
+      ? [
+          "[0:v]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960[top]",
+          "[1:v]scale=1080:960:force_original_aspect_ratio=disable[bot]",
+          "[top][bot]vstack=inputs=2[out]",
+        ].join(";")
+      : [
+          "[1:v]scale=1080:768:force_original_aspect_ratio=disable[top]",
+          "[0:v]scale=1080:1152:force_original_aspect_ratio=increase,crop=1080:1152[bot]",
+          "[top][bot]vstack=inputs=2[out]",
+        ].join(";");
 
     await execFileAsync("ffmpeg", [
       "-i", videoPath,

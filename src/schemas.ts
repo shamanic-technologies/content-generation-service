@@ -604,6 +604,7 @@ export const ComposeRequestSchema = registry.register(
       theme: z.string().describe("Theme of the quote (e.g. 'Loss of Desire')"),
       text: z.string().describe("Quote text to display"),
       outputBlobToken: z.string().describe("Vercel Blob token for uploading the composed video"),
+      layout: z.enum(["quote-top", "webcam-top"]).default("quote-top").optional().describe("Layout: 'quote-top' (default) = quote 40% top + webcam 60% bottom; 'webcam-top' = webcam 50% top + quote 50% bottom"),
     })
     .openapi("ComposeRequest")
 );
@@ -623,9 +624,11 @@ registry.registerPath({
   tags: ["Video Composition"],
   summary: "Compose a split-screen vertical video (9:16) from a quote and webcam recording",
   description:
-    "Downloads the source webcam video, generates a styled quote image (1080x768), " +
-    "and uses FFmpeg to compose a split-screen video (quote top 40%, webcam bottom 60%) " +
-    "at 1080x1920 30fps. The result is uploaded to Vercel Blob.",
+    "Downloads the source webcam video, generates a styled quote image, " +
+    "and uses FFmpeg to compose a split-screen video at 1080x1920 30fps. " +
+    "Layout 'quote-top' (default): quote top 40% + webcam bottom 60%. " +
+    "Layout 'webcam-top': webcam top 50% + quote bottom 50%. " +
+    "The result is uploaded to Vercel Blob.",
   request: {
     body: {
       required: true,

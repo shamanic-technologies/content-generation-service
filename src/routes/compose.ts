@@ -13,6 +13,7 @@ export const ComposeRequestSchema = z.object({
   theme: z.string(),
   text: z.string(),
   outputBlobToken: z.string(),
+  layout: z.enum(["quote-top", "webcam-top"]).default("quote-top").optional(),
 });
 
 export type ComposeRequest = z.infer<typeof ComposeRequestSchema>;
@@ -23,7 +24,7 @@ router.post("/compose", async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
   }
 
-  const { videoUrl, name, age, theme, text, outputBlobToken } = parsed.data;
+  const { videoUrl, name, age, theme, text, outputBlobToken, layout } = parsed.data;
 
   try {
     // 1. Download source video
@@ -45,6 +46,7 @@ router.post("/compose", async (req: Request, res: Response) => {
       videoBuffer,
       imageBuffer,
       videoExt,
+      layout,
     });
 
     // 4. Upload to Vercel Blob
