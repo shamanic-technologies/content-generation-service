@@ -125,6 +125,7 @@ describe("POST /compose", () => {
       videoBuffer: expect.any(Buffer),
       imageBuffer: expect.any(Buffer),
       videoExt: "mp4",
+      layout: "quote-top",
     });
     expect(put).toHaveBeenCalledWith(
       expect.stringContaining("sophie"),
@@ -161,6 +162,43 @@ describe("POST /compose", () => {
       .expect(500);
 
     expect(res.body.error).toBe("Composition failed");
+  });
+
+  it("defaults layout to quote-top when not provided", async () => {
+    const app = buildApp();
+    await request(app)
+      .post("/compose")
+      .set("X-Api-Key", VALID_KEY)
+      .send(validBody)
+      .expect(200);
+
+    expect(composeSplitScreen).toHaveBeenCalledWith(
+      expect.objectContaining({ layout: "quote-top" }),
+    );
+  });
+
+  it("passes layout webcam-top to composeSplitScreen", async () => {
+    const app = buildApp();
+    await request(app)
+      .post("/compose")
+      .set("X-Api-Key", VALID_KEY)
+      .send({ ...validBody, layout: "webcam-top" })
+      .expect(200);
+
+    expect(composeSplitScreen).toHaveBeenCalledWith(
+      expect.objectContaining({ layout: "webcam-top" }),
+    );
+  });
+
+  it("rejects invalid layout value", async () => {
+    const app = buildApp();
+    const res = await request(app)
+      .post("/compose")
+      .set("X-Api-Key", VALID_KEY)
+      .send({ ...validBody, layout: "invalid-layout" })
+      .expect(400);
+
+    expect(res.body.error).toBeDefined();
   });
 
   it("requires API key", async () => {
