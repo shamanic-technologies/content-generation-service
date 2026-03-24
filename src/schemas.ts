@@ -763,3 +763,79 @@ registry.registerPath({
     },
   },
 });
+
+// ---------------------------------------------------------------------------
+// POST /submagic/process — Full Submagic processing pipeline
+// ---------------------------------------------------------------------------
+export const SubmagicProcessRequestSchema = registry.register(
+  "SubmagicProcessRequest",
+  z
+    .object({
+      composedVideoUrl: z.string().url().describe("Public URL of the composed video to process"),
+      title: z.string().describe("Project title for Submagic"),
+      templateName: z.string().describe("Submagic template name (e.g. 'Hormozi 2')"),
+      language: z.string().describe("Language code (e.g. 'en')"),
+      magicZooms: z.boolean().describe("Enable magic zooms"),
+      magicBrolls: z.boolean().describe("Enable magic B-rolls"),
+      magicBrollsPercentage: z.number().int().min(0).max(100).describe("B-roll percentage (0-100)"),
+      removeBadTakes: z.boolean().describe("Remove bad takes"),
+      removeSilencePace: z.string().describe("Silence removal pace (e.g. 'fast')"),
+      cleanAudio: z.boolean().describe("Enable audio cleaning"),
+      exportWidth: z.number().int().positive().describe("Export width in pixels"),
+      exportHeight: z.number().int().positive().describe("Export height in pixels"),
+      exportFps: z.number().int().positive().describe("Export frames per second"),
+    })
+    .openapi("SubmagicProcessRequest")
+);
+
+const SubmagicProcessResponseSchema = registry.register(
+  "SubmagicProcessResponse",
+  z
+    .object({
+      projectId: z.string().describe("Submagic project ID"),
+      videoUrl: z.string().url().describe("Final processed video URL"),
+      previewUrl: z.string().url().describe("Submagic preview URL"),
+    })
+    .openapi("SubmagicProcessResponse")
+);
+
+const SubmagicErrorResponseSchema = registry.register(
+  "SubmagicErrorResponse",
+  z
+    .object({
+      error: z.string(),
+      reason: z.string(),
+    })
+    .openapi("SubmagicErrorResponse")
+);
+
+registry.registerPath({
+  method: "post",
+  path: "/submagic/process",
+  tags: ["Video Processing"],
+  summary: "Process a video through Submagic (captions, effects, export)",
+  description:
+    "Creates a Submagic project, polls until processing completes, triggers export, " +
+    "and polls until the final video URL is available. This is a synchronous endpoint " +
+    "that can take 5-8 minutes to complete.",
+  request: {
+    body: {
+      required: true,
+      content: { "application/json": { schema: SubmagicProcessRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Video processed and exported successfully",
+      content: { "application/json": { schema: SubmagicProcessResponseSchema } },
+    },
+    400: {
+      description: "Invalid request body",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description: "Submagic processing failed",
+      content: { "application/json": { schema: SubmagicErrorResponseSchema } },
+    },
+  },
+});

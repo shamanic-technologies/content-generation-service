@@ -12,6 +12,7 @@ import generateRoutes from "./routes/generate.js";
 import statsRoutes from "./routes/stats.js";
 import promptRoutes from "./routes/prompts.js";
 import composeRoutes from "./routes/compose.js";
+import submagicRoutes from "./routes/submagic.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -44,6 +45,7 @@ app.use(generateRoutes);
 app.use(statsRoutes);
 app.use(promptRoutes);
 app.use(composeRoutes);
+app.use(submagicRoutes);
 
 // 404 handler
 app.use((req, res) => {
