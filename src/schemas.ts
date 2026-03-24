@@ -819,6 +819,7 @@ registry.registerPath({
     "and polls until the final video URL is available. This is a synchronous endpoint " +
     "that can take 5-8 minutes to complete.",
   request: {
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional(), "x-feature-slug": z.string().optional() }),
     body: {
       required: true,
       content: { "application/json": { schema: SubmagicProcessRequestSchema } },
@@ -830,11 +831,11 @@ registry.registerPath({
       content: { "application/json": { schema: SubmagicProcessResponseSchema } },
     },
     400: {
-      description: "Invalid request body",
+      description: "Invalid request body or missing identity headers",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     502: {
-      description: "Submagic processing failed",
+      description: "Submagic processing failed or key resolution failed",
       content: { "application/json": { schema: SubmagicErrorResponseSchema } },
     },
   },
