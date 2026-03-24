@@ -62,6 +62,7 @@ export interface IdentityHeaders {
   campaignId?: string;
   brandId?: string;
   workflowName?: string;
+  featureSlug?: string;
 }
 
 export interface CreateRunParams {
@@ -145,6 +146,9 @@ async function runsRequest<T>(
     }
     if (identity.workflowName) {
       headers["x-workflow-name"] = identity.workflowName;
+    }
+    if (identity.featureSlug) {
+      headers["x-feature-slug"] = identity.featureSlug;
     }
   }
 

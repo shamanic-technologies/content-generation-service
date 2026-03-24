@@ -48,6 +48,7 @@ export const emailGenerations = pgTable(
 
     // Workflow tracking
     workflowName: text("workflow_name"),
+    featureSlug: text("feature_slug"),
 
     // Lead tracking — lead-service correlation ID
     leadId: text("lead_id"),

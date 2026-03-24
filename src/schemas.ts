@@ -41,6 +41,11 @@ const WorkflowNameHeader = registry.registerParameter(
   z.string().optional().openapi({ param: { name: "X-Workflow-Name", in: "header", required: false, description: "Workflow name injected by workflow-service" } })
 );
 
+const FeatureSlugHeader = registry.registerParameter(
+  "FeatureSlug",
+  z.string().optional().openapi({ param: { name: "X-Feature-Slug", in: "header", required: false, description: "Feature slug for tracking, propagated through the service chain" } })
+);
+
 // ---------------------------------------------------------------------------
 // Error response
 // ---------------------------------------------------------------------------
@@ -305,6 +310,7 @@ export const GenerateRequestSchema = registry.register(
       leadId: z.string().optional().describe("Lead-service correlation ID, unique per campaign"),
       idempotencyKey: z.string().optional(),
       workflowName: z.string().optional(),
+      featureSlug: z.string().optional().describe("Feature slug for tracking"),
       includeAiDisclaimer: z.boolean().optional().default(false).describe("When true, appends a small AI-generated disclaimer to the email body"),
     })
     .openapi("GenerateRequest")
@@ -336,7 +342,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Generate content using a stored prompt template with variable substitution",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional(), "x-feature-slug": z.string().optional() }),
     body: {
       required: true,
       content: { "application/json": { schema: GenerateRequestSchema } },
@@ -415,6 +421,7 @@ const EmailGenerationSchema = registry.register(
 
       // Workflow tracking
       workflowName: z.string().nullable(),
+      featureSlug: z.string().nullable(),
       leadId: z.string().nullable(),
       idempotencyKey: z.string().nullable(),
 
@@ -441,7 +448,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "List generations with filters",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional(), "x-feature-slug": z.string().optional() }),
     query: z.object({
       runId: z.string().optional(),
       campaignId: z.string().optional(),
@@ -480,7 +487,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Get generation by enrichment ID",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional(), "x-feature-slug": z.string().optional() }),
     params: z.object({ apolloEnrichmentId: z.string() }),
   },
   responses: {
@@ -506,7 +513,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Get generation by lead-service correlation ID",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional(), "x-feature-slug": z.string().optional() }),
     params: z.object({ leadId: z.string() }),
   },
   responses: {
@@ -682,7 +689,7 @@ registry.registerPath({
   tags: ["Stats"],
   summary: "Get aggregated stats by filters",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-name": z.string().optional(), "x-feature-slug": z.string().optional() }),
     body: {
       required: true,
       content: { "application/json": { schema: StatsRequestSchema } },

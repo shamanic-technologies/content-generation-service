@@ -179,6 +179,10 @@
           "workflowName": {
             "type": "string"
           },
+          "featureSlug": {
+            "type": "string",
+            "description": "Feature slug for tracking"
+          },
           "includeAiDisclaimer": {
             "type": "boolean",
             "default": false,
@@ -340,6 +344,10 @@
             "type": "string",
             "nullable": true
           },
+          "featureSlug": {
+            "type": "string",
+            "nullable": true
+          },
           "leadId": {
             "type": "string",
             "nullable": true
@@ -376,6 +384,7 @@
           "tokensOutput",
           "promptRaw",
           "workflowName",
+          "featureSlug",
           "leadId",
           "idempotencyKey",
           "createdAt"
@@ -653,6 +662,9 @@
       },
       "WorkflowName": {
         "type": "string"
+      },
+      "FeatureSlug": {
+        "type": "string"
       }
     },
     "parameters": {
@@ -706,6 +718,15 @@
         "name": "X-Workflow-Name",
         "in": "header",
         "description": "Workflow name injected by workflow-service"
+      },
+      "FeatureSlug": {
+        "schema": {
+          "$ref": "#/components/schemas/FeatureSlug"
+        },
+        "required": false,
+        "name": "X-Feature-Slug",
+        "in": "header",
+        "description": "Feature slug for tracking, propagated through the service chain"
       }
     },
     "securitySchemes": {
@@ -1117,6 +1138,14 @@
             "required": false,
             "name": "x-workflow-name",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-feature-slug",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -1261,6 +1290,14 @@
             "required": false,
             "name": "x-workflow-name",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-feature-slug",
+            "in": "header"
           }
         ],
         "responses": {
@@ -1349,6 +1386,14 @@
             "required": false,
             "name": "x-workflow-name",
             "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-feature-slug",
+            "in": "header"
           }
         ],
         "responses": {
@@ -1436,6 +1481,14 @@
             },
             "required": false,
             "name": "x-workflow-name",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-feature-slug",
             "in": "header"
           }
         ],
@@ -1624,6 +1677,14 @@
             },
             "required": false,
             "name": "x-workflow-name",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-feature-slug",
             "in": "header"
           }
         ],

@@ -7,6 +7,7 @@ export interface CallerContext {
   campaignId?: string;
   brandId?: string;
   workflowName?: string;
+  featureSlug?: string;
 }
 
 export interface DecryptResult {
@@ -30,6 +31,7 @@ function buildHeaders(
   if (caller.campaignId) h["x-campaign-id"] = caller.campaignId;
   if (caller.brandId) h["x-brand-id"] = caller.brandId;
   if (caller.workflowName) h["x-workflow-name"] = caller.workflowName;
+  if (caller.featureSlug) h["x-feature-slug"] = caller.featureSlug;
   return h;
 }
 
