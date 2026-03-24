@@ -26,26 +26,20 @@ interface SubmagicProject {
   downloadUrl?: string;
 }
 
-function getApiKey(): string {
-  const key = process.env.SUBMAGIC_API_KEY;
-  if (!key) throw new Error("SUBMAGIC_API_KEY is not set");
-  return key;
-}
-
-async function submagicFetch(path: string, options: RequestInit = {}): Promise<Response> {
+async function submagicFetch(apiKey: string, path: string, options: RequestInit = {}): Promise<Response> {
   const res = await fetch(`${SUBMAGIC_BASE}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": getApiKey(),
+      "x-api-key": apiKey,
       ...options.headers,
     },
   });
   return res;
 }
 
-export async function createProject(params: CreateProjectParams): Promise<{ id: string }> {
-  const res = await submagicFetch("/projects", {
+export async function createProject(apiKey: string, params: CreateProjectParams): Promise<{ id: string }> {
+  const res = await submagicFetch(apiKey, "/projects", {
     method: "POST",
     body: JSON.stringify({
       videoUrl: params.composedVideoUrl,
@@ -71,6 +65,7 @@ export async function createProject(params: CreateProjectParams): Promise<{ id: 
 }
 
 export async function pollProjectCompletion(
+  apiKey: string,
   projectId: string,
   intervalMs = 7000,
   timeoutMs = 300000,
@@ -78,7 +73,7 @@ export async function pollProjectCompletion(
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    const res = await submagicFetch(`/projects/${projectId}`);
+    const res = await submagicFetch(apiKey, `/projects/${projectId}`);
     if (!res.ok) {
       const body = await res.text();
       throw new Error(`Submagic poll failed (${res.status}): ${body}`);
@@ -98,10 +93,11 @@ export async function pollProjectCompletion(
 }
 
 export async function triggerExport(
+  apiKey: string,
   projectId: string,
   params: ExportParams,
 ): Promise<void> {
-  const res = await submagicFetch(`/projects/${projectId}/export`, {
+  const res = await submagicFetch(apiKey, `/projects/${projectId}/export`, {
     method: "POST",
     body: JSON.stringify({
       width: params.width,
@@ -117,6 +113,7 @@ export async function triggerExport(
 }
 
 export async function pollExportUrl(
+  apiKey: string,
   projectId: string,
   intervalMs = 8000,
   timeoutMs = 180000,
@@ -124,7 +121,7 @@ export async function pollExportUrl(
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    const res = await submagicFetch(`/projects/${projectId}`);
+    const res = await submagicFetch(apiKey, `/projects/${projectId}`);
     if (!res.ok) {
       const body = await res.text();
       throw new Error(`Submagic export poll failed (${res.status}): ${body}`);

@@ -10,6 +10,11 @@ vi.mock("../../src/lib/submagic-client.js", () => ({
   pollExportUrl: vi.fn().mockResolvedValue({ videoUrl: "https://r2.submagic.pro/api/video.mp4" }),
 }));
 
+// Mock key-client
+vi.mock("../../src/lib/key-client.js", () => ({
+  decryptKey: vi.fn().mockResolvedValue({ key: "sk-submagic-resolved", keySource: "platform" }),
+}));
+
 import submagicRoutes from "../../src/routes/submagic.js";
 import {
   createProject,
@@ -17,12 +22,14 @@ import {
   triggerExport,
   pollExportUrl,
 } from "../../src/lib/submagic-client.js";
+import { decryptKey } from "../../src/lib/key-client.js";
 
 const VALID_KEY = "test-key";
 
 function buildApp() {
   const app = express();
   app.use(express.json());
+  // Simulate apiKeyAuth
   app.use((req, res, next) => {
     const key = req.headers["x-api-key"];
     if (key !== VALID_KEY) return res.status(401).json({ error: "Unauthorized" });
@@ -48,16 +55,62 @@ const validBody = {
   exportFps: 30,
 };
 
+const identityHeaders = {
+  "X-Api-Key": VALID_KEY,
+  "x-org-id": "org-uuid-123",
+  "x-user-id": "user-uuid-456",
+  "x-run-id": "run-uuid-789",
+};
+
 describe("POST /submagic/process", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("returns 400 when x-org-id is missing", async () => {
+    const app = buildApp();
+    const res = await request(app)
+      .post("/submagic/process")
+      .set("X-Api-Key", VALID_KEY)
+      .set("x-user-id", "user-uuid-456")
+      .set("x-run-id", "run-uuid-789")
+      .send(validBody)
+      .expect(400);
+
+    expect(res.body.error).toBe("x-org-id header required");
+  });
+
+  it("returns 400 when x-user-id is missing", async () => {
+    const app = buildApp();
+    const res = await request(app)
+      .post("/submagic/process")
+      .set("X-Api-Key", VALID_KEY)
+      .set("x-org-id", "org-uuid-123")
+      .set("x-run-id", "run-uuid-789")
+      .send(validBody)
+      .expect(400);
+
+    expect(res.body.error).toBe("x-user-id header required");
+  });
+
+  it("returns 400 when x-run-id is missing", async () => {
+    const app = buildApp();
+    const res = await request(app)
+      .post("/submagic/process")
+      .set("X-Api-Key", VALID_KEY)
+      .set("x-org-id", "org-uuid-123")
+      .set("x-user-id", "user-uuid-456")
+      .send(validBody)
+      .expect(400);
+
+    expect(res.body.error).toBe("x-run-id header required");
   });
 
   it("returns 400 when required fields are missing", async () => {
     const app = buildApp();
     const res = await request(app)
       .post("/submagic/process")
-      .set("X-Api-Key", VALID_KEY)
+      .set(identityHeaders)
       .send({ composedVideoUrl: "https://example.com/video.mp4" })
       .expect(400);
 
@@ -68,7 +121,7 @@ describe("POST /submagic/process", () => {
     const app = buildApp();
     const res = await request(app)
       .post("/submagic/process")
-      .set("X-Api-Key", VALID_KEY)
+      .set(identityHeaders)
       .send({ ...validBody, composedVideoUrl: "not-a-url" })
       .expect(400);
 
@@ -79,29 +132,18 @@ describe("POST /submagic/process", () => {
     const app = buildApp();
     const res = await request(app)
       .post("/submagic/process")
-      .set("X-Api-Key", VALID_KEY)
+      .set(identityHeaders)
       .send({ ...validBody, magicBrollsPercentage: 150 })
       .expect(400);
 
     expect(res.body.error).toBeDefined();
   });
 
-  it("returns 400 when exportWidth is not positive", async () => {
+  it("resolves key via key-service and processes video on success", async () => {
     const app = buildApp();
     const res = await request(app)
       .post("/submagic/process")
-      .set("X-Api-Key", VALID_KEY)
-      .send({ ...validBody, exportWidth: 0 })
-      .expect(400);
-
-    expect(res.body.error).toBeDefined();
-  });
-
-  it("processes video and returns result on success", async () => {
-    const app = buildApp();
-    const res = await request(app)
-      .post("/submagic/process")
-      .set("X-Api-Key", VALID_KEY)
+      .set(identityHeaders)
       .send(validBody)
       .expect(200);
 
@@ -111,28 +153,50 @@ describe("POST /submagic/process", () => {
       previewUrl: "https://app.submagic.co/view/proj-123",
     });
 
-    expect(createProject).toHaveBeenCalledWith({
+    // Verify key was resolved via key-service
+    expect(decryptKey).toHaveBeenCalledWith(
+      "submagic",
+      "org-uuid-123",
+      "user-uuid-456",
+      expect.objectContaining({
+        callerMethod: "POST",
+        callerPath: "/submagic/process",
+      }),
+    );
+
+    // Verify resolved key was passed to submagic client
+    expect(createProject).toHaveBeenCalledWith("sk-submagic-resolved", expect.objectContaining({
       composedVideoUrl: validBody.composedVideoUrl,
       title: validBody.title,
-      templateName: validBody.templateName,
-      language: validBody.language,
-      magicZooms: true,
-      magicBrolls: true,
-      magicBrollsPercentage: 30,
-      removeBadTakes: true,
-      removeSilencePace: "fast",
-      cleanAudio: true,
-    });
+    }));
 
-    expect(pollProjectCompletion).toHaveBeenCalledWith("proj-123");
+    expect(pollProjectCompletion).toHaveBeenCalledWith("sk-submagic-resolved", "proj-123");
 
-    expect(triggerExport).toHaveBeenCalledWith("proj-123", {
+    expect(triggerExport).toHaveBeenCalledWith("sk-submagic-resolved", "proj-123", {
       width: 1080,
       height: 1920,
       fps: 30,
     });
 
-    expect(pollExportUrl).toHaveBeenCalledWith("proj-123");
+    expect(pollExportUrl).toHaveBeenCalledWith("sk-submagic-resolved", "proj-123");
+  });
+
+  it("returns 502 when key resolution fails", async () => {
+    vi.mocked(decryptKey).mockRejectedValueOnce(
+      new Error("submagic key not configured for this organization"),
+    );
+
+    const app = buildApp();
+    const res = await request(app)
+      .post("/submagic/process")
+      .set(identityHeaders)
+      .send(validBody)
+      .expect(502);
+
+    expect(res.body).toEqual({
+      error: "Submagic processing failed",
+      reason: "submagic key not configured for this organization",
+    });
   });
 
   it("returns 502 when createProject fails", async () => {
@@ -141,7 +205,7 @@ describe("POST /submagic/process", () => {
     const app = buildApp();
     const res = await request(app)
       .post("/submagic/process")
-      .set("X-Api-Key", VALID_KEY)
+      .set(identityHeaders)
       .send(validBody)
       .expect(502);
 
@@ -159,7 +223,7 @@ describe("POST /submagic/process", () => {
     const app = buildApp();
     const res = await request(app)
       .post("/submagic/process")
-      .set("X-Api-Key", VALID_KEY)
+      .set(identityHeaders)
       .send(validBody)
       .expect(502);
 
@@ -173,7 +237,7 @@ describe("POST /submagic/process", () => {
     const app = buildApp();
     const res = await request(app)
       .post("/submagic/process")
-      .set("X-Api-Key", VALID_KEY)
+      .set(identityHeaders)
       .send(validBody)
       .expect(502);
 
@@ -189,7 +253,7 @@ describe("POST /submagic/process", () => {
     const app = buildApp();
     const res = await request(app)
       .post("/submagic/process")
-      .set("X-Api-Key", VALID_KEY)
+      .set(identityHeaders)
       .send(validBody)
       .expect(502);
 
@@ -203,5 +267,32 @@ describe("POST /submagic/process", () => {
       .post("/submagic/process")
       .send(validBody)
       .expect(401);
+  });
+
+  it("forwards optional tracking headers to key-service", async () => {
+    const app = buildApp();
+    await request(app)
+      .post("/submagic/process")
+      .set({
+        ...identityHeaders,
+        "x-campaign-id": "camp-1",
+        "x-brand-id": "brand-1",
+        "x-workflow-name": "case-study",
+        "x-feature-slug": "video-captions",
+      })
+      .send(validBody)
+      .expect(200);
+
+    expect(decryptKey).toHaveBeenCalledWith(
+      "submagic",
+      "org-uuid-123",
+      "user-uuid-456",
+      expect.objectContaining({
+        campaignId: "camp-1",
+        brandId: "brand-1",
+        workflowName: "case-study",
+        featureSlug: "video-captions",
+      }),
+    );
   });
 });

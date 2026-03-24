@@ -1,5 +1,7 @@
-import { Router, Request, Response } from "express";
+import { Router, Response } from "express";
 import { z } from "zod";
+import { AuthenticatedRequest, serviceAuth } from "../middleware/auth.js";
+import { decryptKey } from "../lib/key-client.js";
 import {
   createProject,
   pollProjectCompletion,
@@ -27,7 +29,7 @@ export const SubmagicProcessRequestSchema = z.object({
 
 export type SubmagicProcessRequest = z.infer<typeof SubmagicProcessRequestSchema>;
 
-router.post("/submagic/process", async (req: Request, res: Response) => {
+router.post("/submagic/process", serviceAuth, async (req: AuthenticatedRequest, res: Response) => {
   const parsed = SubmagicProcessRequestSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten().fieldErrors });
@@ -50,9 +52,24 @@ router.post("/submagic/process", async (req: Request, res: Response) => {
   } = parsed.data;
 
   try {
+    // Resolve Submagic API key via key-service
+    const { key: submagicApiKey } = await decryptKey(
+      "submagic",
+      req.orgId!,
+      req.userId!,
+      {
+        callerMethod: "POST",
+        callerPath: "/submagic/process",
+        campaignId: req.campaignId,
+        brandId: req.brandId,
+        workflowName: req.workflowName,
+        featureSlug: req.featureSlug,
+      },
+    );
+
     // 1. Create Submagic project
     console.log("[submagic] Creating project:", title);
-    const { id: projectId } = await createProject({
+    const { id: projectId } = await createProject(submagicApiKey, {
       composedVideoUrl,
       title,
       templateName,
@@ -68,12 +85,12 @@ router.post("/submagic/process", async (req: Request, res: Response) => {
 
     // 2. Poll until project is completed
     console.log("[submagic] Polling for completion...");
-    await pollProjectCompletion(projectId);
+    await pollProjectCompletion(submagicApiKey, projectId);
     console.log("[submagic] Project completed");
 
     // 3. Trigger export
     console.log("[submagic] Triggering export...");
-    await triggerExport(projectId, {
+    await triggerExport(submagicApiKey, projectId, {
       width: exportWidth,
       height: exportHeight,
       fps: exportFps,
@@ -82,7 +99,7 @@ router.post("/submagic/process", async (req: Request, res: Response) => {
 
     // 4. Poll for export URL
     console.log("[submagic] Polling for export URL...");
-    const { videoUrl } = await pollExportUrl(projectId);
+    const { videoUrl } = await pollExportUrl(submagicApiKey, projectId);
     console.log("[submagic] Export ready:", videoUrl);
 
     return res.status(200).json({

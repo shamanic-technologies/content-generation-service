@@ -1940,6 +1940,64 @@
         ],
         "summary": "Process a video through Submagic (captions, effects, export)",
         "description": "Creates a Submagic project, polls until processing completes, triggers export, and polls until the final video URL is available. This is a synchronous endpoint that can take 5-8 minutes to complete.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-workflow-name",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-feature-slug",
+            "in": "header"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -1962,7 +2020,7 @@
             }
           },
           "400": {
-            "description": "Invalid request body",
+            "description": "Invalid request body or missing identity headers",
             "content": {
               "application/json": {
                 "schema": {
@@ -1972,7 +2030,7 @@
             }
           },
           "502": {
-            "description": "Submagic processing failed",
+            "description": "Submagic processing failed or key resolution failed",
             "content": {
               "application/json": {
                 "schema": {
