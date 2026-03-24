@@ -645,6 +645,126 @@
           "stats"
         ]
       },
+      "SubmagicProcessRequest": {
+        "type": "object",
+        "properties": {
+          "composedVideoUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Public URL of the composed video to process"
+          },
+          "title": {
+            "type": "string",
+            "description": "Project title for Submagic"
+          },
+          "templateName": {
+            "type": "string",
+            "description": "Submagic template name (e.g. 'Hormozi 2')"
+          },
+          "language": {
+            "type": "string",
+            "description": "Language code (e.g. 'en')"
+          },
+          "magicZooms": {
+            "type": "boolean",
+            "description": "Enable magic zooms"
+          },
+          "magicBrolls": {
+            "type": "boolean",
+            "description": "Enable magic B-rolls"
+          },
+          "magicBrollsPercentage": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "B-roll percentage (0-100)"
+          },
+          "removeBadTakes": {
+            "type": "boolean",
+            "description": "Remove bad takes"
+          },
+          "removeSilencePace": {
+            "type": "string",
+            "description": "Silence removal pace (e.g. 'fast')"
+          },
+          "cleanAudio": {
+            "type": "boolean",
+            "description": "Enable audio cleaning"
+          },
+          "exportWidth": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Export width in pixels"
+          },
+          "exportHeight": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Export height in pixels"
+          },
+          "exportFps": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Export frames per second"
+          }
+        },
+        "required": [
+          "composedVideoUrl",
+          "title",
+          "templateName",
+          "language",
+          "magicZooms",
+          "magicBrolls",
+          "magicBrollsPercentage",
+          "removeBadTakes",
+          "removeSilencePace",
+          "cleanAudio",
+          "exportWidth",
+          "exportHeight",
+          "exportFps"
+        ]
+      },
+      "SubmagicProcessResponse": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "description": "Submagic project ID"
+          },
+          "videoUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Final processed video URL"
+          },
+          "previewUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Submagic preview URL"
+          }
+        },
+        "required": [
+          "projectId",
+          "videoUrl",
+          "previewUrl"
+        ]
+      },
+      "SubmagicErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "reason"
+        ]
+      },
       "OrgId": {
         "type": "string"
       },
@@ -1806,6 +1926,57 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/submagic/process": {
+      "post": {
+        "tags": [
+          "Video Processing"
+        ],
+        "summary": "Process a video through Submagic (captions, effects, export)",
+        "description": "Creates a Submagic project, polls until processing completes, triggers export, and polls until the final video URL is available. This is a synchronous endpoint that can take 5-8 minutes to complete.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmagicProcessRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Video processed and exported successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmagicProcessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Submagic processing failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmagicErrorResponse"
                 }
               }
             }
