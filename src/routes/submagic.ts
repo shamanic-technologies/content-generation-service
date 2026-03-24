@@ -8,6 +8,7 @@ import {
   triggerExport,
   pollExportUrl,
 } from "../lib/submagic-client.js";
+import { uploadToStorage } from "../lib/storage-client.js";
 
 const router = Router();
 
@@ -99,12 +100,33 @@ router.post("/submagic/process", serviceAuth, async (req: AuthenticatedRequest, 
 
     // 4. Poll for export URL
     console.log("[submagic] Polling for export URL...");
-    const { videoUrl } = await pollExportUrl(submagicApiKey, projectId);
-    console.log("[submagic] Export ready:", videoUrl);
+    const { videoUrl: submagicVideoUrl } = await pollExportUrl(submagicApiKey, projectId);
+    console.log("[submagic] Export ready:", submagicVideoUrl);
+
+    // 5. Re-upload to persistent R2 storage via cloudflare-storage-service
+    console.log("[submagic] Uploading to persistent storage...");
+    const { url: permanentVideoUrl } = await uploadToStorage(
+      {
+        sourceUrl: submagicVideoUrl,
+        folder: "videos",
+        filename: `${projectId}.mp4`,
+        contentType: "video/mp4",
+      },
+      {
+        orgId: req.orgId!,
+        userId: req.userId!,
+        runId: req.runId!,
+        campaignId: req.campaignId,
+        brandId: req.brandId,
+        workflowName: req.workflowName,
+        featureSlug: req.featureSlug,
+      },
+    );
+    console.log("[submagic] Stored permanently:", permanentVideoUrl);
 
     return res.status(200).json({
       projectId,
-      videoUrl,
+      videoUrl: permanentVideoUrl,
       previewUrl: `https://app.submagic.co/view/${projectId}`,
     });
   } catch (err) {

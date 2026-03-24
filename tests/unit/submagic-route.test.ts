@@ -15,6 +15,16 @@ vi.mock("../../src/lib/key-client.js", () => ({
   decryptKey: vi.fn().mockResolvedValue({ key: "sk-submagic-resolved", keySource: "platform" }),
 }));
 
+// Mock storage-client
+vi.mock("../../src/lib/storage-client.js", () => ({
+  uploadToStorage: vi.fn().mockResolvedValue({
+    id: "file-uuid-001",
+    url: "https://storage.mcpfactory.org/videos/proj-123.mp4",
+    size: 52428800,
+    contentType: "video/mp4",
+  }),
+}));
+
 import submagicRoutes from "../../src/routes/submagic.js";
 import {
   createProject,
@@ -23,6 +33,7 @@ import {
   pollExportUrl,
 } from "../../src/lib/submagic-client.js";
 import { decryptKey } from "../../src/lib/key-client.js";
+import { uploadToStorage } from "../../src/lib/storage-client.js";
 
 const VALID_KEY = "test-key";
 
@@ -149,7 +160,7 @@ describe("POST /submagic/process", () => {
 
     expect(res.body).toEqual({
       projectId: "proj-123",
-      videoUrl: "https://r2.submagic.pro/api/video.mp4",
+      videoUrl: "https://storage.mcpfactory.org/videos/proj-123.mp4",
       previewUrl: "https://app.submagic.co/view/proj-123",
     });
 
@@ -179,6 +190,21 @@ describe("POST /submagic/process", () => {
     });
 
     expect(pollExportUrl).toHaveBeenCalledWith("sk-submagic-resolved", "proj-123");
+
+    // Verify video was re-uploaded to persistent storage
+    expect(uploadToStorage).toHaveBeenCalledWith(
+      {
+        sourceUrl: "https://r2.submagic.pro/api/video.mp4",
+        folder: "videos",
+        filename: "proj-123.mp4",
+        contentType: "video/mp4",
+      },
+      expect.objectContaining({
+        orgId: "org-uuid-123",
+        userId: "user-uuid-456",
+        runId: "run-uuid-789",
+      }),
+    );
   });
 
   it("returns 502 when key resolution fails", async () => {
@@ -259,6 +285,50 @@ describe("POST /submagic/process", () => {
 
     expect(res.body.error).toBe("Submagic processing failed");
     expect(res.body.reason).toMatch(/timed out/);
+  });
+
+  it("returns 502 when storage upload fails", async () => {
+    vi.mocked(uploadToStorage).mockRejectedValueOnce(
+      new Error("Storage upload failed (502): R2 unavailable"),
+    );
+
+    const app = buildApp();
+    const res = await request(app)
+      .post("/submagic/process")
+      .set(identityHeaders)
+      .send(validBody)
+      .expect(502);
+
+    expect(res.body.error).toBe("Submagic processing failed");
+    expect(res.body.reason).toMatch(/Storage upload failed/);
+  });
+
+  it("forwards tracking headers to storage service", async () => {
+    const app = buildApp();
+    await request(app)
+      .post("/submagic/process")
+      .set({
+        ...identityHeaders,
+        "x-campaign-id": "camp-1",
+        "x-brand-id": "brand-1",
+        "x-workflow-name": "case-study",
+        "x-feature-slug": "video-captions",
+      })
+      .send(validBody)
+      .expect(200);
+
+    expect(uploadToStorage).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        orgId: "org-uuid-123",
+        userId: "user-uuid-456",
+        runId: "run-uuid-789",
+        campaignId: "camp-1",
+        brandId: "brand-1",
+        workflowName: "case-study",
+        featureSlug: "video-captions",
+      }),
+    );
   });
 
   it("requires API key", async () => {
