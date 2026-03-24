@@ -68,7 +68,7 @@ export async function pollProjectCompletion(
   apiKey: string,
   projectId: string,
   intervalMs = 7000,
-  timeoutMs = 300000,
+  timeoutMs = 3600000,
 ): Promise<SubmagicProject> {
   const deadline = Date.now() + timeoutMs;
 
@@ -89,7 +89,7 @@ export async function pollProjectCompletion(
     await sleep(intervalMs);
   }
 
-  throw new Error("Submagic project completion timed out after 5 minutes");
+  throw new Error("Submagic project completion timed out after 1 hour");
 }
 
 export async function triggerExport(
@@ -116,7 +116,7 @@ export async function pollExportUrl(
   apiKey: string,
   projectId: string,
   intervalMs = 8000,
-  timeoutMs = 180000,
+  timeoutMs = 3600000,
 ): Promise<{ videoUrl: string }> {
   const deadline = Date.now() + timeoutMs;
 
@@ -134,7 +134,7 @@ export async function pollExportUrl(
     await sleep(intervalMs);
   }
 
-  throw new Error("Submagic export URL timed out after 3 minutes");
+  throw new Error("Submagic export URL timed out after 1 hour");
 }
 
 function sleep(ms: number): Promise<void> {

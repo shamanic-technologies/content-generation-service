@@ -217,7 +217,7 @@ describe("POST /submagic/process", () => {
 
   it("returns 502 when pollProjectCompletion times out", async () => {
     vi.mocked(pollProjectCompletion).mockRejectedValueOnce(
-      new Error("Submagic project completion timed out after 5 minutes"),
+      new Error("Submagic project completion timed out after 1 hour"),
     );
 
     const app = buildApp();
@@ -247,7 +247,7 @@ describe("POST /submagic/process", () => {
 
   it("returns 502 when pollExportUrl times out", async () => {
     vi.mocked(pollExportUrl).mockRejectedValueOnce(
-      new Error("Submagic export URL timed out after 3 minutes"),
+      new Error("Submagic export URL timed out after 1 hour"),
     );
 
     const app = buildApp();
