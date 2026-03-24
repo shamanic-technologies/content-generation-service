@@ -30,6 +30,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       leadId,
       idempotencyKey,
       workflowName: bodyWorkflowName,
+      featureSlug: bodyFeatureSlug,
       includeAiDisclaimer,
     } = parsed.data;
 
@@ -37,6 +38,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     const brandId = bodyBrandId || req.brandId;
     const campaignId = bodyCampaignId || req.campaignId;
     const workflowName = bodyWorkflowName || req.workflowName;
+    const featureSlug = bodyFeatureSlug || req.featureSlug;
 
     // Idempotency: return existing generation if key matches
     if (idempotencyKey) {
@@ -70,7 +72,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     }
 
     // Get Anthropic API key
-    const caller = { callerMethod: "POST", callerPath: "/generate", campaignId, brandId, workflowName };
+    const caller = { callerMethod: "POST", callerPath: "/generate", campaignId, brandId, workflowName, featureSlug };
     const { key: anthropicApiKey, keySource } = await decryptKey("anthropic", req.orgId!, req.userId!, caller);
 
     // Billing gate: authorize credits before platform-paid operations
@@ -81,7 +83,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
           { costName: "anthropic-sonnet-4.6-tokens-output", quantity: ESTIMATED_OUTPUT_TOKENS },
         ],
         "content-generation — claude-sonnet-4-6",
-        { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowName }
+        { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowName, featureSlug }
       );
       if (!sufficient) {
         return res.status(402).json({
@@ -129,6 +131,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         promptRaw: result.promptRaw,
         responseRaw: result.responseRaw,
         workflowName: workflowName ?? null,
+        featureSlug: featureSlug ?? null,
         leadId: leadId ?? null,
         idempotencyKey: idempotencyKey ?? null,
       })
@@ -143,7 +146,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         serviceName: "content-generation-service",
         taskName: "single-generation",
         workflowName,
-      }, { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowName });
+      }, { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowName, featureSlug });
 
       // Link generation run to email record IMMEDIATELY so per-item cost
       // lookups work even if addCosts/updateRun fail below
@@ -152,7 +155,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         .where(eq(emailGenerations.id, generation.id));
 
       // Subsequent calls use genRun.id as x-run-id (the newly created run)
-      const runIdentity = { orgId: req.orgId!, userId: req.userId!, runId: genRun.id, campaignId, brandId, workflowName };
+      const runIdentity = { orgId: req.orgId!, userId: req.userId!, runId: genRun.id, campaignId, brandId, workflowName, featureSlug };
 
       const costItems = [];
       if (result.tokensInput) {
