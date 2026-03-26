@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { substituteVariables, coerceToString } from "../../src/lib/anthropic-client";
+import { substituteVariables, coerceToString, formatCampaignContext, findUnfilledPlaceholders } from "../../src/lib/anthropic-client";
 
 describe("substituteVariables", () => {
   it("replaces single variable", () => {
@@ -103,5 +103,58 @@ describe("coerceToString", () => {
 
   it("stringifies numbers", () => {
     expect(coerceToString(42)).toBe("42");
+  });
+});
+
+describe("formatCampaignContext", () => {
+  it("formats featureInputs as a markdown context block", () => {
+    const result = formatCampaignContext({
+      angle: "sustainability",
+      targetGeo: "US",
+    });
+    expect(result).toContain("## Campaign Context");
+    expect(result).toContain("- angle: sustainability");
+    expect(result).toContain("- target Geo: US");
+  });
+
+  it("converts camelCase keys to spaced labels", () => {
+    const result = formatCampaignContext({ editorialAngle: "AI trends" });
+    expect(result).toContain("- editorial Angle: AI trends");
+  });
+
+  it("skips null/undefined values", () => {
+    const result = formatCampaignContext({ a: "yes", b: null, c: undefined });
+    expect(result).toContain("- a: yes");
+    expect(result).not.toContain("- b:");
+    expect(result).not.toContain("- c:");
+  });
+
+  it("coerces arrays and objects", () => {
+    const result = formatCampaignContext({
+      tags: ["sales", "outreach"],
+      config: { key: "val" },
+    });
+    expect(result).toContain("- tags: sales, outreach");
+    expect(result).toContain('- config: {"key":"val"}');
+  });
+});
+
+describe("findUnfilledPlaceholders", () => {
+  it("finds unfilled {{placeholders}}", () => {
+    const result = findUnfilledPlaceholders("Hello {{name}}, your role is {{role}}.");
+    expect(result).toEqual(["name", "role"]);
+  });
+
+  it("returns empty array when no placeholders remain", () => {
+    expect(findUnfilledPlaceholders("Hello Alice, welcome.")).toEqual([]);
+  });
+
+  it("deduplicates repeated placeholders", () => {
+    const result = findUnfilledPlaceholders("{{name}} and {{name}} and {{role}}");
+    expect(result).toEqual(["name", "role"]);
+  });
+
+  it("handles empty string", () => {
+    expect(findUnfilledPlaceholders("")).toEqual([]);
   });
 });

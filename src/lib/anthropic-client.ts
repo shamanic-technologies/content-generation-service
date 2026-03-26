@@ -23,6 +23,7 @@ export interface GenerateFromTemplateParams {
   promptTemplate: string;
   variables: Record<string, unknown>;
   includeAiDisclaimer?: boolean;
+  campaignContext?: Record<string, unknown> | null;
 }
 
 export interface SequenceStep {
@@ -71,6 +72,28 @@ export function substituteVariables(
   return result;
 }
 
+/**
+ * Format campaign featureInputs as a context block prepended to the prompt.
+ */
+export function formatCampaignContext(featureInputs: Record<string, unknown>): string {
+  const lines: string[] = ["## Campaign Context"];
+  for (const [key, value] of Object.entries(featureInputs)) {
+    if (value == null) continue;
+    const label = key.replace(/([A-Z])/g, " $1").replace(/[_-]/g, " ").trim();
+    lines.push(`- ${label}: ${coerceToString(value)}`);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Find {{placeholder}} names that remain unfilled after variable substitution.
+ */
+export function findUnfilledPlaceholders(text: string): string[] {
+  const matches = text.match(/\{\{(\w+)\}\}/g);
+  if (!matches) return [];
+  return [...new Set(matches.map((m) => m.slice(2, -2)))];
+}
+
 const EMAIL_SEQUENCE_JSON_SCHEMA = {
   type: "object" as const,
   properties: {
@@ -105,7 +128,13 @@ export async function generateFromTemplate(
 ): Promise<GenerateResult> {
   const anthropic = new Anthropic({ apiKey });
 
-  const prompt = substituteVariables(params.promptTemplate, params.variables);
+  let prompt = substituteVariables(params.promptTemplate, params.variables);
+
+  // Convention 2: inject campaign featureInputs as additional context
+  if (params.campaignContext && Object.keys(params.campaignContext).length > 0) {
+    const contextBlock = formatCampaignContext(params.campaignContext);
+    prompt = `${contextBlock}\n\n${prompt}`;
+  }
 
   const response = await anthropic.messages.create({
     model: MODEL,

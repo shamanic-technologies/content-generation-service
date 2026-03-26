@@ -88,6 +88,14 @@ vi.mock("../../src/lib/billing-client.js", () => ({
   ESTIMATED_OUTPUT_TOKENS: 3072,
 }));
 
+vi.mock("../../src/lib/campaign-client.js", () => ({
+  getCampaignFeatureInputs: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("../../src/lib/brand-client.js", () => ({
+  extractBrandFields: vi.fn().mockResolvedValue(new Map()),
+}));
+
 // Mock anthropic client to return predictable token counts
 const MOCK_TOKENS_INPUT = 1500;
 const MOCK_TOKENS_OUTPUT = 300;

@@ -46,6 +46,14 @@ vi.mock("../../src/lib/key-client.js", () => ({
   decryptKey: vi.fn().mockResolvedValue({ key: "fake-key", keySource: "platform" as const }),
 }));
 
+vi.mock("../../src/lib/campaign-client.js", () => ({
+  getCampaignFeatureInputs: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("../../src/lib/brand-client.js", () => ({
+  extractBrandFields: vi.fn().mockResolvedValue(new Map()),
+}));
+
 vi.mock("../../src/lib/anthropic-client.js", () => ({
   generateFromTemplate: vi.fn().mockResolvedValue({
     subject: "Test",
