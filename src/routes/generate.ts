@@ -3,10 +3,12 @@ import { eq, and, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
-import { generateFromTemplate } from "../lib/anthropic-client.js";
+import { generateFromTemplate, substituteVariables, findUnfilledPlaceholders } from "../lib/anthropic-client.js";
 import { decryptKey } from "../lib/key-client.js";
 import { createRun, updateRun, addCosts } from "../lib/runs-client.js";
 import { authorizeCredits, ESTIMATED_INPUT_TOKENS, ESTIMATED_OUTPUT_TOKENS } from "../lib/billing-client.js";
+import { getCampaignFeatureInputs } from "../lib/campaign-client.js";
+import { extractBrandFields } from "../lib/brand-client.js";
 import { GenerateRequestSchema, StatsRequestSchema, StatsQuerySchema } from "../schemas.js";
 
 const router = Router();
@@ -75,6 +77,37 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     const caller = { callerMethod: "POST", callerPath: "/generate", campaignId, brandId, workflowName, featureSlug };
     const { key: anthropicApiKey, keySource } = await decryptKey("anthropic", req.orgId!, req.userId!, caller);
 
+    // Convention 2: fetch campaign featureInputs for LLM context enrichment
+    const serviceIdentity = { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowName, featureSlug };
+    let campaignContext: Record<string, unknown> | null = null;
+    if (campaignId) {
+      try {
+        campaignContext = await getCampaignFeatureInputs(campaignId, serviceIdentity);
+      } catch (err) {
+        console.warn("[content-gen] Failed to fetch campaign context — proceeding without it.", err instanceof Error ? err.message : err);
+      }
+    }
+
+    // Convention 1: resolve unfilled template variables from Brand Service
+    if (brandId && storedPrompt.prompt) {
+      try {
+        const afterSubstitution = substituteVariables(storedPrompt.prompt, variables);
+        const unfilled = findUnfilledPlaceholders(afterSubstitution);
+        if (unfilled.length > 0) {
+          const fields = unfilled.map((key) => ({
+            key,
+            description: `Value for the "${key}" field needed in content generation`,
+          }));
+          const brandValues = await extractBrandFields(brandId, fields, serviceIdentity);
+          for (const [key, value] of brandValues) {
+            variables[key] = value;
+          }
+        }
+      } catch (err) {
+        console.warn("[content-gen] Failed to resolve brand fields — proceeding with available variables.", err instanceof Error ? err.message : err);
+      }
+    }
+
     // Billing gate: authorize credits before platform-paid operations
     if (keySource === "platform") {
       const { sufficient, balance_cents, required_cents } = await authorizeCredits(
@@ -94,11 +127,12 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       }
     }
 
-    // Generate using the stored prompt + variable substitution
+    // Generate using the stored prompt + variable substitution + campaign context
     const result = await generateFromTemplate(anthropicApiKey, {
       promptTemplate: storedPrompt.prompt,
       variables,
       includeAiDisclaimer,
+      campaignContext,
     });
 
     // Extract lead/client fields from variables for dedicated columns
