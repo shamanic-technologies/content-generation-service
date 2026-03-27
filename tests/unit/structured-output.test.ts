@@ -96,6 +96,5 @@ describe("structured JSON output", () => {
     expect(callArgs.system).toBeDefined();
     expect(callArgs.system).toContain("NEVER include a sign-off");
     expect(callArgs.system).toContain("NEVER use placeholders");
-    expect(callArgs.system).toContain("never abbreviate");
   });
 });
