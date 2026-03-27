@@ -94,6 +94,18 @@ export function findUnfilledPlaceholders(text: string): string[] {
   return [...new Set(matches.map((m) => m.slice(2, -2)))];
 }
 
+// ─── Global system prompt ────────────────────────────────────────────────────
+// Applied to every generation call. Contains universal rules that should NOT
+// be repeated in individual prompt templates.
+const GLOBAL_SYSTEM_PROMPT = [
+  "You are generating email content for an automated sending pipeline.",
+  "",
+  "Universal rules (always apply, regardless of the prompt):",
+  "- NEVER include a sign-off, signature, or footer at the end of the email (e.g. '— [Your name]', 'Best, [Name]', 'Regards, …'). The sending service appends the sender's name, title, and organization automatically. Your output must end with the last sentence of the email body — nothing after it.",
+  "- NEVER use placeholders like [Your name], [Company], [Insert X], etc. Every piece of text you produce must be ready to send as-is.",
+  "- Use all proper nouns, company names, and personal names EXACTLY as provided in the prompt — never abbreviate, shorten, or use nicknames (e.g. 'Kevin' must stay 'Kevin', never 'Kev').",
+].join("\n");
+
 const EMAIL_SEQUENCE_JSON_SCHEMA = {
   type: "object" as const,
   properties: {
@@ -139,6 +151,7 @@ export async function generateFromTemplate(
   const response = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 3072,
+    system: GLOBAL_SYSTEM_PROMPT,
     messages: [
       {
         role: "user",

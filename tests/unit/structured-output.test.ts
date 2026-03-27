@@ -86,13 +86,16 @@ describe("structured JSON output", () => {
     expect(result.sequence[2].daysSinceLastStep).toBe(7);
   });
 
-  it("does not send a system prompt (prompt is fully client-defined)", async () => {
+  it("sends a global system prompt with universal email rules", async () => {
     await generateFromTemplate("fake-key", {
       promptTemplate: "Write an email to {{recipientName}}",
       variables: { recipientName: "Sarah" },
     });
 
     const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.system).toBeUndefined();
+    expect(callArgs.system).toBeDefined();
+    expect(callArgs.system).toContain("NEVER include a sign-off");
+    expect(callArgs.system).toContain("NEVER use placeholders");
+    expect(callArgs.system).toContain("never abbreviate");
   });
 });
