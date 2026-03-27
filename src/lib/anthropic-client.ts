@@ -103,7 +103,6 @@ const GLOBAL_SYSTEM_PROMPT = [
   "Universal rules (always apply, regardless of the prompt):",
   "- NEVER include a sign-off, signature, or footer at the end of the email (e.g. '— [Your name]', 'Best, [Name]', 'Regards, …'). The sending service appends the sender's name, title, and organization automatically. Your output must end with the last sentence of the email body — nothing after it.",
   "- NEVER use placeholders like [Your name], [Company], [Insert X], etc. Every piece of text you produce must be ready to send as-is.",
-  "- Use all proper nouns, company names, and personal names EXACTLY as provided in the prompt — never abbreviate, shorten, or use nicknames (e.g. 'Kevin' must stay 'Kevin', never 'Kev').",
 ].join("\n");
 
 const EMAIL_SEQUENCE_JSON_SCHEMA = {
