@@ -10,6 +10,12 @@ import { authorizeCredits, ESTIMATED_INPUT_TOKENS, ESTIMATED_OUTPUT_TOKENS } fro
 import { getCampaignFeatureInputs } from "../lib/campaign-client.js";
 import { extractBrandFields } from "../lib/brand-client.js";
 import { GenerateRequestSchema, StatsRequestSchema, StatsQuerySchema } from "../schemas.js";
+import {
+  resolveWorkflowDynastySlugs,
+  resolveFeatureDynastySlugs,
+  getWorkflowDynastyMap,
+  getFeatureDynastyMap,
+} from "../lib/dynasty-client.js";
 
 const router = Router();
 
@@ -321,12 +327,36 @@ router.get("/stats", serviceAuth, async (req: AuthenticatedRequest, res) => {
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
 
-    const { campaignId, brandId, orgId, runIds, groupBy } = parsed.data;
+    const {
+      campaignId, brandId, orgId, runIds,
+      workflowSlug, featureSlug,
+      workflowDynastySlug, featureDynastySlug,
+      groupBy,
+    } = parsed.data;
 
     if (!campaignId && !brandId && !orgId && !runIds) {
       return res.status(400).json({ error: "At least one filter required: campaignId, brandId, orgId, or runIds" });
     }
 
+    // Resolve dynasty slugs into versioned slug lists
+    let resolvedWorkflowSlugs: string[] | undefined;
+    if (workflowDynastySlug) {
+      resolvedWorkflowSlugs = await resolveWorkflowDynastySlugs(workflowDynastySlug);
+      if (resolvedWorkflowSlugs.length === 0) {
+        // Dynasty resolved to nothing — return zero stats
+        return res.json(groupBy ? { groups: [] } : { stats: { emailsGenerated: 0 } });
+      }
+    }
+
+    let resolvedFeatureSlugs: string[] | undefined;
+    if (featureDynastySlug) {
+      resolvedFeatureSlugs = await resolveFeatureDynastySlugs(featureDynastySlug);
+      if (resolvedFeatureSlugs.length === 0) {
+        return res.json(groupBy ? { groups: [] } : { stats: { emailsGenerated: 0 } });
+      }
+    }
+
+    // Build conditions — dynasty slug (resolved list) takes priority over exact slug
     const conditions: SQL[] = [];
     if (campaignId) conditions.push(eq(emailGenerations.campaignId, campaignId));
     if (brandId) conditions.push(eq(emailGenerations.brandId, brandId));
@@ -336,15 +366,33 @@ router.get("/stats", serviceAuth, async (req: AuthenticatedRequest, res) => {
       if (ids.length > 0) conditions.push(inArray(emailGenerations.runId, ids));
     }
 
-    if (groupBy === "campaignId") {
+    if (resolvedWorkflowSlugs && resolvedWorkflowSlugs.length > 0) {
+      conditions.push(inArray(emailGenerations.workflowSlug, resolvedWorkflowSlugs));
+    } else if (workflowSlug) {
+      conditions.push(eq(emailGenerations.workflowSlug, workflowSlug));
+    }
+
+    if (resolvedFeatureSlugs && resolvedFeatureSlugs.length > 0) {
+      conditions.push(inArray(emailGenerations.featureSlug, resolvedFeatureSlugs));
+    } else if (featureSlug) {
+      conditions.push(eq(emailGenerations.featureSlug, featureSlug));
+    }
+
+    // --- GroupBy: exact slug ---
+    if (groupBy === "campaignId" || groupBy === "model" || groupBy === "workflowSlug" || groupBy === "featureSlug") {
+      const col = groupBy === "campaignId" ? emailGenerations.campaignId
+        : groupBy === "model" ? emailGenerations.model
+        : groupBy === "workflowSlug" ? emailGenerations.workflowSlug
+        : emailGenerations.featureSlug;
+
       const results = await db
         .select({
-          key: emailGenerations.campaignId,
+          key: col,
           emailsGenerated: sql<number>`count(*)::int`,
         })
         .from(emailGenerations)
         .where(and(...conditions))
-        .groupBy(emailGenerations.campaignId);
+        .groupBy(col);
 
       return res.json({
         groups: results.map((r) => ({
@@ -354,20 +402,34 @@ router.get("/stats", serviceAuth, async (req: AuthenticatedRequest, res) => {
       });
     }
 
-    if (groupBy === "model") {
+    // --- GroupBy: dynasty slug (aggregate versioned slugs into dynasty) ---
+    if (groupBy === "workflowDynastySlug" || groupBy === "featureDynastySlug") {
+      const isWorkflow = groupBy === "workflowDynastySlug";
+      const col = isWorkflow ? emailGenerations.workflowSlug : emailGenerations.featureSlug;
+      const dynastyMap = isWorkflow
+        ? await getWorkflowDynastyMap()
+        : await getFeatureDynastyMap();
+
       const results = await db
         .select({
-          key: emailGenerations.model,
+          key: col,
           emailsGenerated: sql<number>`count(*)::int`,
         })
         .from(emailGenerations)
         .where(and(...conditions))
-        .groupBy(emailGenerations.model);
+        .groupBy(col);
+
+      // Aggregate rows by dynasty slug using the reverse map
+      const aggregated = new Map<string, number>();
+      for (const r of results) {
+        const dynastyKey = (r.key ? dynastyMap.get(r.key) : null) ?? r.key;
+        aggregated.set(dynastyKey ?? "", (aggregated.get(dynastyKey ?? "") ?? 0) + r.emailsGenerated);
+      }
 
       return res.json({
-        groups: results.map((r) => ({
-          key: r.key,
-          stats: { emailsGenerated: r.emailsGenerated },
+        groups: Array.from(aggregated.entries()).map(([key, count]) => ({
+          key: key || null,
+          stats: { emailsGenerated: count },
         })),
       });
     }
@@ -384,7 +446,7 @@ router.get("/stats", serviceAuth, async (req: AuthenticatedRequest, res) => {
       stats: { emailsGenerated: results[0]?.emailsGenerated ?? 0 },
     });
   } catch (error) {
-    console.error("GET /stats error:", error);
+    console.error("[content-generation-service] GET /stats error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
