@@ -541,7 +541,11 @@ export const StatsQuerySchema = registry.register(
       brandId: z.string().optional(),
       orgId: z.string().optional(),
       runIds: z.string().optional().describe("Comma-separated list of run IDs"),
-      groupBy: z.enum(["campaignId", "model"]).optional(),
+      workflowSlug: z.string().optional().describe("Filter by exact workflow slug"),
+      featureSlug: z.string().optional().describe("Filter by exact feature slug"),
+      workflowDynastySlug: z.string().optional().describe("Filter by workflow dynasty slug (resolved to all versioned slugs)"),
+      featureDynastySlug: z.string().optional().describe("Filter by feature dynasty slug (resolved to all versioned slugs)"),
+      groupBy: z.enum(["campaignId", "model", "workflowSlug", "featureSlug", "workflowDynastySlug", "featureDynastySlug"]).optional(),
     })
     .openapi("StatsQuery")
 );
@@ -575,9 +579,11 @@ registry.registerPath({
   tags: ["Stats"],
   summary: "Get aggregated stats with optional grouping",
   description:
-    "Filters: campaignId, brandId, orgId, runIds (comma-separated). " +
+    "Filters: campaignId, brandId, orgId, runIds (comma-separated), workflowSlug, featureSlug, workflowDynastySlug, featureDynastySlug. " +
+    "Dynasty slug filters are resolved to versioned slug lists via workflow-service / features-service. " +
     "Without groupBy returns { stats: { emailsGenerated } }. " +
-    "With groupBy returns { groups: [{ key, stats: { emailsGenerated } }] }.",
+    "With groupBy returns { groups: [{ key, stats: { emailsGenerated } }] }. " +
+    "groupBy=workflowDynastySlug/featureDynastySlug aggregates versioned slugs into their dynasty.",
   request: {
     headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
     query: StatsQuerySchema,
