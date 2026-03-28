@@ -6,7 +6,7 @@ export interface CallerContext {
   callerPath: string;
   campaignId?: string;
   brandId?: string;
-  workflowName?: string;
+  workflowSlug?: string;
   featureSlug?: string;
 }
 
@@ -30,7 +30,7 @@ function buildHeaders(
   };
   if (caller.campaignId) h["x-campaign-id"] = caller.campaignId;
   if (caller.brandId) h["x-brand-id"] = caller.brandId;
-  if (caller.workflowName) h["x-workflow-name"] = caller.workflowName;
+  if (caller.workflowSlug) h["x-workflow-slug"] = caller.workflowSlug;
   if (caller.featureSlug) h["x-feature-slug"] = caller.featureSlug;
   return h;
 }

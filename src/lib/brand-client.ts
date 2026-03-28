@@ -13,7 +13,7 @@ export interface ServiceIdentity {
   runId?: string;
   campaignId?: string;
   brandId?: string;
-  workflowName?: string;
+  workflowSlug?: string;
   featureSlug?: string;
 }
 
@@ -38,7 +38,7 @@ function buildHeaders(identity: ServiceIdentity): Record<string, string> {
   if (identity.runId) h["x-run-id"] = identity.runId;
   if (identity.campaignId) h["x-campaign-id"] = identity.campaignId;
   if (identity.brandId) h["x-brand-id"] = identity.brandId;
-  if (identity.workflowName) h["x-workflow-name"] = identity.workflowName;
+  if (identity.workflowSlug) h["x-workflow-slug"] = identity.workflowSlug;
   if (identity.featureSlug) h["x-feature-slug"] = identity.featureSlug;
   return h;
 }

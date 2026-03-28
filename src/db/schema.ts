@@ -47,7 +47,7 @@ export const emailGenerations = pgTable(
     responseRaw: jsonb("response_raw"),
 
     // Workflow tracking
-    workflowName: text("workflow_name"),
+    workflowSlug: text("workflow_slug"),
     featureSlug: text("feature_slug"),
 
     // Lead tracking — lead-service correlation ID
@@ -114,7 +114,7 @@ export const contentGenerations = pgTable(
     generationRunId: text("generation_run_id"),
 
     // Workflow tracking
-    workflowName: text("workflow_name"),
+    workflowSlug: text("workflow_slug"),
 
     // Model metadata
     model: text("model").notNull().default("claude-sonnet-4-6"),

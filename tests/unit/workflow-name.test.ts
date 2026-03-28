@@ -3,7 +3,7 @@ import express from "express";
 import request from "supertest";
 
 /**
- * Tests that workflowName is accepted, stored in DB, and passed to runs-service
+ * Tests that workflowSlug is accepted, stored in DB, and passed to runs-service
  * across all generation endpoints.
  */
 
@@ -28,7 +28,7 @@ vi.mock("../../src/middleware/auth.js", () => ({
   },
 }));
 
-// Track DB inserts to verify workflowName is stored
+// Track DB inserts to verify workflowSlug is stored
 const mockInsertValues: Array<Record<string, unknown>> = [];
 const mockDbSetCalls: Array<Record<string, unknown>> = [];
 
@@ -105,7 +105,7 @@ function createTestApp() {
   return app;
 }
 
-describe("workflowName propagation", () => {
+describe("workflowSlug propagation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInsertValues.length = 0;
@@ -121,7 +121,7 @@ describe("workflowName propagation", () => {
       app.use(generateRoutes);
     });
 
-    it("should pass workflowName to createRun when provided", async () => {
+    it("should pass workflowSlug to createRun when provided", async () => {
       await request(app)
         .post("/generate")
         .set("X-Org-Id", "org-internal-123")
@@ -129,13 +129,13 @@ describe("workflowName propagation", () => {
         .send({
           type: "email",
           variables: { recipientName: "John" },
-          workflowName: "cold-email-outreach",
+          workflowSlug: "cold-email-outreach",
         })
         .expect(200);
 
       expect(mockCreateRun).toHaveBeenCalledWith(
         expect.objectContaining({
-          workflowName: "cold-email-outreach",
+          workflowSlug: "cold-email-outreach",
         }),
         expect.objectContaining({
           orgId: "org-internal-123",
@@ -144,7 +144,7 @@ describe("workflowName propagation", () => {
       );
     });
 
-    it("should store workflowName in the database", async () => {
+    it("should store workflowSlug in the database", async () => {
       await request(app)
         .post("/generate")
         .set("X-Org-Id", "org-internal-123")
@@ -152,18 +152,18 @@ describe("workflowName propagation", () => {
         .send({
           type: "email",
           variables: { recipientName: "John" },
-          workflowName: "cold-email-outreach",
+          workflowSlug: "cold-email-outreach",
         })
         .expect(200);
 
       expect(mockInsertValues[0]).toEqual(
         expect.objectContaining({
-          workflowName: "cold-email-outreach",
+          workflowSlug: "cold-email-outreach",
         })
       );
     });
 
-    it("should work without workflowName (optional)", async () => {
+    it("should work without workflowSlug (optional)", async () => {
       await request(app)
         .post("/generate")
         .set("X-Org-Id", "org-internal-123")
@@ -176,7 +176,7 @@ describe("workflowName propagation", () => {
 
       expect(mockCreateRun).toHaveBeenCalledWith(
         expect.objectContaining({
-          workflowName: undefined,
+          workflowSlug: undefined,
         }),
         expect.objectContaining({
           orgId: "org-internal-123",
@@ -185,7 +185,7 @@ describe("workflowName propagation", () => {
       );
       expect(mockInsertValues[0]).toEqual(
         expect.objectContaining({
-          workflowName: null,
+          workflowSlug: null,
         })
       );
     });
