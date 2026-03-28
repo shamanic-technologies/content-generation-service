@@ -3,7 +3,7 @@ import express from "express";
 import request from "supertest";
 
 /**
- * Tests that x-campaign-id, x-brand-id, x-workflow-name headers are:
+ * Tests that x-campaign-id, x-brand-id, x-workflow-slug headers are:
  * 1. Parsed from request headers as optional fallbacks
  * 2. Used when body fields are missing
  * 3. Body values take precedence over header values
@@ -99,7 +99,7 @@ function createTestApp() {
   return app;
 }
 
-describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-name, x-feature-slug)", () => {
+describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-feature-slug)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInsertValues.length = 0;
@@ -122,7 +122,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-name, x-featur
         .set("X-Run-Id", "run-789")
         .set("X-Campaign-Id", "campaign-from-header")
         .set("X-Brand-Id", "brand-from-header")
-        .set("X-Workflow-Name", "wf-from-header")
+        .set("X-Workflow-Slug", "wf-from-header")
         .set("X-Feature-Slug", "feat-from-header")
         .send({
           type: "email",
@@ -135,7 +135,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-name, x-featur
         expect.objectContaining({
           brandId: "brand-from-header",
           campaignId: "campaign-from-header",
-          workflowName: "wf-from-header",
+          workflowSlug: "wf-from-header",
           featureSlug: "feat-from-header",
         })
       );
@@ -145,12 +145,12 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-name, x-featur
         expect.objectContaining({
           brandId: "brand-from-header",
           campaignId: "campaign-from-header",
-          workflowName: "wf-from-header",
+          workflowSlug: "wf-from-header",
         }),
         expect.objectContaining({
           campaignId: "campaign-from-header",
           brandId: "brand-from-header",
-          workflowName: "wf-from-header",
+          workflowSlug: "wf-from-header",
           featureSlug: "feat-from-header",
         })
       );
@@ -164,14 +164,14 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-name, x-featur
         .set("X-Run-Id", "run-789")
         .set("X-Campaign-Id", "campaign-from-header")
         .set("X-Brand-Id", "brand-from-header")
-        .set("X-Workflow-Name", "wf-from-header")
+        .set("X-Workflow-Slug", "wf-from-header")
         .set("X-Feature-Slug", "feat-from-header")
         .send({
           type: "email",
           variables: { recipientName: "John" },
           brandId: "brand-from-body",
           campaignId: "campaign-from-body",
-          workflowName: "wf-from-body",
+          workflowSlug: "wf-from-body",
           featureSlug: "feat-from-body",
         })
         .expect(200);
@@ -180,7 +180,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-name, x-featur
         expect.objectContaining({
           brandId: "brand-from-body",
           campaignId: "campaign-from-body",
-          workflowName: "wf-from-body",
+          workflowSlug: "wf-from-body",
           featureSlug: "feat-from-body",
         })
       );
@@ -202,7 +202,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-name, x-featur
         expect.objectContaining({
           brandId: "",
           campaignId: "",
-          workflowName: null,
+          workflowSlug: null,
           featureSlug: null,
         })
       );
@@ -216,7 +216,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-name, x-featur
         .set("X-Run-Id", "run-789")
         .set("X-Campaign-Id", "camp-1")
         .set("X-Brand-Id", "brand-1")
-        .set("X-Workflow-Name", "wf-1")
+        .set("X-Workflow-Slug", "wf-1")
         .set("X-Feature-Slug", "feat-1")
         .send({
           type: "email",
@@ -231,7 +231,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-name, x-featur
         expect.objectContaining({
           campaignId: "camp-1",
           brandId: "brand-1",
-          workflowName: "wf-1",
+          workflowSlug: "wf-1",
           featureSlug: "feat-1",
         })
       );
@@ -243,7 +243,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-name, x-featur
         expect.objectContaining({
           campaignId: "camp-1",
           brandId: "brand-1",
-          workflowName: "wf-1",
+          workflowSlug: "wf-1",
           featureSlug: "feat-1",
         })
       );

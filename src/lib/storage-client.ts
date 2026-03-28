@@ -21,7 +21,7 @@ export interface StorageIdentity {
   runId: string;
   campaignId?: string;
   brandId?: string;
-  workflowName?: string;
+  workflowSlug?: string;
   featureSlug?: string;
 }
 
@@ -43,7 +43,7 @@ export async function uploadToStorage(
 
   if (identity.campaignId) headers["x-campaign-id"] = identity.campaignId;
   if (identity.brandId) headers["x-brand-id"] = identity.brandId;
-  if (identity.workflowName) headers["x-workflow-name"] = identity.workflowName;
+  if (identity.workflowSlug) headers["x-workflow-slug"] = identity.workflowSlug;
   if (identity.featureSlug) headers["x-feature-slug"] = identity.featureSlug;
 
   const response = await fetch(`${STORAGE_SERVICE_URL}/upload`, {

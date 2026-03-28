@@ -21,7 +21,7 @@ describe("OpenAPI spec — EmailGeneration schema", () => {
       "subject", "bodyHtml", "bodyText", "sequence",
       "model", "tokensInput", "tokensOutput",
       "promptRaw", "responseRaw",
-      "workflowName", "leadId", "idempotencyKey", "createdAt",
+      "workflowSlug", "leadId", "idempotencyKey", "createdAt",
     ];
     for (const key of expectedKeys) {
       expect(props).toHaveProperty(key);

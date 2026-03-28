@@ -311,7 +311,7 @@ describe("POST /submagic/process", () => {
         ...identityHeaders,
         "x-campaign-id": "camp-1",
         "x-brand-id": "brand-1",
-        "x-workflow-name": "case-study",
+        "x-workflow-slug": "case-study",
         "x-feature-slug": "video-captions",
       })
       .send(validBody)
@@ -325,7 +325,7 @@ describe("POST /submagic/process", () => {
         runId: "run-uuid-789",
         campaignId: "camp-1",
         brandId: "brand-1",
-        workflowName: "case-study",
+        workflowSlug: "case-study",
         featureSlug: "video-captions",
       }),
     );
@@ -347,7 +347,7 @@ describe("POST /submagic/process", () => {
         ...identityHeaders,
         "x-campaign-id": "camp-1",
         "x-brand-id": "brand-1",
-        "x-workflow-name": "case-study",
+        "x-workflow-slug": "case-study",
         "x-feature-slug": "video-captions",
       })
       .send(validBody)
@@ -360,7 +360,7 @@ describe("POST /submagic/process", () => {
       expect.objectContaining({
         campaignId: "camp-1",
         brandId: "brand-1",
-        workflowName: "case-study",
+        workflowSlug: "case-study",
         featureSlug: "video-captions",
       }),
     );

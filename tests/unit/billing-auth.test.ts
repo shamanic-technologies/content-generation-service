@@ -21,7 +21,7 @@ vi.mock("../../src/middleware/auth.js", () => ({
     req.runId = req.headers["x-run-id"] || "run-caller-123";
     req.campaignId = req.headers["x-campaign-id"] || undefined;
     req.brandId = req.headers["x-brand-id"] || undefined;
-    req.workflowName = req.headers["x-workflow-name"] || undefined;
+    req.workflowSlug = req.headers["x-workflow-slug"] || undefined;
     next();
   },
 }));
@@ -132,7 +132,7 @@ describe("POST /generate — billing authorization gate", () => {
       .set("X-Run-Id", "run-caller-123")
       .set("X-Campaign-Id", "camp-1")
       .set("X-Brand-Id", "brand-1")
-      .set("X-Workflow-Name", "my-workflow")
+      .set("X-Workflow-Slug", "my-workflow")
       .send(VALID_BODY)
       .expect(200);
 
@@ -148,7 +148,7 @@ describe("POST /generate — billing authorization gate", () => {
         runId: "run-caller-123",
         campaignId: "camp-1",
         brandId: "brand-1",
-        workflowName: "my-workflow",
+        workflowSlug: "my-workflow",
       }
     );
   });

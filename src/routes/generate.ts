@@ -31,7 +31,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       apolloEnrichmentId,
       leadId,
       idempotencyKey,
-      workflowName: bodyWorkflowName,
+      workflowSlug: bodyWorkflowName,
       featureSlug: bodyFeatureSlug,
       includeAiDisclaimer,
     } = parsed.data;
@@ -39,7 +39,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     // Header values (from workflow-service) serve as fallback when body values are missing
     const brandId = bodyBrandId || req.brandId;
     const campaignId = bodyCampaignId || req.campaignId;
-    const workflowName = bodyWorkflowName || req.workflowName;
+    const workflowSlug = bodyWorkflowName || req.workflowSlug;
     const featureSlug = bodyFeatureSlug || req.featureSlug;
 
     // Idempotency: return existing generation if key matches
@@ -74,11 +74,11 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     }
 
     // Get Anthropic API key
-    const caller = { callerMethod: "POST", callerPath: "/generate", campaignId, brandId, workflowName, featureSlug };
+    const caller = { callerMethod: "POST", callerPath: "/generate", campaignId, brandId, workflowSlug, featureSlug };
     const { key: anthropicApiKey, keySource } = await decryptKey("anthropic", req.orgId!, req.userId!, caller);
 
     // Convention 2: fetch campaign featureInputs for LLM context enrichment
-    const serviceIdentity = { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowName, featureSlug };
+    const serviceIdentity = { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug };
     let campaignContext: Record<string, unknown> | null = null;
     if (campaignId) {
       try {
@@ -116,7 +116,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
           { costName: "anthropic-sonnet-4.6-tokens-output", quantity: ESTIMATED_OUTPUT_TOKENS },
         ],
         "content-generation — claude-sonnet-4-6",
-        { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowName, featureSlug }
+        { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug }
       );
       if (!sufficient) {
         return res.status(402).json({
@@ -164,7 +164,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         tokensOutput: result.tokensOutput,
         promptRaw: result.promptRaw,
         responseRaw: result.responseRaw,
-        workflowName: workflowName ?? null,
+        workflowSlug: workflowSlug ?? null,
         featureSlug: featureSlug ?? null,
         leadId: leadId ?? null,
         idempotencyKey: idempotencyKey ?? null,
@@ -179,8 +179,8 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         campaignId,
         serviceName: "content-generation-service",
         taskName: "single-generation",
-        workflowName,
-      }, { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowName, featureSlug });
+        workflowSlug,
+      }, { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug });
 
       // Link generation run to email record IMMEDIATELY so per-item cost
       // lookups work even if addCosts/updateRun fail below
@@ -189,7 +189,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         .where(eq(emailGenerations.id, generation.id));
 
       // Subsequent calls use genRun.id as x-run-id (the newly created run)
-      const runIdentity = { orgId: req.orgId!, userId: req.userId!, runId: genRun.id, campaignId, brandId, workflowName, featureSlug };
+      const runIdentity = { orgId: req.orgId!, userId: req.userId!, runId: genRun.id, campaignId, brandId, workflowSlug, featureSlug };
 
       const costItems = [];
       if (result.tokensInput) {

@@ -176,7 +176,7 @@
           "idempotencyKey": {
             "type": "string"
           },
-          "workflowName": {
+          "workflowSlug": {
             "type": "string"
           },
           "featureSlug": {
@@ -340,7 +340,7 @@
           "responseRaw": {
             "nullable": true
           },
-          "workflowName": {
+          "workflowSlug": {
             "type": "string",
             "nullable": true
           },
@@ -383,7 +383,7 @@
           "tokensInput",
           "tokensOutput",
           "promptRaw",
-          "workflowName",
+          "workflowSlug",
           "featureSlug",
           "leadId",
           "idempotencyKey",
@@ -780,7 +780,7 @@
       "BrandId": {
         "type": "string"
       },
-      "WorkflowName": {
+      "WorkflowSlug": {
         "type": "string"
       },
       "FeatureSlug": {
@@ -830,14 +830,14 @@
         "in": "header",
         "description": "Brand ID injected by workflow-service"
       },
-      "WorkflowName": {
+      "WorkflowSlug": {
         "schema": {
-          "$ref": "#/components/schemas/WorkflowName"
+          "$ref": "#/components/schemas/WorkflowSlug"
         },
         "required": false,
-        "name": "X-Workflow-Name",
+        "name": "X-Workflow-Slug",
         "in": "header",
-        "description": "Workflow name injected by workflow-service"
+        "description": "Workflow slug injected by workflow-service"
       },
       "FeatureSlug": {
         "schema": {
@@ -1256,7 +1256,7 @@
               "type": "string"
             },
             "required": false,
-            "name": "x-workflow-name",
+            "name": "x-workflow-slug",
             "in": "header"
           },
           {
@@ -1408,7 +1408,7 @@
               "type": "string"
             },
             "required": false,
-            "name": "x-workflow-name",
+            "name": "x-workflow-slug",
             "in": "header"
           },
           {
@@ -1504,7 +1504,7 @@
               "type": "string"
             },
             "required": false,
-            "name": "x-workflow-name",
+            "name": "x-workflow-slug",
             "in": "header"
           },
           {
@@ -1600,7 +1600,7 @@
               "type": "string"
             },
             "required": false,
-            "name": "x-workflow-name",
+            "name": "x-workflow-slug",
             "in": "header"
           },
           {
@@ -1796,7 +1796,7 @@
               "type": "string"
             },
             "required": false,
-            "name": "x-workflow-name",
+            "name": "x-workflow-slug",
             "in": "header"
           },
           {
@@ -1986,7 +1986,7 @@
               "type": "string"
             },
             "required": false,
-            "name": "x-workflow-name",
+            "name": "x-workflow-slug",
             "in": "header"
           },
           {
