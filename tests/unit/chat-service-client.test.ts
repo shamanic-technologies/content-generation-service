@@ -11,11 +11,13 @@ const PARAMS = {
 };
 
 function successResponse(emails: Array<{ body: string; daysSinceLastStep: number }>) {
+  const jsonPayload = { subject: "Test", emails };
   return {
     ok: true,
     status: 200,
     json: () => Promise.resolve({
-      content: JSON.stringify({ subject: "Test", emails }),
+      content: JSON.stringify(jsonPayload),
+      json: jsonPayload,
       tokensInput: 200,
       tokensOutput: 80,
       model: "claude-sonnet-4-6",
@@ -115,6 +117,30 @@ describe("chat-service client (generateFromTemplate)", () => {
     expect(result.tokensInput).toBe(200);
     expect(result.tokensOutput).toBe(80);
     expect(result.model).toBe("claude-sonnet-4-6");
+  });
+
+  it("uses data.json (not data.content) — ignores markdown fences in content", async () => {
+    const emails = [{ body: "Hello", daysSinceLastStep: 0 }];
+    const jsonPayload = { subject: "Clean", emails };
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        // content has markdown code fences (the bug scenario)
+        content: '```json\n' + JSON.stringify(jsonPayload) + '\n```',
+        // json is pre-parsed and clean
+        json: jsonPayload,
+        tokensInput: 100,
+        tokensOutput: 50,
+        model: "claude-sonnet-4-6",
+      }),
+    });
+
+    // Should NOT throw — we read data.json, not data.content
+    const result = await generateFromTemplate(PARAMS, IDENTITY);
+    expect(result.subject).toBe("Clean");
+    expect(result.sequence).toHaveLength(1);
+    expect(result.sequence[0].bodyText).toBe("Hello");
   });
 
   it("includes JSON schema instructions in systemPrompt", async () => {

@@ -140,7 +140,7 @@ export class InsufficientCreditsError extends Error {
 
 interface ChatCompleteResponse {
   content: string;
-  json?: Record<string, unknown>;
+  json: { subject: string; emails: Array<{ body: string; daysSinceLastStep: number }> };
   tokensInput: number;
   tokensOutput: number;
   model: string;
@@ -200,7 +200,7 @@ export async function generateFromTemplate(
 
   const data = await response.json() as ChatCompleteResponse;
 
-  let parsed = parseSequenceJson(data.content);
+  let parsed = parseSequenceFromJson(data.json);
 
   if (params.includeAiDisclaimer) {
     parsed = {
@@ -229,15 +229,13 @@ function textToHtml(text: string): string {
     .join("");
 }
 
-function parseSequenceJson(text: string): {
+function parseSequenceFromJson(json: {
+  subject: string;
+  emails: Array<{ body: string; daysSinceLastStep: number }>;
+}): {
   subject: string;
   sequence: SequenceStep[];
 } {
-  const json = JSON.parse(text) as {
-    subject: string;
-    emails: Array<{ body: string; daysSinceLastStep: number }>;
-  };
-
   const sequence: SequenceStep[] = json.emails.map((email, i) => {
     const bodyText = email.body.trim();
     return {

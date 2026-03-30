@@ -1,15 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { generateFromTemplate } from "../../src/lib/anthropic-client";
 
+const CHAT_JSON = {
+  subject: "Quick question",
+  emails: [
+    { body: "Hey Sarah,\n\nMost nonprofits treat community as a vanity metric — but the ones that last are built around shared purpose, not headcount.\n\nA client of mine is looking for a handful of organizers to help launch public goods initiatives. Would 30 minutes be worth a conversation?", daysSinceLastStep: 0 },
+    { body: "Hey Sarah,\n\nJust circling back on my last note. Would love to connect for a quick chat.", daysSinceLastStep: 3 },
+    { body: "Hey Sarah,\n\nDifferent angle — what if the biggest barrier to lasting community impact is actually thinking too small?", daysSinceLastStep: 7 },
+  ],
+};
+
 const CHAT_RESPONSE = {
-  content: JSON.stringify({
-    subject: "Quick question",
-    emails: [
-      { body: "Hey Sarah,\n\nMost nonprofits treat community as a vanity metric — but the ones that last are built around shared purpose, not headcount.\n\nA client of mine is looking for a handful of organizers to help launch public goods initiatives. Would 30 minutes be worth a conversation?", daysSinceLastStep: 0 },
-      { body: "Hey Sarah,\n\nJust circling back on my last note. Would love to connect for a quick chat.", daysSinceLastStep: 3 },
-      { body: "Hey Sarah,\n\nDifferent angle — what if the biggest barrier to lasting community impact is actually thinking too small?", daysSinceLastStep: 7 },
-    ],
-  }),
+  content: JSON.stringify(CHAT_JSON),
+  json: CHAT_JSON,
   tokensInput: 200,
   tokensOutput: 80,
   model: "claude-sonnet-4-6",

@@ -2,11 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { generateFromTemplate } from "../../src/lib/anthropic-client";
 
 function mockChatResponse(emails: Array<{ body: string; daysSinceLastStep: number }>) {
+  const jsonPayload = { subject: "Test subject", emails };
   return {
     ok: true,
     status: 200,
     json: () => Promise.resolve({
-      content: JSON.stringify({ subject: "Test subject", emails }),
+      content: JSON.stringify(jsonPayload),
+      json: jsonPayload,
       tokensInput: 100,
       tokensOutput: 50,
       model: "claude-sonnet-4-6",

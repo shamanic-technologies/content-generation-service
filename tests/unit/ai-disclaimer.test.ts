@@ -30,14 +30,15 @@ describe("appendAiDisclaimer", () => {
 
 // ─── Integration with generateFromTemplate ──────────────────────────────────
 
-const MOCK_RESPONSE = JSON.stringify({
+const MOCK_JSON = {
   subject: "Quick question",
   emails: [
     { body: "Hey Sarah,\n\nMost nonprofits treat community as a vanity metric.", daysSinceLastStep: 0 },
     { body: "Just circling back on my last note.", daysSinceLastStep: 3 },
     { body: "Last attempt — different angle this time.", daysSinceLastStep: 7 },
   ],
-});
+};
+const MOCK_RESPONSE = JSON.stringify(MOCK_JSON);
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -57,6 +58,7 @@ describe("generateFromTemplate with includeAiDisclaimer", () => {
       status: 200,
       json: () => Promise.resolve({
         content: MOCK_RESPONSE,
+        json: MOCK_JSON,
         tokensInput: 200,
         tokensOutput: 80,
         model: "claude-sonnet-4-6",
