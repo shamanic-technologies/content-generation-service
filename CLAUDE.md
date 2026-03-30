@@ -1,6 +1,6 @@
 # Project: content-generation-service
 
-Microservice that generates personalized content (emails, calendar events, etc.) using Claude Sonnet 4.6, with BYOK support, PostgreSQL storage, and cost tracking via runs-service.
+Microservice that generates personalized content (emails, calendar events, etc.) via chat-service (which handles LLM calls, key resolution, billing, and cost tracking), with PostgreSQL storage and run tracking via runs-service.
 
 ## Commands
 
@@ -18,13 +18,13 @@ Microservice that generates personalized content (emails, calendar events, etc.)
 ## Architecture
 
 - `src/schemas.ts` — Zod schemas + OpenAPI registry (source of truth for validation + OpenAPI)
-- `src/routes/generate.ts` — POST /generate endpoint (email generation via Anthropic)
+- `src/routes/generate.ts` — POST /generate endpoint (email generation via chat-service)
 - `src/routes/stats.ts` — POST /stats and POST /stats/by-model endpoints
 - `src/routes/health.ts` — GET /health endpoint
 - `src/middleware/auth.ts` — Authentication middleware (X-Clerk-Org-Id header)
-- `src/lib/anthropic-client.ts` — Anthropic SDK wrapper
-- `src/lib/runs-client.ts` — Client for runs-service (cost tracking)
-- `src/lib/key-client.ts` — Client for key-service (BYOK API key retrieval)
+- `src/lib/anthropic-client.ts` — Chat-service client + email template utilities (prompt substitution, AI disclaimer, JSON parsing)
+- `src/lib/runs-client.ts` — Client for runs-service (run tracking)
+- `src/lib/key-client.ts` — Client for key-service (used by submagic route)
 - `src/db/schema.ts` — Drizzle ORM database schema
 - `src/db/index.ts` — Database connection
 - `src/instrument.ts` — Sentry instrumentation

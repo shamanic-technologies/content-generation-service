@@ -13,12 +13,10 @@ import request from "supertest";
 // Mock runs-client — capture identity headers passed to createRun
 const mockCreateRun = vi.fn().mockResolvedValue({ id: "run-456" });
 const mockUpdateRun = vi.fn().mockResolvedValue({});
-const mockAddCosts = vi.fn().mockResolvedValue({ costs: [] });
 
 vi.mock("../../src/lib/runs-client.js", () => ({
   createRun: (...args: unknown[]) => mockCreateRun(...args),
   updateRun: (...args: unknown[]) => mockUpdateRun(...args),
-  addCosts: (...args: unknown[]) => mockAddCosts(...args),
 }));
 
 // Use real serviceAuth to test header parsing
@@ -64,16 +62,6 @@ vi.mock("../../src/db/schema.js", () => ({
   prompts: { orgId: { name: "org_id" }, type: { name: "type" } },
 }));
 
-vi.mock("../../src/lib/key-client.js", () => ({
-  decryptKey: vi.fn().mockResolvedValue({ key: "fake-key", keySource: "platform" as const }),
-}));
-
-vi.mock("../../src/lib/billing-client.js", () => ({
-  authorizeCredits: vi.fn().mockResolvedValue({ sufficient: true, balance_cents: 5000, required_cents: 1 }),
-  ESTIMATED_INPUT_TOKENS: 2000,
-  ESTIMATED_OUTPUT_TOKENS: 3072,
-}));
-
 vi.mock("../../src/lib/campaign-client.js", () => ({
   getCampaignFeatureInputs: vi.fn().mockResolvedValue(null),
 }));
@@ -88,9 +76,20 @@ vi.mock("../../src/lib/anthropic-client.js", () => ({
     sequence: [{ step: 1, bodyHtml: "<p>Hi</p>", bodyText: "Hi", daysSinceLastStep: 0 }],
     tokensInput: 100,
     tokensOutput: 50,
+    model: "claude-sonnet-4-6",
     promptRaw: "prompt",
     responseRaw: {},
   }),
+  InsufficientCreditsError: class InsufficientCreditsError extends Error {
+    status = 402;
+    balance_cents: number;
+    required_cents: number;
+    constructor(balance_cents: number, required_cents: number) {
+      super("Insufficient credits");
+      this.balance_cents = balance_cents;
+      this.required_cents = required_cents;
+    }
+  },
 }));
 
 function createTestApp() {
@@ -208,7 +207,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-featur
       );
     });
 
-    it("forwards tracking headers to runs-service addCosts and updateRun", async () => {
+    it("forwards tracking headers to runs-service updateRun", async () => {
       await request(app)
         .post("/generate")
         .set("X-Org-Id", "org-123")
@@ -223,18 +222,6 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-featur
           variables: { recipientName: "John" },
         })
         .expect(200);
-
-      // addCosts identity should include tracking headers
-      expect(mockAddCosts).toHaveBeenCalledWith(
-        "run-456",
-        expect.any(Array),
-        expect.objectContaining({
-          campaignId: "camp-1",
-          brandId: "brand-1",
-          workflowSlug: "wf-1",
-          featureSlug: "feat-1",
-        })
-      );
 
       // updateRun identity should include tracking headers
       expect(mockUpdateRun).toHaveBeenCalledWith(

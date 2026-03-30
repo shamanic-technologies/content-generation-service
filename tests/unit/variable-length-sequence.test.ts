@@ -1,27 +1,23 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { generateFromTemplate } from "../../src/lib/anthropic-client";
 
-function mockAnthropicResponse(emails: Array<{ body: string; daysSinceLastStep: number }>) {
+function mockChatResponse(emails: Array<{ body: string; daysSinceLastStep: number }>) {
   return {
-    content: [
-      {
-        type: "text" as const,
-        text: JSON.stringify({ subject: "Test subject", emails }),
-      },
-    ],
-    usage: { input_tokens: 100, output_tokens: 50 },
+    ok: true,
+    status: 200,
+    json: () => Promise.resolve({
+      content: JSON.stringify({ subject: "Test subject", emails }),
+      tokensInput: 100,
+      tokensOutput: 50,
+      model: "claude-sonnet-4-6",
+    }),
   };
 }
 
-const mockCreate = vi.fn();
+const mockFetch = vi.fn();
+vi.stubGlobal("fetch", mockFetch);
 
-vi.mock("@anthropic-ai/sdk", () => {
-  return {
-    default: class MockAnthropic {
-      messages = { create: (...args: unknown[]) => mockCreate(...args) };
-    },
-  };
-});
+const IDENTITY = { orgId: "org-1", userId: "user-1", runId: "run-1" };
 
 const PARAMS = {
   promptTemplate: "Write an email to {{name}}",
@@ -29,12 +25,16 @@ const PARAMS = {
 };
 
 describe("variable-length email sequences", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("parses a single-email sequence (length 1)", async () => {
-    mockCreate.mockResolvedValueOnce(
-      mockAnthropicResponse([{ body: "Hi there, quick note.", daysSinceLastStep: 0 }])
+    mockFetch.mockResolvedValueOnce(
+      mockChatResponse([{ body: "Hi there, quick note.", daysSinceLastStep: 0 }])
     );
 
-    const result = await generateFromTemplate("fake-key", PARAMS);
+    const result = await generateFromTemplate(PARAMS, IDENTITY);
 
     expect(result.sequence).toHaveLength(1);
     expect(result.sequence[0].step).toBe(1);
@@ -44,15 +44,15 @@ describe("variable-length email sequences", () => {
   });
 
   it("parses a 3-email sequence", async () => {
-    mockCreate.mockResolvedValueOnce(
-      mockAnthropicResponse([
+    mockFetch.mockResolvedValueOnce(
+      mockChatResponse([
         { body: "Initial email", daysSinceLastStep: 0 },
         { body: "Follow-up 1", daysSinceLastStep: 3 },
         { body: "Follow-up 2", daysSinceLastStep: 7 },
       ])
     );
 
-    const result = await generateFromTemplate("fake-key", PARAMS);
+    const result = await generateFromTemplate(PARAMS, IDENTITY);
 
     expect(result.sequence).toHaveLength(3);
     expect(result.sequence.map((s) => s.step)).toEqual([1, 2, 3]);
@@ -60,8 +60,8 @@ describe("variable-length email sequences", () => {
   });
 
   it("parses a 5-email sequence", async () => {
-    mockCreate.mockResolvedValueOnce(
-      mockAnthropicResponse([
+    mockFetch.mockResolvedValueOnce(
+      mockChatResponse([
         { body: "Email 1", daysSinceLastStep: 0 },
         { body: "Email 2", daysSinceLastStep: 2 },
         { body: "Email 3", daysSinceLastStep: 4 },
@@ -70,7 +70,7 @@ describe("variable-length email sequences", () => {
       ])
     );
 
-    const result = await generateFromTemplate("fake-key", PARAMS);
+    const result = await generateFromTemplate(PARAMS, IDENTITY);
 
     expect(result.sequence).toHaveLength(5);
     expect(result.sequence.map((s) => s.step)).toEqual([1, 2, 3, 4, 5]);
@@ -78,14 +78,14 @@ describe("variable-length email sequences", () => {
   });
 
   it("uses daysSinceLastStep from the response, not hardcoded values", async () => {
-    mockCreate.mockResolvedValueOnce(
-      mockAnthropicResponse([
+    mockFetch.mockResolvedValueOnce(
+      mockChatResponse([
         { body: "Email 1", daysSinceLastStep: 0 },
         { body: "Email 2", daysSinceLastStep: 14 },
       ])
     );
 
-    const result = await generateFromTemplate("fake-key", PARAMS);
+    const result = await generateFromTemplate(PARAMS, IDENTITY);
 
     expect(result.sequence[0].daysSinceLastStep).toBe(0);
     expect(result.sequence[1].daysSinceLastStep).toBe(14);

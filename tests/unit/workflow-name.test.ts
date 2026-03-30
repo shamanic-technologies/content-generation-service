@@ -67,16 +67,6 @@ vi.mock("../../src/db/schema.js", () => ({
   prompts: { orgId: { name: "org_id" }, type: { name: "type" } },
 }));
 
-vi.mock("../../src/lib/key-client.js", () => ({
-  decryptKey: vi.fn().mockResolvedValue({ key: "fake-anthropic-key", keySource: "platform" as const }),
-}));
-
-vi.mock("../../src/lib/billing-client.js", () => ({
-  authorizeCredits: vi.fn().mockResolvedValue({ sufficient: true, balance_cents: 5000, required_cents: 1 }),
-  ESTIMATED_INPUT_TOKENS: 2000,
-  ESTIMATED_OUTPUT_TOKENS: 3072,
-}));
-
 vi.mock("../../src/lib/campaign-client.js", () => ({
   getCampaignFeatureInputs: vi.fn().mockResolvedValue(null),
 }));
@@ -93,9 +83,20 @@ vi.mock("../../src/lib/anthropic-client.js", () => ({
     ],
     tokensInput: 100,
     tokensOutput: 50,
+    model: "claude-sonnet-4-6",
     promptRaw: "test prompt",
     responseRaw: {},
   }),
+  InsufficientCreditsError: class InsufficientCreditsError extends Error {
+    status = 402;
+    balance_cents: number;
+    required_cents: number;
+    constructor(balance_cents: number, required_cents: number) {
+      super("Insufficient credits");
+      this.balance_cents = balance_cents;
+      this.required_cents = required_cents;
+    }
+  },
 }));
 
 

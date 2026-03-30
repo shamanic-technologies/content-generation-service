@@ -5,12 +5,10 @@ import request from "supertest";
 // Mock runs-client
 const mockCreateRun = vi.fn().mockResolvedValue({ id: "run-456" });
 const mockUpdateRun = vi.fn().mockResolvedValue({});
-const mockAddCosts = vi.fn().mockResolvedValue({ costs: [] });
 
 vi.mock("../../src/lib/runs-client.js", () => ({
   createRun: (...args: unknown[]) => mockCreateRun(...args),
   updateRun: (...args: unknown[]) => mockUpdateRun(...args),
-  addCosts: (...args: unknown[]) => mockAddCosts(...args),
 }));
 
 // Mock auth middleware
@@ -57,22 +55,6 @@ vi.mock("../../src/db/schema.js", () => ({
   prompts: { orgId: { name: "org_id" }, type: { name: "type" } },
 }));
 
-// Mock key-client — default to platform
-const mockDecryptKey = vi.fn().mockResolvedValue({ key: "fake-key", keySource: "platform" as const });
-
-vi.mock("../../src/lib/key-client.js", () => ({
-  decryptKey: (...args: unknown[]) => mockDecryptKey(...args),
-}));
-
-// Mock billing-client
-const mockAuthorizeCredits = vi.fn().mockResolvedValue({ sufficient: true, balance_cents: 5000, required_cents: 1 });
-
-vi.mock("../../src/lib/billing-client.js", () => ({
-  authorizeCredits: (...args: unknown[]) => mockAuthorizeCredits(...args),
-  ESTIMATED_INPUT_TOKENS: 2000,
-  ESTIMATED_OUTPUT_TOKENS: 3072,
-}));
-
 vi.mock("../../src/lib/campaign-client.js", () => ({
   getCampaignFeatureInputs: vi.fn().mockResolvedValue(null),
 }));
@@ -81,19 +63,31 @@ vi.mock("../../src/lib/brand-client.js", () => ({
   extractBrandFields: vi.fn().mockResolvedValue(new Map()),
 }));
 
-// Mock anthropic client
+// Mock anthropic client (now backed by chat-service)
+class InsufficientCreditsError extends Error {
+  status = 402;
+  balance_cents: number;
+  required_cents: number;
+  constructor(balance_cents: number, required_cents: number) {
+    super("Insufficient credits");
+    this.balance_cents = balance_cents;
+    this.required_cents = required_cents;
+  }
+}
+
 const mockGenerateFromTemplate = vi.fn().mockResolvedValue({
   subject: "Test subject",
   sequence: [{ step: 1, bodyHtml: "<p>body</p>", bodyText: "body", daysSinceLastStep: 0 }],
   tokensInput: 500,
   tokensOutput: 100,
-  costUsd: 0.005,
+  model: "claude-sonnet-4-6",
   promptRaw: "resolved prompt",
   responseRaw: {},
 });
 
 vi.mock("../../src/lib/anthropic-client.js", () => ({
   generateFromTemplate: (...args: unknown[]) => mockGenerateFromTemplate(...args),
+  InsufficientCreditsError,
 }));
 
 function createTestApp() {
@@ -104,7 +98,7 @@ function createTestApp() {
 
 const VALID_BODY = { type: "email", variables: { recipientInfo: "test" } };
 
-describe("POST /generate — billing authorization gate", () => {
+describe("POST /generate — billing authorization (via chat-service)", () => {
   let app: express.Express;
 
   beforeEach(async () => {
@@ -116,45 +110,16 @@ describe("POST /generate — billing authorization gate", () => {
       prompt: "Write an email for {{recipientInfo}}",
       variables: ["recipientInfo"],
     });
-    mockDecryptKey.mockResolvedValue({ key: "fake-key", keySource: "platform" });
-    mockAuthorizeCredits.mockResolvedValue({ sufficient: true, balance_cents: 5000, required_cents: 1 });
 
     app = createTestApp();
     const { default: generateRoutes } = await import("../../src/routes/generate.js");
     app.use(generateRoutes);
   });
 
-  it("sends costName + quantity items to authorizeCredits when keySource is 'platform'", async () => {
-    await request(app)
-      .post("/generate")
-      .set("X-Org-Id", "org-123")
-      .set("X-User-Id", "user-456")
-      .set("X-Run-Id", "run-caller-123")
-      .set("X-Campaign-Id", "camp-1")
-      .set("X-Brand-Id", "brand-1")
-      .set("X-Workflow-Slug", "my-workflow")
-      .send(VALID_BODY)
-      .expect(200);
-
-    expect(mockAuthorizeCredits).toHaveBeenCalledWith(
-      [
-        { costName: "anthropic-sonnet-4.6-tokens-input", quantity: 2000 },
-        { costName: "anthropic-sonnet-4.6-tokens-output", quantity: 3072 },
-      ],
-      "content-generation — claude-sonnet-4-6",
-      {
-        orgId: "org-123",
-        userId: "user-456",
-        runId: "run-caller-123",
-        campaignId: "camp-1",
-        brandId: "brand-1",
-        workflowSlug: "my-workflow",
-      }
+  it("returns 402 when chat-service returns insufficient credits", async () => {
+    mockGenerateFromTemplate.mockRejectedValueOnce(
+      new InsufficientCreditsError(2, 5)
     );
-  });
-
-  it("returns 402 with balance and required_cents from billing-service", async () => {
-    mockAuthorizeCredits.mockResolvedValue({ sufficient: false, balance_cents: 2, required_cents: 5 });
 
     const res = await request(app)
       .post("/generate")
@@ -169,31 +134,9 @@ describe("POST /generate — billing authorization gate", () => {
       balance_cents: 2,
       required_cents: 5,
     });
-
-    // Must NOT call the LLM
-    expect(mockGenerateFromTemplate).not.toHaveBeenCalled();
   });
 
-  it("skips billing authorization when keySource is 'org' (BYOK)", async () => {
-    mockDecryptKey.mockResolvedValue({ key: "user-own-key", keySource: "org" });
-
-    await request(app)
-      .post("/generate")
-      .set("X-Org-Id", "org-123")
-      .set("X-User-Id", "user-456")
-      .set("X-Run-Id", "run-caller-123")
-      .send(VALID_BODY)
-      .expect(200);
-
-    // Billing must NOT be called for BYOK
-    expect(mockAuthorizeCredits).not.toHaveBeenCalled();
-    // But LLM should still be called
-    expect(mockGenerateFromTemplate).toHaveBeenCalled();
-  });
-
-  it("proceeds with generation when billing authorizes", async () => {
-    mockAuthorizeCredits.mockResolvedValue({ sufficient: true, balance_cents: 10000, required_cents: 1 });
-
+  it("proceeds with generation when chat-service succeeds", async () => {
     const res = await request(app)
       .post("/generate")
       .set("X-Org-Id", "org-123")
@@ -206,8 +149,33 @@ describe("POST /generate — billing authorization gate", () => {
     expect(res.body.subject).toBe("Test subject");
   });
 
-  it("returns 500 when billing-service is unreachable", async () => {
-    mockAuthorizeCredits.mockRejectedValue(new Error("billing-service authorization failed: 502 - Bad Gateway"));
+  it("passes identity to generateFromTemplate for chat-service auth", async () => {
+    await request(app)
+      .post("/generate")
+      .set("X-Org-Id", "org-123")
+      .set("X-User-Id", "user-456")
+      .set("X-Run-Id", "run-caller-123")
+      .set("X-Campaign-Id", "camp-1")
+      .set("X-Brand-Id", "brand-1")
+      .set("X-Workflow-Slug", "my-workflow")
+      .send(VALID_BODY)
+      .expect(200);
+
+    expect(mockGenerateFromTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({ promptTemplate: expect.any(String) }),
+      expect.objectContaining({
+        orgId: "org-123",
+        userId: "user-456",
+        runId: "run-caller-123",
+        campaignId: "camp-1",
+        brandId: "brand-1",
+        workflowSlug: "my-workflow",
+      })
+    );
+  });
+
+  it("returns 500 when chat-service is unreachable", async () => {
+    mockGenerateFromTemplate.mockRejectedValueOnce(new Error("chat-service /complete failed: 502 - Bad Gateway"));
 
     const res = await request(app)
       .post("/generate")
@@ -217,7 +185,6 @@ describe("POST /generate — billing authorization gate", () => {
       .send(VALID_BODY)
       .expect(500);
 
-    expect(res.body.error).toContain("billing-service");
-    expect(mockGenerateFromTemplate).not.toHaveBeenCalled();
+    expect(res.body.error).toContain("chat-service");
   });
 });

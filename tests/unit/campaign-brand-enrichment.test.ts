@@ -53,33 +53,33 @@ vi.mock("../../src/db/schema.js", () => ({
   prompts: { orgId: { name: "org_id" }, type: { name: "type" } },
 }));
 
-vi.mock("../../src/lib/key-client.js", () => ({
-  decryptKey: vi.fn().mockResolvedValue({ key: "fake-anthropic-key", keySource: "platform" as const }),
-}));
-
-vi.mock("../../src/lib/billing-client.js", () => ({
-  authorizeCredits: vi.fn().mockResolvedValue({ sufficient: true, balance_cents: 5000, required_cents: 1 }),
-  ESTIMATED_INPUT_TOKENS: 2000,
-  ESTIMATED_OUTPUT_TOKENS: 3072,
-}));
-
 // Mock anthropic client — capture what prompt was sent
 const mockGenerateFromTemplate = vi.fn().mockResolvedValue({
   subject: "Test subject",
   sequence: [{ step: 1, bodyHtml: "<p>Body</p>", bodyText: "Body", daysSinceLastStep: 0 }],
   tokensInput: 500,
   tokensOutput: 100,
-  costUsd: 0.005,
+  model: "claude-sonnet-4-6",
   promptRaw: "resolved prompt",
   responseRaw: {},
 });
 
 vi.mock("../../src/lib/anthropic-client.js", async (importOriginal) => {
-  const actual = await importOriginal() as Record<string, unknown>;
+  const actual = await importOriginal<typeof import("../../src/lib/anthropic-client.js")>();
   return {
     ...actual,
     generateFromTemplate: (...args: unknown[]) => mockGenerateFromTemplate(...args),
-  };
+    InsufficientCreditsError: class InsufficientCreditsError extends Error {
+    status = 402;
+    balance_cents: number;
+    required_cents: number;
+    constructor(balance_cents: number, required_cents: number) {
+      super("Insufficient credits");
+      this.balance_cents = balance_cents;
+      this.required_cents = required_cents;
+    }
+  },
+};
 });
 
 // Mock campaign-client
@@ -151,10 +151,10 @@ describe("POST /generate — campaign context + brand enrichment", () => {
 
     // generateFromTemplate received campaignContext
     expect(mockGenerateFromTemplate).toHaveBeenCalledWith(
-      "fake-anthropic-key",
       expect.objectContaining({
         campaignContext: { angle: "sustainability", targetGeo: "US" },
-      })
+      }),
+      expect.objectContaining({ orgId: "org-internal-123" })
     );
   });
 
@@ -177,8 +177,8 @@ describe("POST /generate — campaign context + brand enrichment", () => {
 
     expect(mockGetCampaignFeatureInputs).not.toHaveBeenCalled();
     expect(mockGenerateFromTemplate).toHaveBeenCalledWith(
-      "fake-anthropic-key",
-      expect.objectContaining({ campaignContext: null })
+      expect.objectContaining({ campaignContext: null }),
+      expect.objectContaining({ orgId: "org-internal-123" })
     );
   });
 
@@ -212,10 +212,10 @@ describe("POST /generate — campaign context + brand enrichment", () => {
 
     // The resolved variable should be passed to generateFromTemplate
     expect(mockGenerateFromTemplate).toHaveBeenCalledWith(
-      "fake-anthropic-key",
       expect.objectContaining({
         variables: expect.objectContaining({ industry: "FinTech" }),
-      })
+      }),
+      expect.objectContaining({ orgId: "org-internal-123" })
     );
   });
 
@@ -283,8 +283,8 @@ describe("POST /generate — campaign context + brand enrichment", () => {
 
     // Should still succeed — campaignContext is null
     expect(mockGenerateFromTemplate).toHaveBeenCalledWith(
-      "fake-anthropic-key",
-      expect.objectContaining({ campaignContext: null })
+      expect.objectContaining({ campaignContext: null }),
+      expect.objectContaining({ orgId: "org-internal-123" })
     );
   });
 
