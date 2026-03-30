@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   appendAiDisclaimer,
   AI_DISCLAIMER_HTML,
@@ -39,16 +39,10 @@ const MOCK_RESPONSE = JSON.stringify({
   ],
 });
 
-vi.mock("@anthropic-ai/sdk", () => ({
-  default: class MockAnthropic {
-    messages = {
-      create: vi.fn().mockResolvedValue({
-        content: [{ type: "text" as const, text: MOCK_RESPONSE }],
-        usage: { input_tokens: 200, output_tokens: 80 },
-      }),
-    };
-  },
-}));
+const mockFetch = vi.fn();
+vi.stubGlobal("fetch", mockFetch);
+
+const IDENTITY = { orgId: "org-1", userId: "user-1", runId: "run-1" };
 
 const baseParams = {
   promptTemplate: "Write a cold email to {{name}}",
@@ -56,11 +50,25 @@ const baseParams = {
 };
 
 describe("generateFromTemplate with includeAiDisclaimer", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        content: MOCK_RESPONSE,
+        tokensInput: 200,
+        tokensOutput: 80,
+        model: "claude-sonnet-4-6",
+      }),
+    });
+  });
+
   it("does NOT include disclaimer when includeAiDisclaimer is false", async () => {
-    const result = await generateFromTemplate("fake-key", {
+    const result = await generateFromTemplate({
       ...baseParams,
       includeAiDisclaimer: false,
-    });
+    }, IDENTITY);
 
     for (const step of result.sequence) {
       expect(step.bodyHtml).not.toContain(AI_DISCLAIMER_TEXT);
@@ -69,7 +77,7 @@ describe("generateFromTemplate with includeAiDisclaimer", () => {
   });
 
   it("does NOT include disclaimer when includeAiDisclaimer is omitted", async () => {
-    const result = await generateFromTemplate("fake-key", baseParams);
+    const result = await generateFromTemplate(baseParams, IDENTITY);
 
     for (const step of result.sequence) {
       expect(step.bodyHtml).not.toContain(AI_DISCLAIMER_TEXT);
@@ -78,10 +86,10 @@ describe("generateFromTemplate with includeAiDisclaimer", () => {
   });
 
   it("appends disclaimer to ALL sequence steps when includeAiDisclaimer is true", async () => {
-    const result = await generateFromTemplate("fake-key", {
+    const result = await generateFromTemplate({
       ...baseParams,
       includeAiDisclaimer: true,
-    });
+    }, IDENTITY);
 
     expect(result.sequence).toHaveLength(3);
 
@@ -92,10 +100,10 @@ describe("generateFromTemplate with includeAiDisclaimer", () => {
   });
 
   it("disclaimer appears at the end of bodyHtml, not the beginning", async () => {
-    const result = await generateFromTemplate("fake-key", {
+    const result = await generateFromTemplate({
       ...baseParams,
       includeAiDisclaimer: true,
-    });
+    }, IDENTITY);
 
     const html = result.sequence[0].bodyHtml;
     expect(html).toMatch(/.*<\/p><p style="font-size:11px/);

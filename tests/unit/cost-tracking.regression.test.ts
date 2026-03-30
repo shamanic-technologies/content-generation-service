@@ -3,31 +3,24 @@ import express from "express";
 import request from "supertest";
 
 /**
- * Regression test: email generation cost tracking
+ * Regression test: email generation run tracking
  *
- * Bug: Campaign showed $0.11 total cost for 350 leads + 350 emails generated
- * with Sonnet 4.6. Real cost should have been ~$9-23.
- *
- * Root causes:
- * 1. Cost tracking errors were silently swallowed (console.warn instead of console.error)
- * 2. Cost names may not be registered in runs-service catalog
- * 3. Locally computed costUsd was never used in reporting
+ * After migrating to chat-service, LLM cost tracking is handled by chat-service.
+ * Content-generation-service still creates a child run for linking to the email record.
  *
  * These tests verify:
- * - Correct cost names are used when posting to runs-service
- * - Token quantities are posted (not dollar amounts)
- * - Errors in cost tracking are logged at error level
+ * - A child run is created in runs-service for each generation
+ * - The generationRunId is linked to the DB record
+ * - Run tracking failures are logged at error level
  */
 
 // Mock runs-client before importing the route
 const mockCreateRun = vi.fn().mockResolvedValue({ id: "run-456" });
 const mockUpdateRun = vi.fn().mockResolvedValue({});
-const mockAddCosts = vi.fn().mockResolvedValue({ costs: [] });
 
 vi.mock("../../src/lib/runs-client.js", () => ({
   createRun: (...args: unknown[]) => mockCreateRun(...args),
   updateRun: (...args: unknown[]) => mockUpdateRun(...args),
-  addCosts: (...args: unknown[]) => mockAddCosts(...args),
 }));
 
 // Mock auth middleware to pass through
@@ -78,16 +71,6 @@ vi.mock("../../src/db/schema.js", () => ({
   prompts: { orgId: { name: "org_id" }, type: { name: "type" } },
 }));
 
-vi.mock("../../src/lib/key-client.js", () => ({
-  decryptKey: vi.fn().mockResolvedValue({ key: "fake-anthropic-key", keySource: "platform" as const }),
-}));
-
-vi.mock("../../src/lib/billing-client.js", () => ({
-  authorizeCredits: vi.fn().mockResolvedValue({ sufficient: true, balance_cents: 5000, required_cents: 1 }),
-  ESTIMATED_INPUT_TOKENS: 2000,
-  ESTIMATED_OUTPUT_TOKENS: 3072,
-}));
-
 vi.mock("../../src/lib/campaign-client.js", () => ({
   getCampaignFeatureInputs: vi.fn().mockResolvedValue(null),
 }));
@@ -96,7 +79,7 @@ vi.mock("../../src/lib/brand-client.js", () => ({
   extractBrandFields: vi.fn().mockResolvedValue(new Map()),
 }));
 
-// Mock anthropic client to return predictable token counts
+// Mock anthropic client (now backed by chat-service)
 const MOCK_TOKENS_INPUT = 1500;
 const MOCK_TOKENS_OUTPUT = 300;
 vi.mock("../../src/lib/anthropic-client.js", () => ({
@@ -109,10 +92,20 @@ vi.mock("../../src/lib/anthropic-client.js", () => ({
     ],
     tokensInput: MOCK_TOKENS_INPUT,
     tokensOutput: MOCK_TOKENS_OUTPUT,
-    costUsd: 0.015,
+    model: "claude-sonnet-4-6",
     promptRaw: "test prompt",
     responseRaw: {},
   }),
+  InsufficientCreditsError: class InsufficientCreditsError extends Error {
+    status = 402;
+    balance_cents: number;
+    required_cents: number;
+    constructor(balance_cents: number, required_cents: number) {
+      super("Insufficient credits");
+      this.balance_cents = balance_cents;
+      this.required_cents = required_cents;
+    }
+  },
 }));
 
 function createTestApp() {
@@ -126,7 +119,7 @@ const VALID_REQUEST = {
   variables: { recipientName: "John at Acme", senderName: "MyCompany" },
 };
 
-describe("Email generation cost tracking", () => {
+describe("Email generation run tracking", () => {
   let app: express.Express;
 
   beforeEach(async () => {
@@ -134,86 +127,10 @@ describe("Email generation cost tracking", () => {
     mockDbSetCalls.length = 0;
     mockCreateRun.mockResolvedValue({ id: "run-456" });
     mockUpdateRun.mockResolvedValue({});
-    mockAddCosts.mockResolvedValue({ costs: [] });
 
     app = createTestApp();
     const { default: generateRoutes } = await import("../../src/routes/generate.js");
     app.use(generateRoutes);
-  });
-
-  it("should post costs with exact cost names: anthropic-sonnet-4.6-tokens-input and anthropic-sonnet-4.6-tokens-output", async () => {
-    await request(app)
-      .post("/generate")
-      .set("X-Org-Id", "org-internal-123")
-      .set("X-User-Id", "user-internal-456")
-      .send(VALID_REQUEST)
-      .expect(200);
-
-    // Verify addCosts was called with correct cost names
-    expect(mockAddCosts).toHaveBeenCalledTimes(1);
-    const [runId, costItems] = mockAddCosts.mock.calls[0];
-    expect(runId).toBe("run-456");
-
-    const costNames = costItems.map((c: { costName: string }) => c.costName);
-    expect(costNames).toContain("anthropic-sonnet-4.6-tokens-input");
-    expect(costNames).toContain("anthropic-sonnet-4.6-tokens-output");
-  });
-
-  it("should post raw token quantities, not dollar amounts", async () => {
-    await request(app)
-      .post("/generate")
-      .set("X-Org-Id", "org-internal-123")
-      .set("X-User-Id", "user-internal-456")
-      .send(VALID_REQUEST)
-      .expect(200);
-
-    const [, costItems] = mockAddCosts.mock.calls[0];
-    const inputCost = costItems.find((c: { costName: string }) => c.costName === "anthropic-sonnet-4.6-tokens-input");
-    const outputCost = costItems.find((c: { costName: string }) => c.costName === "anthropic-sonnet-4.6-tokens-output");
-
-    // Quantities must be raw token counts, not dollar values
-    expect(inputCost.quantity).toBe(MOCK_TOKENS_INPUT);
-    expect(outputCost.quantity).toBe(MOCK_TOKENS_OUTPUT);
-
-    // Sanity: token counts should be integers > 1 (not fractional dollar values)
-    expect(Number.isInteger(inputCost.quantity)).toBe(true);
-    expect(inputCost.quantity).toBeGreaterThan(1);
-  });
-
-  it("should include costSource from key-service on each cost item", async () => {
-    await request(app)
-      .post("/generate")
-      .set("X-Org-Id", "org-internal-123")
-      .set("X-User-Id", "user-internal-456")
-      .send(VALID_REQUEST)
-      .expect(200);
-
-    const [, costItems] = mockAddCosts.mock.calls[0];
-    for (const item of costItems) {
-      expect(item.costSource).toBe("platform");
-    }
-  });
-
-  it("should log at error level when cost tracking fails", async () => {
-    mockCreateRun.mockResolvedValueOnce({ id: "run-456" });
-    mockAddCosts.mockRejectedValueOnce(new Error("Cost name not registered"));
-
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    await request(app)
-      .post("/generate")
-      .set("X-Org-Id", "org-internal-123")
-      .set("X-User-Id", "user-internal-456")
-      .send(VALID_REQUEST)
-      .expect(200); // Email still generated despite cost tracking failure
-
-    // Must log at error level (not warn) so it shows up in monitoring
-    const costErrorCall = errorSpy.mock.calls.find(
-      (call) => typeof call[0] === "string" && call[0].includes("COST TRACKING FAILED")
-    );
-    expect(costErrorCall).toBeDefined();
-
-    errorSpy.mockRestore();
   });
 
   it("should create child run with x-run-id header as parentRunId via identity headers", async () => {
@@ -238,9 +155,22 @@ describe("Email generation cost tracking", () => {
     );
   });
 
-  it("should link generationRunId to DB record even when addCosts fails", async () => {
+  it("should link generationRunId to DB record", async () => {
+    await request(app)
+      .post("/generate")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
+      .send(VALID_REQUEST)
+      .expect(200);
+
+    const linkCall = mockDbSetCalls.find((data) => "generationRunId" in data);
+    expect(linkCall).toBeDefined();
+    expect(linkCall!.generationRunId).toBe("run-456");
+  });
+
+  it("should link generationRunId to DB record even when updateRun fails", async () => {
     mockCreateRun.mockResolvedValueOnce({ id: "run-456" });
-    mockAddCosts.mockRejectedValueOnce(new Error("Cost name not registered"));
+    mockUpdateRun.mockRejectedValueOnce(new Error("runs-service unavailable"));
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -251,11 +181,46 @@ describe("Email generation cost tracking", () => {
       .send(VALID_REQUEST)
       .expect(200);
 
-    // generationRunId must be set in the DB even though addCosts failed
+    // generationRunId must be set in the DB even though updateRun failed
     const linkCall = mockDbSetCalls.find((data) => "generationRunId" in data);
     expect(linkCall).toBeDefined();
     expect(linkCall!.generationRunId).toBe("run-456");
 
     errorSpy.mockRestore();
+  });
+
+  it("should log at error level when run tracking fails", async () => {
+    mockCreateRun.mockRejectedValueOnce(new Error("runs-service unavailable"));
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await request(app)
+      .post("/generate")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
+      .send(VALID_REQUEST)
+      .expect(200); // Email still generated despite run tracking failure
+
+    const trackingErrorCall = errorSpy.mock.calls.find(
+      (call) => typeof call[0] === "string" && call[0].includes("RUN TRACKING FAILED")
+    );
+    expect(trackingErrorCall).toBeDefined();
+
+    errorSpy.mockRestore();
+  });
+
+  it("should mark generation run as completed", async () => {
+    await request(app)
+      .post("/generate")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
+      .send(VALID_REQUEST)
+      .expect(200);
+
+    expect(mockUpdateRun).toHaveBeenCalledWith(
+      "run-456",
+      "completed",
+      expect.objectContaining({ runId: "run-456" })
+    );
   });
 });

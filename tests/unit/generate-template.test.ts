@@ -51,17 +51,6 @@ vi.mock("../../src/db/schema.js", () => ({
   prompts: { orgId: { name: "org_id" }, type: { name: "type" } },
 }));
 
-const mockDecryptKey = vi.fn().mockResolvedValue({ key: "fake-anthropic-key", keySource: "platform" as const });
-
-vi.mock("../../src/lib/key-client.js", () => ({
-  decryptKey: (...args: unknown[]) => mockDecryptKey(...args),
-}));
-
-vi.mock("../../src/lib/billing-client.js", () => ({
-  authorizeCredits: vi.fn().mockResolvedValue({ sufficient: true, balance_cents: 5000, required_cents: 1 }),
-  ESTIMATED_INPUT_TOKENS: 2000,
-  ESTIMATED_OUTPUT_TOKENS: 3072,
-}));
 
 vi.mock("../../src/lib/campaign-client.js", () => ({
   getCampaignFeatureInputs: vi.fn().mockResolvedValue(null),
@@ -81,13 +70,23 @@ const mockGenerateFromTemplate = vi.fn().mockResolvedValue({
   ],
   tokensInput: 500,
   tokensOutput: 100,
-  costUsd: 0.005,
+  model: "claude-sonnet-4-6",
   promptRaw: "resolved prompt",
   responseRaw: {},
 });
 
 vi.mock("../../src/lib/anthropic-client.js", () => ({
   generateFromTemplate: (...args: unknown[]) => mockGenerateFromTemplate(...args),
+  InsufficientCreditsError: class InsufficientCreditsError extends Error {
+    status = 402;
+    balance_cents: number;
+    required_cents: number;
+    constructor(balance_cents: number, required_cents: number) {
+      super("Insufficient credits");
+      this.balance_cents = balance_cents;
+      this.required_cents = required_cents;
+    }
+  },
 }));
 
 function createTestApp() {
@@ -135,7 +134,6 @@ describe("POST /generate (template-based)", () => {
     expect(res.body.id).toBe("gen-789");
 
     expect(mockGenerateFromTemplate).toHaveBeenCalledWith(
-      "fake-anthropic-key",
       {
         promptTemplate: "Write an email.\n\n## Recipient\n{{recipientInfo}}\n\n## Sender\n{{senderInfo}}",
         variables: {
@@ -144,7 +142,11 @@ describe("POST /generate (template-based)", () => {
         },
         includeAiDisclaimer: false,
         campaignContext: null,
-      }
+      },
+      expect.objectContaining({
+        orgId: "org-internal-123",
+        userId: "user-internal-456",
+      })
     );
   });
 
@@ -186,20 +188,6 @@ describe("POST /generate (template-based)", () => {
         apolloEnrichmentId: "enrich-1",
       })
       .expect(200);
-  });
-
-  it("calls decryptKey with correct parameters", async () => {
-    await request(app)
-      .post("/generate")
-      .set("X-Org-Id", "org-internal-123")
-      .set("X-User-Id", "user-internal-456")
-      .send({
-        type: "email",
-        variables: { recipientInfo: "test", senderInfo: "test" },
-      })
-      .expect(200);
-
-    expect(mockDecryptKey).toHaveBeenCalledWith("anthropic", "org-internal-123", "user-internal-456", { callerMethod: "POST", callerPath: "/generate" });
   });
 
   it("accepts array and object variable values (regression: windmill sends non-strings)", async () => {

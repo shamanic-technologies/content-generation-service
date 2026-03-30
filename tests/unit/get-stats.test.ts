@@ -44,10 +44,6 @@ vi.mock("../../src/lib/runs-client.js", () => ({
   addCosts: vi.fn().mockResolvedValue({ costs: [] }),
 }));
 
-vi.mock("../../src/lib/key-client.js", () => ({
-  decryptKey: vi.fn().mockResolvedValue({ key: "fake-key", keySource: "platform" as const }),
-}));
-
 vi.mock("../../src/lib/campaign-client.js", () => ({
   getCampaignFeatureInputs: vi.fn().mockResolvedValue(null),
 }));
@@ -62,9 +58,20 @@ vi.mock("../../src/lib/anthropic-client.js", () => ({
     sequence: [{ step: 1, bodyHtml: "<p>Hi</p>", bodyText: "Hi", daysSinceLastStep: 0 }],
     tokensInput: 100,
     tokensOutput: 50,
+    model: "claude-sonnet-4-6",
     promptRaw: "prompt",
     responseRaw: {},
   }),
+  InsufficientCreditsError: class InsufficientCreditsError extends Error {
+    status = 402;
+    balance_cents: number;
+    required_cents: number;
+    constructor(balance_cents: number, required_cents: number) {
+      super("Insufficient credits");
+      this.balance_cents = balance_cents;
+      this.required_cents = required_cents;
+    }
+  },
 }));
 
 // Mock dynasty client

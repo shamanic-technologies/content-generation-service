@@ -1,6 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
-
-const MODEL = "claude-sonnet-4-6";
+const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
+const CHAT_SERVICE_API_KEY = process.env.CHAT_SERVICE_API_KEY || "";
 
 // ─── AI disclaimer ──────────────────────────────────────────────────────────
 
@@ -18,6 +17,16 @@ export function appendAiDisclaimer(bodyHtml: string, bodyText: string): { bodyHt
 }
 
 // ─── Template generation ────────────────────────────────────────────────────
+
+export interface ChatServiceIdentity {
+  orgId: string;
+  userId: string;
+  runId: string;
+  campaignId?: string;
+  brandId?: string;
+  workflowSlug?: string;
+  featureSlug?: string;
+}
 
 export interface GenerateFromTemplateParams {
   promptTemplate: string;
@@ -38,7 +47,7 @@ export interface GenerateResult {
   sequence: SequenceStep[];
   tokensInput: number;
   tokensOutput: number;
-  costUsd: number;
+  model: string;
   promptRaw: string;
   responseRaw: object;
 }
@@ -103,72 +112,95 @@ const GLOBAL_SYSTEM_PROMPT = [
   "Universal rules (always apply, regardless of the prompt):",
   "- NEVER include a sign-off, signature, or footer at the end of the email (e.g. '— [Your name]', 'Best, [Name]', 'Regards, …'). The sending service appends the sender's name, title, and organization automatically. Your output must end with the last sentence of the email body — nothing after it.",
   "- NEVER use placeholders like [Your name], [Company], [Insert X], etc. Every piece of text you produce must be ready to send as-is.",
+  "",
+  "You must respond with a JSON object matching this exact schema:",
+  '{"subject": "<email subject line>", "emails": [{"body": "<plain text email body>", "daysSinceLastStep": <number>}]}',
+  "- subject: the email subject line (string)",
+  "- emails: array of email steps. Each has:",
+  "  - body: plain text email body (string)",
+  "  - daysSinceLastStep: days to wait since the previous email, 0 for the first (number)",
+  "Return ONLY the JSON object, no additional text or markdown.",
 ].join("\n");
 
-const EMAIL_SEQUENCE_JSON_SCHEMA = {
-  type: "object" as const,
-  properties: {
-    subject: { type: "string" as const },
-    emails: {
-      type: "array" as const,
-      items: {
-        type: "object" as const,
-        properties: {
-          body: { type: "string" as const },
-          daysSinceLastStep: { type: "number" as const },
-        },
-        required: ["body", "daysSinceLastStep"] as const,
-        additionalProperties: false,
-      },
-    },
-  },
-  required: ["subject", "emails"] as const,
-  additionalProperties: false,
-};
+// ─── Insufficient credits error ─────────────────────────────────────────────
+
+export class InsufficientCreditsError extends Error {
+  status = 402;
+  balance_cents: number;
+  required_cents: number;
+
+  constructor(balance_cents: number, required_cents: number) {
+    super("Insufficient credits");
+    this.balance_cents = balance_cents;
+    this.required_cents = required_cents;
+  }
+}
+
+// ─── Chat-service response type ─────────────────────────────────────────────
+
+interface ChatCompleteResponse {
+  content: string;
+  json?: Record<string, unknown>;
+  tokensInput: number;
+  tokensOutput: number;
+  model: string;
+}
 
 /**
  * Generate content by substituting variables into a stored prompt template
- * and sending it to Claude with structured JSON output.
+ * and sending it to chat-service for LLM completion.
  *
- * The prompt contains all instructions (no hardcoded system prompt).
+ * Chat-service handles key resolution, billing, and cost tracking internally.
  * Output is always a variable-length email sequence.
  */
 export async function generateFromTemplate(
-  apiKey: string,
-  params: GenerateFromTemplateParams
+  params: GenerateFromTemplateParams,
+  identity: ChatServiceIdentity
 ): Promise<GenerateResult> {
-  const anthropic = new Anthropic({ apiKey });
-
   let prompt = substituteVariables(params.promptTemplate, params.variables);
 
-  // Convention 2: inject campaign featureInputs as additional context
+  // Inject campaign featureInputs as additional context
   if (params.campaignContext && Object.keys(params.campaignContext).length > 0) {
     const contextBlock = formatCampaignContext(params.campaignContext);
     prompt = `${contextBlock}\n\n${prompt}`;
   }
 
-  const response = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 3072,
-    system: GLOBAL_SYSTEM_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: prompt,
-      },
-    ],
-    output_config: {
-      format: {
-        type: "json_schema",
-        schema: EMAIL_SEQUENCE_JSON_SCHEMA,
-      },
-    },
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Api-Key": CHAT_SERVICE_API_KEY,
+    "x-org-id": identity.orgId,
+    "x-user-id": identity.userId,
+    "x-run-id": identity.runId,
+  };
+  if (identity.campaignId) headers["x-campaign-id"] = identity.campaignId;
+  if (identity.brandId) headers["x-brand-id"] = identity.brandId;
+  if (identity.workflowSlug) headers["x-workflow-slug"] = identity.workflowSlug;
+  if (identity.featureSlug) headers["x-feature-slug"] = identity.featureSlug;
+
+  const response = await fetch(`${CHAT_SERVICE_URL}/complete`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      message: prompt,
+      systemPrompt: GLOBAL_SYSTEM_PROMPT,
+      responseFormat: "json",
+      maxTokens: 3072,
+    }),
   });
 
-  const textContent = response.content.find((c) => c.type === "text");
-  const text = textContent?.type === "text" ? textContent.text : "";
+  if (response.status === 402) {
+    const error = await response.json() as { balance_cents: number; required_cents: number };
+    throw new InsufficientCreditsError(error.balance_cents, error.required_cents);
+  }
 
-  let parsed = parseSequenceJson(text);
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`chat-service /complete failed: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json() as ChatCompleteResponse;
+
+  let parsed = parseSequenceJson(data.content);
 
   if (params.includeAiDisclaimer) {
     parsed = {
@@ -180,19 +212,13 @@ export async function generateFromTemplate(
     };
   }
 
-  const tokensInput = response.usage.input_tokens;
-  const tokensOutput = response.usage.output_tokens;
-  const costUsd =
-    (tokensInput / 1_000_000) * 3 +
-    (tokensOutput / 1_000_000) * 15;
-
   return {
     ...parsed,
-    tokensInput,
-    tokensOutput,
-    costUsd,
+    tokensInput: data.tokensInput,
+    tokensOutput: data.tokensOutput,
+    model: data.model,
     promptRaw: prompt,
-    responseRaw: response,
+    responseRaw: data,
   };
 }
 

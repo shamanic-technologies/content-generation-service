@@ -3,10 +3,8 @@ import { eq, and, inArray, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
-import { generateFromTemplate, substituteVariables, findUnfilledPlaceholders } from "../lib/anthropic-client.js";
-import { decryptKey } from "../lib/key-client.js";
-import { createRun, updateRun, addCosts } from "../lib/runs-client.js";
-import { authorizeCredits, ESTIMATED_INPUT_TOKENS, ESTIMATED_OUTPUT_TOKENS } from "../lib/billing-client.js";
+import { generateFromTemplate, substituteVariables, findUnfilledPlaceholders, InsufficientCreditsError } from "../lib/anthropic-client.js";
+import { createRun, updateRun } from "../lib/runs-client.js";
 import { getCampaignFeatureInputs } from "../lib/campaign-client.js";
 import { extractBrandFields } from "../lib/brand-client.js";
 import { GenerateRequestSchema, StatsRequestSchema, StatsQuerySchema } from "../schemas.js";
@@ -79,10 +77,6 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       });
     }
 
-    // Get Anthropic API key
-    const caller = { callerMethod: "POST", callerPath: "/generate", campaignId, brandId, workflowSlug, featureSlug };
-    const { key: anthropicApiKey, keySource } = await decryptKey("anthropic", req.orgId!, req.userId!, caller);
-
     // Convention 2: fetch campaign featureInputs for LLM context enrichment
     const serviceIdentity = { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug };
     let campaignContext: Record<string, unknown> | null = null;
@@ -114,32 +108,17 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       }
     }
 
-    // Billing gate: authorize credits before platform-paid operations
-    if (keySource === "platform") {
-      const { sufficient, balance_cents, required_cents } = await authorizeCredits(
-        [
-          { costName: "anthropic-sonnet-4.6-tokens-input", quantity: ESTIMATED_INPUT_TOKENS },
-          { costName: "anthropic-sonnet-4.6-tokens-output", quantity: ESTIMATED_OUTPUT_TOKENS },
-        ],
-        "content-generation — claude-sonnet-4-6",
-        { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug }
-      );
-      if (!sufficient) {
-        return res.status(402).json({
-          error: "Insufficient credits",
-          balance_cents,
-          required_cents,
-        });
-      }
-    }
-
     // Generate using the stored prompt + variable substitution + campaign context
-    const result = await generateFromTemplate(anthropicApiKey, {
-      promptTemplate: storedPrompt.prompt,
-      variables,
-      includeAiDisclaimer,
-      campaignContext,
-    });
+    // Chat-service handles key resolution, billing, and cost tracking internally
+    const result = await generateFromTemplate(
+      {
+        promptTemplate: storedPrompt.prompt,
+        variables,
+        includeAiDisclaimer,
+        campaignContext,
+      },
+      { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug }
+    );
 
     // Extract lead/client fields from variables for dedicated columns
     const str = (v: unknown): string | null =>
@@ -165,7 +144,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         clientCompanyName: str(variables.clientCompanyName),
         subject: result.subject,
         sequence: result.sequence,
-        model: "claude-sonnet-4-6",
+        model: result.model,
         tokensInput: result.tokensInput,
         tokensOutput: result.tokensOutput,
         promptRaw: result.promptRaw,
@@ -177,9 +156,8 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       })
       .returning();
 
-    // Track run + costs in runs-service
+    // Track run in runs-service (cost tracking is handled by chat-service)
     try {
-      // x-run-id = incoming runId so runs-service sets it as parentRunId
       const genRun = await createRun({
         brandId,
         campaignId,
@@ -188,33 +166,17 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         workflowSlug,
       }, { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug });
 
-      // Link generation run to email record IMMEDIATELY so per-item cost
-      // lookups work even if addCosts/updateRun fail below
+      // Link generation run to email record
       await db.update(emailGenerations)
         .set({ generationRunId: genRun.id })
         .where(eq(emailGenerations.id, generation.id));
 
-      // Subsequent calls use genRun.id as x-run-id (the newly created run)
       const runIdentity = { orgId: req.orgId!, userId: req.userId!, runId: genRun.id, campaignId, brandId, workflowSlug, featureSlug };
-
-      const costItems = [];
-      if (result.tokensInput) {
-        costItems.push({ costName: "anthropic-sonnet-4.6-tokens-input", quantity: result.tokensInput, costSource: keySource });
-      }
-      if (result.tokensOutput) {
-        costItems.push({ costName: "anthropic-sonnet-4.6-tokens-output", quantity: result.tokensOutput, costSource: keySource });
-      }
-      if (costItems.length > 0) {
-        await addCosts(genRun.id, costItems, runIdentity);
-      }
       await updateRun(genRun.id, "completed", runIdentity);
     } catch (err) {
-      console.error("[content-gen] COST TRACKING FAILED — costs will be missing from campaign totals.", {
+      console.error("[content-gen] RUN TRACKING FAILED.", {
         runId: req.runId,
         apolloEnrichmentId,
-        tokensInput: result.tokensInput,
-        tokensOutput: result.tokensOutput,
-        costNames: ["anthropic-sonnet-4.6-tokens-input", "anthropic-sonnet-4.6-tokens-output"],
         error: err instanceof Error ? err.message : err,
       });
     }
@@ -227,6 +189,13 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       tokensOutput: result.tokensOutput,
     });
   } catch (error) {
+    if (error instanceof InsufficientCreditsError) {
+      return res.status(402).json({
+        error: "Insufficient credits",
+        balance_cents: error.balance_cents,
+        required_cents: error.required_cents,
+      });
+    }
     console.error("Generate error:", error);
     res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
   }
