@@ -261,10 +261,10 @@ describe("POST /generate — campaign context + brand enrichment", () => {
     expect(mockExtractBrandFields).not.toHaveBeenCalled();
   });
 
-  it("proceeds gracefully when campaign-service fails", async () => {
+  it("fails with 502 when campaign-service is unreachable", async () => {
     mockGetCampaignFeatureInputs.mockRejectedValue(new Error("network error"));
 
-    await request(app)
+    const res = await request(app)
       .post("/generate")
       .set("X-Org-Id", "org-internal-123")
       .set("X-User-Id", "user-internal-456")
@@ -279,13 +279,10 @@ describe("POST /generate — campaign context + brand enrichment", () => {
           leadLastName: "Doe",
         },
       })
-      .expect(200);
+      .expect(500);
 
-    // Should still succeed — campaignContext is null
-    expect(mockGenerateFromTemplate).toHaveBeenCalledWith(
-      expect.objectContaining({ campaignContext: null }),
-      expect.objectContaining({ orgId: "org-internal-123" })
-    );
+    // Should NOT have proceeded to generation
+    expect(mockGenerateFromTemplate).not.toHaveBeenCalled();
   });
 
   it("proceeds gracefully when brand-service fails", async () => {
