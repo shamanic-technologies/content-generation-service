@@ -22,9 +22,9 @@ describe("appendAiDisclaimer", () => {
     expect(AI_DISCLAIMER_HTML).toContain("font-style:italic");
   });
 
-  it("disclaimer text mentions AI and client responding", () => {
-    expect(AI_DISCLAIMER_TEXT).toContain("AI");
-    expect(AI_DISCLAIMER_TEXT).toContain("our client will respond directly");
+  it("disclaimer text mentions AI and replying", () => {
+    expect(AI_DISCLAIMER_TEXT).toContain("AI assistance");
+    expect(AI_DISCLAIMER_TEXT).toContain("reply to this email");
   });
 });
 
@@ -50,7 +50,7 @@ const baseParams = {
   variables: { name: "Sarah" },
 };
 
-describe("generateFromTemplate with includeAiDisclaimer", () => {
+describe("generateFromTemplate always appends AI disclaimer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetch.mockResolvedValue({
@@ -66,32 +66,8 @@ describe("generateFromTemplate with includeAiDisclaimer", () => {
     });
   });
 
-  it("does NOT include disclaimer when includeAiDisclaimer is false", async () => {
-    const result = await generateFromTemplate({
-      ...baseParams,
-      includeAiDisclaimer: false,
-    }, IDENTITY);
-
-    for (const step of result.sequence) {
-      expect(step.bodyHtml).not.toContain(AI_DISCLAIMER_TEXT);
-      expect(step.bodyText).not.toContain(AI_DISCLAIMER_TEXT);
-    }
-  });
-
-  it("does NOT include disclaimer when includeAiDisclaimer is omitted", async () => {
+  it("appends disclaimer to ALL sequence steps", async () => {
     const result = await generateFromTemplate(baseParams, IDENTITY);
-
-    for (const step of result.sequence) {
-      expect(step.bodyHtml).not.toContain(AI_DISCLAIMER_TEXT);
-      expect(step.bodyText).not.toContain(AI_DISCLAIMER_TEXT);
-    }
-  });
-
-  it("appends disclaimer to ALL sequence steps when includeAiDisclaimer is true", async () => {
-    const result = await generateFromTemplate({
-      ...baseParams,
-      includeAiDisclaimer: true,
-    }, IDENTITY);
 
     expect(result.sequence).toHaveLength(3);
 
@@ -102,10 +78,7 @@ describe("generateFromTemplate with includeAiDisclaimer", () => {
   });
 
   it("disclaimer appears at the end of bodyHtml, not the beginning", async () => {
-    const result = await generateFromTemplate({
-      ...baseParams,
-      includeAiDisclaimer: true,
-    }, IDENTITY);
+    const result = await generateFromTemplate(baseParams, IDENTITY);
 
     const html = result.sequence[0].bodyHtml;
     expect(html).toMatch(/.*<\/p><p style="font-size:11px/);
