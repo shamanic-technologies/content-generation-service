@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { generateFromTemplate } from "../../src/lib/anthropic-client";
+import { generateFromTemplate, AI_DISCLAIMER_TEXT } from "../../src/lib/anthropic-client";
 
 function mockChatResponse(emails: Array<{ body: string; daysSinceLastStep: number }>) {
   const jsonPayload = { subject: "Test subject", emails };
@@ -40,7 +40,7 @@ describe("variable-length email sequences", () => {
 
     expect(result.sequence).toHaveLength(1);
     expect(result.sequence[0].step).toBe(1);
-    expect(result.sequence[0].bodyText).toBe("Hi there, quick note.");
+    expect(result.sequence[0].bodyText).toBe("Hi there, quick note.\n\n" + AI_DISCLAIMER_TEXT);
     expect(result.sequence[0].bodyHtml).toContain("<p>");
     expect(result.sequence[0].daysSinceLastStep).toBe(0);
   });

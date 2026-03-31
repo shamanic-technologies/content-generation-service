@@ -17,7 +17,7 @@ describe("OpenAPI spec — EmailGeneration schema", () => {
       "id", "orgId", "runId", "apolloEnrichmentId", "promptType",
       "leadFirstName", "leadLastName", "leadCompany", "leadTitle", "leadIndustry",
       "clientCompanyName", "clientCompanyDescription", "variablesRaw",
-      "brandId", "campaignId", "generationRunId",
+      "brandIds", "campaignId", "generationRunId",
       "subject", "bodyHtml", "bodyText", "sequence",
       "model", "tokensInput", "tokensOutput",
       "promptRaw", "responseRaw",

@@ -186,11 +186,6 @@
           "featureSlug": {
             "type": "string",
             "description": "Feature slug for tracking"
-          },
-          "includeAiDisclaimer": {
-            "type": "boolean",
-            "default": false,
-            "description": "When true, appends a small AI-generated disclaimer to the email body"
           }
         },
         "required": [

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { generateFromTemplate, InsufficientCreditsError } from "../../src/lib/anthropic-client";
+import { generateFromTemplate, InsufficientCreditsError, AI_DISCLAIMER_TEXT } from "../../src/lib/anthropic-client";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -140,7 +140,7 @@ describe("chat-service client (generateFromTemplate)", () => {
     const result = await generateFromTemplate(PARAMS, IDENTITY);
     expect(result.subject).toBe("Clean");
     expect(result.sequence).toHaveLength(1);
-    expect(result.sequence[0].bodyText).toBe("Hello");
+    expect(result.sequence[0].bodyText).toBe("Hello\n\n" + AI_DISCLAIMER_TEXT);
   });
 
   it("includes JSON schema instructions in systemPrompt", async () => {
