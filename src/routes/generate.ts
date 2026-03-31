@@ -81,11 +81,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     const serviceIdentity = { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug };
     let campaignContext: Record<string, unknown> | null = null;
     if (campaignId) {
-      try {
-        campaignContext = await getCampaignFeatureInputs(campaignId, serviceIdentity);
-      } catch (err) {
-        console.warn("[content-gen] Failed to fetch campaign context — proceeding without it.", err instanceof Error ? err.message : err);
-      }
+      campaignContext = await getCampaignFeatureInputs(campaignId, serviceIdentity);
     }
 
     // Convention 1: resolve unfilled template variables from Brand Service
