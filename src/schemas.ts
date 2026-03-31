@@ -300,7 +300,7 @@ export const GenerateRequestSchema = registry.register(
         "Variable values to substitute into the prompt template. " +
         "Non-string values (arrays, objects) are coerced to strings. " +
         "Recognised keys (used for dedicated DB columns and dashboard display): " +
-        "leadFirstName, leadLastName, leadTitle, leadCompanyName, leadCompanyIndustry, clientCompanyName. " +
+        "leadFirstName, leadLastName, leadTitle, leadCompanyName, leadCompanyIndustry, organizationDomain, clientCompanyName. " +
         "Keys must be flat — e.g. send { leadFirstName: \"Alice\" }, NOT { lead: { data: { firstName: \"Alice\" } } }."
       ),
       // Tracking / linking
@@ -391,6 +391,7 @@ const EmailGenerationSchema = registry.register(
       leadCompany: z.string().nullable(),
       leadTitle: z.string().nullable(),
       leadIndustry: z.string().nullable(),
+      leadOrganizationDomain: z.string().nullable(),
 
       // Client info
       clientCompanyName: z.string().nullable(),

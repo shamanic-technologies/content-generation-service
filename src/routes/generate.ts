@@ -141,6 +141,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         leadTitle: str(variables.leadTitle),
         leadCompany: str(variables.leadCompanyName),
         leadIndustry: str(variables.leadCompanyIndustry),
+        leadOrganizationDomain: str(variables.organizationDomain),
         clientCompanyName: str(variables.clientCompanyName),
         subject: result.subject,
         sequence: result.sequence,
