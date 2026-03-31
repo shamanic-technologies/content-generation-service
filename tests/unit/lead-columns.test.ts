@@ -129,6 +129,7 @@ describe("POST /generate — lead/client column population", () => {
           leadTitle: "Managing Partner",
           leadCompanyName: "Acme Corp",
           leadCompanyIndustry: "IT consulting",
+          organizationDomain: "acme.com",
           clientCompanyName: "MyBrand",
         },
       })
@@ -140,6 +141,7 @@ describe("POST /generate — lead/client column population", () => {
     expect(insertedValues.leadTitle).toBe("Managing Partner");
     expect(insertedValues.leadCompany).toBe("Acme Corp");
     expect(insertedValues.leadIndustry).toBe("IT consulting");
+    expect(insertedValues.leadOrganizationDomain).toBe("acme.com");
     expect(insertedValues.clientCompanyName).toBe("MyBrand");
   });
 
@@ -160,6 +162,7 @@ describe("POST /generate — lead/client column population", () => {
     expect(insertedValues.leadTitle).toBeNull();
     expect(insertedValues.leadCompany).toBeNull();
     expect(insertedValues.leadIndustry).toBeNull();
+    expect(insertedValues.leadOrganizationDomain).toBeNull();
     expect(insertedValues.clientCompanyName).toBeNull();
   });
 

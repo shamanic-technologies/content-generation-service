@@ -158,7 +158,7 @@
             "additionalProperties": {
               "nullable": true
             },
-            "description": "Variable values to substitute into the prompt template. Non-string values (arrays, objects) are coerced to strings. Recognised keys (used for dedicated DB columns and dashboard display): leadFirstName, leadLastName, leadTitle, leadCompanyName, leadCompanyIndustry, clientCompanyName. Keys must be flat — e.g. send { leadFirstName: \"Alice\" }, NOT { lead: { data: { firstName: \"Alice\" } } }."
+            "description": "Variable values to substitute into the prompt template. Non-string values (arrays, objects) are coerced to strings. Recognised keys (used for dedicated DB columns and dashboard display): leadFirstName, leadLastName, leadTitle, leadCompanyName, leadCompanyIndustry, organizationDomain, clientCompanyName. Keys must be flat — e.g. send { leadFirstName: \"Alice\" }, NOT { lead: { data: { firstName: \"Alice\" } } }."
           },
           "brandId": {
             "type": "string"
@@ -286,6 +286,10 @@
             "type": "string",
             "nullable": true
           },
+          "leadOrganizationDomain": {
+            "type": "string",
+            "nullable": true
+          },
           "clientCompanyName": {
             "type": "string",
             "nullable": true
@@ -371,6 +375,7 @@
           "leadCompany",
           "leadTitle",
           "leadIndustry",
+          "leadOrganizationDomain",
           "clientCompanyName",
           "clientCompanyDescription",
           "brandId",
