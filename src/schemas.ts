@@ -33,7 +33,7 @@ const CampaignIdHeader = registry.registerParameter(
 
 const BrandIdHeader = registry.registerParameter(
   "BrandId",
-  z.string().optional().openapi({ param: { name: "X-Brand-Id", in: "header", required: false, description: "Brand ID injected by workflow-service" } })
+  z.string().optional().openapi({ param: { name: "X-Brand-Id", in: "header", required: false, description: "Comma-separated list of brand UUIDs (e.g. 'uuid1,uuid2,uuid3'). Single UUID for single-brand campaigns." } })
 );
 
 const WorkflowSlugHeader = registry.registerParameter(
@@ -304,7 +304,7 @@ export const GenerateRequestSchema = registry.register(
         "Keys must be flat — e.g. send { leadFirstName: \"Alice\" }, NOT { lead: { data: { firstName: \"Alice\" } } }."
       ),
       // Tracking / linking
-      brandId: z.string().optional(),
+      brandIds: z.array(z.string()).optional().describe("Brand UUIDs associated with this generation. Falls back to parsed x-brand-id header (CSV) if omitted."),
       campaignId: z.string().optional(),
       apolloEnrichmentId: z.string().optional(),
       leadId: z.string().optional().describe("Lead-service correlation ID, unique per campaign"),
@@ -342,7 +342,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Generate content using a stored prompt template with variable substitution",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional().describe("Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')"), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
     body: {
       required: true,
       content: { "application/json": { schema: GenerateRequestSchema } },
@@ -401,7 +401,7 @@ const EmailGenerationSchema = registry.register(
       variablesRaw: z.unknown().nullable(),
 
       // External references
-      brandId: z.string(),
+      brandIds: z.array(z.string()).describe("Brand UUIDs associated with this generation (multi-brand support)"),
       campaignId: z.string(),
       generationRunId: z.string().nullable(),
 
@@ -449,7 +449,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "List generations with filters",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional().describe("Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')"), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
     query: z.object({
       runId: z.string().optional(),
       campaignId: z.string().optional(),
@@ -488,7 +488,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Get generation by enrichment ID",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional().describe("Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')"), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
     params: z.object({ apolloEnrichmentId: z.string() }),
   },
   responses: {
@@ -514,7 +514,7 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Get generation by lead-service correlation ID",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional().describe("Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')"), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
     params: z.object({ leadId: z.string() }),
   },
   responses: {
@@ -696,7 +696,7 @@ registry.registerPath({
   tags: ["Stats"],
   summary: "Get aggregated stats by filters",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional().describe("Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')"), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
     body: {
       required: true,
       content: { "application/json": { schema: StatsRequestSchema } },
@@ -826,7 +826,7 @@ registry.registerPath({
     "and polls until the final video URL is available. This is a synchronous endpoint " +
     "that can take 5-8 minutes to complete.",
   request: {
-    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional().describe("Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')"), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
     body: {
       required: true,
       content: { "application/json": { schema: SubmagicProcessRequestSchema } },

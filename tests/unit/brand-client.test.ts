@@ -20,7 +20,6 @@ describe("brand-client", () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        brandId: "brand-1",
         results: [
           { key: "industry", value: "SaaS", cached: false, extractedAt: "2026-01-01", expiresAt: null, sourceUrls: [] },
           { key: "targetGeo", value: ["US", "EU"], cached: true, extractedAt: "2026-01-01", expiresAt: null, sourceUrls: [] },
@@ -30,7 +29,6 @@ describe("brand-client", () => {
     });
 
     const result = await extractBrandFields(
-      "brand-1",
       [
         { key: "industry", description: "Industry" },
         { key: "targetGeo", description: "Geography" },
@@ -48,7 +46,6 @@ describe("brand-client", () => {
     fetchMock.mockResolvedValueOnce({ ok: false, status: 404 });
 
     const result = await extractBrandFields(
-      "brand-missing",
       [{ key: "industry", description: "Industry" }],
       identity
     );
@@ -57,7 +54,7 @@ describe("brand-client", () => {
   });
 
   it("returns empty Map for empty fields array", async () => {
-    const result = await extractBrandFields("brand-1", [], identity);
+    const result = await extractBrandFields([], identity);
 
     expect(result.size).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -67,7 +64,6 @@ describe("brand-client", () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        brandId: "brand-1",
         results: [
           { key: "socialProof", value: { metrics: { users: 1500 } }, cached: false, extractedAt: "2026-01-01", expiresAt: null, sourceUrls: [] },
         ],
@@ -75,7 +71,6 @@ describe("brand-client", () => {
     });
 
     const result = await extractBrandFields(
-      "brand-1",
       [{ key: "socialProof", description: "Social proof" }],
       identity
     );
@@ -83,24 +78,41 @@ describe("brand-client", () => {
     expect(result.get("socialProof")).toBe('{"metrics":{"users":1500}}');
   });
 
-  it("sends correct request body and headers", async () => {
+  it("calls POST /brands/extract-fields (no path param) and forwards x-brand-id header", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ brandId: "brand-1", results: [] }),
+      json: async () => ({ results: [] }),
     });
 
     await extractBrandFields(
-      "brand-1",
       [{ key: "industry", description: "The brand's industry" }],
       identity
     );
 
     const [url, opts] = fetchMock.mock.calls[0];
-    expect(url).toContain("/brands/brand-1/extract-fields");
+    expect(url).toContain("/brands/extract-fields");
+    expect(url).not.toContain("/brands/brand-1/extract-fields");
     expect(opts.method).toBe("POST");
     expect(JSON.parse(opts.body)).toEqual({
       fields: [{ key: "industry", description: "The brand's industry" }],
     });
     expect(opts.headers["x-org-id"]).toBe("org-1");
+    expect(opts.headers["x-brand-id"]).toBe("brand-1");
+  });
+
+  it("forwards CSV brand IDs via x-brand-id header", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ results: [] }),
+    });
+
+    const multiBrandIdentity = { orgId: "org-1", userId: "user-1", runId: "run-1", brandId: "brand-1,brand-2,brand-3" };
+    await extractBrandFields(
+      [{ key: "industry", description: "Industry" }],
+      multiBrandIdentity
+    );
+
+    const [, opts] = fetchMock.mock.calls[0];
+    expect(opts.headers["x-brand-id"]).toBe("brand-1,brand-2,brand-3");
   });
 });

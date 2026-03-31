@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, and, inArray, sql, type SQL } from "drizzle-orm";
+import { eq, and, inArray, arrayContains, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
@@ -30,7 +30,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     const {
       type,
       variables,
-      brandId: bodyBrandId,
+      brandIds: bodyBrandIds,
       campaignId: bodyCampaignId,
       apolloEnrichmentId,
       leadId,
@@ -41,7 +41,9 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     } = parsed.data;
 
     // Header values (from workflow-service) serve as fallback when body values are missing
-    const brandId = bodyBrandId || req.brandId;
+    const brandIds = bodyBrandIds?.length ? bodyBrandIds : (req.brandIds ?? []);
+    // Raw CSV string for identity forwarding to downstream services
+    const brandId = brandIds.length > 0 ? brandIds.join(",") : req.brandId;
     const campaignId = bodyCampaignId || req.campaignId;
     const workflowSlug = bodyWorkflowName || req.workflowSlug;
     const featureSlug = bodyFeatureSlug || req.featureSlug;
@@ -85,7 +87,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     }
 
     // Convention 1: resolve unfilled template variables from Brand Service
-    if (brandId && storedPrompt.prompt) {
+    if (brandIds.length > 0 && storedPrompt.prompt) {
       try {
         const afterSubstitution = substituteVariables(storedPrompt.prompt, variables);
         const unfilled = findUnfilledPlaceholders(afterSubstitution);
@@ -94,7 +96,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
             key,
             description: `Value for the "${key}" field needed in content generation`,
           }));
-          const brandValues = await extractBrandFields(brandId, fields, serviceIdentity);
+          const brandValues = await extractBrandFields(fields, serviceIdentity);
           for (const [key, value] of brandValues) {
             variables[key] = value;
           }
@@ -128,7 +130,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         runId: req.runId!,
         apolloEnrichmentId: apolloEnrichmentId ?? null,
         promptType: type,
-        brandId: brandId ?? "",
+        brandIds: brandIds,
         campaignId: campaignId ?? "",
         variablesRaw: variables,
         // Populate dedicated lead/client columns from variables
@@ -217,7 +219,7 @@ router.get("/generations", serviceAuth, async (req: AuthenticatedRequest, res) =
     const conditions: SQL[] = [eq(emailGenerations.orgId, req.orgId!)];
     if (runId) conditions.push(eq(emailGenerations.runId, runId));
     if (campaignId) conditions.push(eq(emailGenerations.campaignId, campaignId));
-    if (brandId) conditions.push(eq(emailGenerations.brandId, brandId));
+    if (brandId) conditions.push(arrayContains(emailGenerations.brandIds, [brandId]));
 
     const generations = await db.query.emailGenerations.findMany({
       where: and(...conditions),
@@ -325,7 +327,7 @@ router.get("/stats", serviceAuth, async (req: AuthenticatedRequest, res) => {
     // Build conditions — dynasty slug (resolved list) takes priority over exact slug
     const conditions: SQL[] = [];
     if (campaignId) conditions.push(eq(emailGenerations.campaignId, campaignId));
-    if (brandId) conditions.push(eq(emailGenerations.brandId, brandId));
+    if (brandId) conditions.push(arrayContains(emailGenerations.brandIds, [brandId]));
     if (orgId) conditions.push(eq(emailGenerations.orgId, orgId));
     if (runIds) {
       const ids = runIds.split(",").map((s) => s.trim()).filter(Boolean);
@@ -440,7 +442,7 @@ router.post("/stats", serviceAuth, async (req: AuthenticatedRequest, res) => {
       eq(emailGenerations.orgId, req.orgId!),
     ];
     if (hasRunIds) conditions.push(inArray(emailGenerations.runId, runIds!));
-    if (brandId) conditions.push(eq(emailGenerations.brandId, brandId));
+    if (brandId) conditions.push(arrayContains(emailGenerations.brandIds, [brandId]));
     if (campaignId) conditions.push(eq(emailGenerations.campaignId, campaignId));
 
     // Count email generations

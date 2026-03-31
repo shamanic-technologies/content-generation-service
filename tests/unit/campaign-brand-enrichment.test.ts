@@ -20,7 +20,11 @@ vi.mock("../../src/middleware/auth.js", () => ({
     req.userId = req.headers["x-user-id"] || "user-internal-456";
     req.runId = req.headers["x-run-id"] || "run-caller-123";
     req.campaignId = req.headers["x-campaign-id"] || undefined;
-    req.brandId = req.headers["x-brand-id"] || undefined;
+    const brandIdRaw = req.headers["x-brand-id"] as string | undefined;
+    if (brandIdRaw) {
+      req.brandId = brandIdRaw;
+      req.brandIds = brandIdRaw.split(",").map((s: string) => s.trim()).filter(Boolean);
+    }
     next();
   },
 }));
@@ -203,9 +207,8 @@ describe("POST /generate — campaign context + brand enrichment", () => {
       })
       .expect(200);
 
-    // Brand client was called for the unfilled "industry" variable
+    // Brand client was called for the unfilled "industry" variable (no brandId path param — reads from header)
     expect(mockExtractBrandFields).toHaveBeenCalledWith(
-      "brand-xyz",
       [{ key: "industry", description: expect.stringContaining("industry") }],
       expect.objectContaining({ orgId: "org-internal-123", brandId: "brand-xyz" })
     );
