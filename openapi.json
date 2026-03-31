@@ -160,8 +160,12 @@
             },
             "description": "Variable values to substitute into the prompt template. Non-string values (arrays, objects) are coerced to strings. Recognised keys (used for dedicated DB columns and dashboard display): leadFirstName, leadLastName, leadTitle, leadCompanyName, leadCompanyIndustry, organizationDomain, clientCompanyName. Keys must be flat — e.g. send { leadFirstName: \"Alice\" }, NOT { lead: { data: { firstName: \"Alice\" } } }."
           },
-          "brandId": {
-            "type": "string"
+          "brandIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Brand UUIDs associated with this generation. Falls back to parsed x-brand-id header (CSV) if omitted."
           },
           "campaignId": {
             "type": "string"
@@ -301,8 +305,12 @@
           "variablesRaw": {
             "nullable": true
           },
-          "brandId": {
-            "type": "string"
+          "brandIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Brand UUIDs associated with this generation (multi-brand support)"
           },
           "campaignId": {
             "type": "string"
@@ -378,7 +386,7 @@
           "leadOrganizationDomain",
           "clientCompanyName",
           "clientCompanyDescription",
-          "brandId",
+          "brandIds",
           "campaignId",
           "generationRunId",
           "subject",
@@ -853,7 +861,7 @@
         "required": false,
         "name": "X-Brand-Id",
         "in": "header",
-        "description": "Brand ID injected by workflow-service"
+        "description": "Comma-separated list of brand UUIDs (e.g. 'uuid1,uuid2,uuid3'). Single UUID for single-brand campaigns."
       },
       "WorkflowSlug": {
         "schema": {
@@ -1270,9 +1278,11 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "description": "Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')"
             },
             "required": false,
+            "description": "Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')",
             "name": "x-brand-id",
             "in": "header"
           },
@@ -1422,9 +1432,11 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "description": "Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')"
             },
             "required": false,
+            "description": "Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')",
             "name": "x-brand-id",
             "in": "header"
           },
@@ -1518,9 +1530,11 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "description": "Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')"
             },
             "required": false,
+            "description": "Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')",
             "name": "x-brand-id",
             "in": "header"
           },
@@ -1614,9 +1628,11 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "description": "Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')"
             },
             "required": false,
+            "description": "Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')",
             "name": "x-brand-id",
             "in": "header"
           },
@@ -1854,9 +1870,11 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "description": "Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')"
             },
             "required": false,
+            "description": "Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')",
             "name": "x-brand-id",
             "in": "header"
           },
@@ -2044,9 +2062,11 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "description": "Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')"
             },
             "required": false,
+            "description": "Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')",
             "name": "x-brand-id",
             "in": "header"
           },

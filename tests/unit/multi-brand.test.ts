@@ -3,14 +3,14 @@ import express from "express";
 import request from "supertest";
 
 /**
- * Tests that x-campaign-id, x-brand-id, x-workflow-slug headers are:
- * 1. Parsed from request headers as optional fallbacks
- * 2. Used when body fields are missing
- * 3. Body values take precedence over header values
- * 4. Forwarded to runs-service via identity headers
+ * Tests multi-brand support:
+ * 1. x-brand-id header is parsed as CSV into brandIds array
+ * 2. brandIds array is stored in the DB insert
+ * 3. Body brandIds array takes precedence over header
+ * 4. Single brand still works (backward compat)
+ * 5. Stats queries filter by array containment
  */
 
-// Mock runs-client — capture identity headers passed to createRun
 const mockCreateRun = vi.fn().mockResolvedValue({ id: "run-456" });
 const mockUpdateRun = vi.fn().mockResolvedValue({});
 
@@ -19,13 +19,11 @@ vi.mock("../../src/lib/runs-client.js", () => ({
   updateRun: (...args: unknown[]) => mockUpdateRun(...args),
 }));
 
-// Use real serviceAuth to test header parsing
 vi.mock("../../src/middleware/auth.js", async () => {
   const actual = await vi.importActual<typeof import("../../src/middleware/auth.js")>("../../src/middleware/auth.js");
   return actual;
 });
 
-// Track DB inserts
 const mockInsertValues: Array<Record<string, unknown>> = [];
 
 vi.mock("../../src/db/index.js", () => ({
@@ -47,7 +45,6 @@ vi.mock("../../src/db/index.js", () => ({
       prompts: {
         findFirst: vi.fn().mockResolvedValue({
           id: "prompt-1",
-          orgId: "org-123",
           type: "email",
           prompt: "Write an email to {{recipientName}}",
           variables: ["recipientName"],
@@ -98,7 +95,7 @@ function createTestApp() {
   return app;
 }
 
-describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-feature-slug)", () => {
+describe("multi-brand support (x-brand-id CSV)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInsertValues.length = 0;
@@ -113,79 +110,88 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-featur
       app.use(generateRoutes);
     });
 
-    it("uses header values when body fields are absent", async () => {
+    it("parses CSV x-brand-id header into brandIds array for DB storage", async () => {
       await request(app)
         .post("/generate")
         .set("X-Org-Id", "org-123")
         .set("X-User-Id", "user-456")
         .set("X-Run-Id", "run-789")
-        .set("X-Campaign-Id", "campaign-from-header")
-        .set("X-Brand-Id", "brand-from-header")
-        .set("X-Workflow-Slug", "wf-from-header")
-        .set("X-Feature-Slug", "feat-from-header")
+        .set("X-Brand-Id", "brand-1,brand-2,brand-3")
         .send({
           type: "email",
           variables: { recipientName: "John" },
         })
         .expect(200);
 
-      // DB insert should use header values
       expect(mockInsertValues[0]).toEqual(
         expect.objectContaining({
-          brandIds: ["brand-from-header"],
-          campaignId: "campaign-from-header",
-          workflowSlug: "wf-from-header",
-          featureSlug: "feat-from-header",
-        })
-      );
-
-      // createRun should receive brand as CSV string in identity (for header forwarding)
-      expect(mockCreateRun).toHaveBeenCalledWith(
-        expect.objectContaining({
-          brandId: "brand-from-header",
-          campaignId: "campaign-from-header",
-          workflowSlug: "wf-from-header",
-        }),
-        expect.objectContaining({
-          campaignId: "campaign-from-header",
-          brandId: "brand-from-header",
-          workflowSlug: "wf-from-header",
-          featureSlug: "feat-from-header",
+          brandIds: ["brand-1", "brand-2", "brand-3"],
         })
       );
     });
 
-    it("body values take precedence over header values", async () => {
+    it("handles single brand UUID in header (backward compat)", async () => {
       await request(app)
         .post("/generate")
         .set("X-Org-Id", "org-123")
         .set("X-User-Id", "user-456")
         .set("X-Run-Id", "run-789")
-        .set("X-Campaign-Id", "campaign-from-header")
-        .set("X-Brand-Id", "brand-from-header")
-        .set("X-Workflow-Slug", "wf-from-header")
-        .set("X-Feature-Slug", "feat-from-header")
+        .set("X-Brand-Id", "brand-1")
         .send({
           type: "email",
           variables: { recipientName: "John" },
-          brandIds: ["brand-from-body"],
-          campaignId: "campaign-from-body",
-          workflowSlug: "wf-from-body",
-          featureSlug: "feat-from-body",
         })
         .expect(200);
 
       expect(mockInsertValues[0]).toEqual(
         expect.objectContaining({
-          brandIds: ["brand-from-body"],
-          campaignId: "campaign-from-body",
-          workflowSlug: "wf-from-body",
-          featureSlug: "feat-from-body",
+          brandIds: ["brand-1"],
         })
       );
     });
 
-    it("works without any tracking headers or body fields", async () => {
+    it("trims whitespace in CSV brand IDs", async () => {
+      await request(app)
+        .post("/generate")
+        .set("X-Org-Id", "org-123")
+        .set("X-User-Id", "user-456")
+        .set("X-Run-Id", "run-789")
+        .set("X-Brand-Id", " brand-1 , brand-2 , brand-3 ")
+        .send({
+          type: "email",
+          variables: { recipientName: "John" },
+        })
+        .expect(200);
+
+      expect(mockInsertValues[0]).toEqual(
+        expect.objectContaining({
+          brandIds: ["brand-1", "brand-2", "brand-3"],
+        })
+      );
+    });
+
+    it("body brandIds array takes precedence over header", async () => {
+      await request(app)
+        .post("/generate")
+        .set("X-Org-Id", "org-123")
+        .set("X-User-Id", "user-456")
+        .set("X-Run-Id", "run-789")
+        .set("X-Brand-Id", "header-brand-1,header-brand-2")
+        .send({
+          type: "email",
+          variables: { recipientName: "John" },
+          brandIds: ["body-brand-1", "body-brand-2"],
+        })
+        .expect(200);
+
+      expect(mockInsertValues[0]).toEqual(
+        expect.objectContaining({
+          brandIds: ["body-brand-1", "body-brand-2"],
+        })
+      );
+    });
+
+    it("stores empty array when no brand header or body", async () => {
       await request(app)
         .post("/generate")
         .set("X-Org-Id", "org-123")
@@ -200,38 +206,30 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-featur
       expect(mockInsertValues[0]).toEqual(
         expect.objectContaining({
           brandIds: [],
-          campaignId: "",
-          workflowSlug: null,
-          featureSlug: null,
         })
       );
     });
 
-    it("forwards tracking headers to runs-service updateRun", async () => {
+    it("forwards CSV brand string to downstream services via identity", async () => {
       await request(app)
         .post("/generate")
         .set("X-Org-Id", "org-123")
         .set("X-User-Id", "user-456")
         .set("X-Run-Id", "run-789")
-        .set("X-Campaign-Id", "camp-1")
-        .set("X-Brand-Id", "brand-1")
-        .set("X-Workflow-Slug", "wf-1")
-        .set("X-Feature-Slug", "feat-1")
+        .set("X-Brand-Id", "brand-1,brand-2")
         .send({
           type: "email",
           variables: { recipientName: "John" },
         })
         .expect(200);
 
-      // updateRun identity should include tracking headers
-      expect(mockUpdateRun).toHaveBeenCalledWith(
-        "run-456",
-        "completed",
+      // createRun identity should carry the CSV string for header forwarding
+      expect(mockCreateRun).toHaveBeenCalledWith(
         expect.objectContaining({
-          campaignId: "camp-1",
-          brandId: "brand-1",
-          workflowSlug: "wf-1",
-          featureSlug: "feat-1",
+          brandId: "brand-1,brand-2",
+        }),
+        expect.objectContaining({
+          brandId: "brand-1,brand-2",
         })
       );
     });

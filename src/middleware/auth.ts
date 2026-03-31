@@ -5,7 +5,10 @@ export interface AuthenticatedRequest extends Request {
   userId?: string;
   runId?: string;
   campaignId?: string;
+  /** Raw x-brand-id header value (may be CSV). Use brandIds for the parsed array. */
   brandId?: string;
+  /** Parsed brand IDs from x-brand-id header (CSV-split, trimmed, deduplicated). */
+  brandIds?: string[];
   workflowSlug?: string;
   featureSlug?: string;
 }
@@ -60,11 +63,14 @@ export async function serviceAuth(
 
   // Optional tracking headers injected by workflow-service
   const campaignId = req.headers["x-campaign-id"] as string | undefined;
-  const brandId = req.headers["x-brand-id"] as string | undefined;
+  const brandIdRaw = req.headers["x-brand-id"] as string | undefined;
   const workflowSlug = req.headers["x-workflow-slug"] as string | undefined;
   const featureSlug = req.headers["x-feature-slug"] as string | undefined;
   if (campaignId) req.campaignId = campaignId;
-  if (brandId) req.brandId = brandId;
+  if (brandIdRaw) {
+    req.brandId = brandIdRaw;
+    req.brandIds = brandIdRaw.split(",").map((s) => s.trim()).filter(Boolean);
+  }
   if (workflowSlug) req.workflowSlug = workflowSlug;
   if (featureSlug) req.featureSlug = featureSlug;
 

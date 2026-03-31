@@ -26,7 +26,7 @@ export const emailGenerations = pgTable(
     variablesRaw: jsonb("variables_raw"),
 
     // External references
-    brandId: text("brand_id").notNull(),
+    brandIds: text("brand_ids").array().notNull(),
     campaignId: text("campaign_id").notNull(),
 
     // Link to runs-service generation run for cost tracking
@@ -64,6 +64,7 @@ export const emailGenerations = pgTable(
     index("idx_emailgen_run").on(table.runId),
     index("idx_emailgen_enrichment").on(table.apolloEnrichmentId),
     index("idx_emailgen_campaign").on(table.campaignId),
+    index("idx_emailgen_brand_ids").using("gin", table.brandIds),
     uniqueIndex("idx_emailgen_idempotency").on(table.orgId, table.idempotencyKey),
     uniqueIndex("idx_emailgen_lead").on(table.campaignId, table.leadId),
   ]

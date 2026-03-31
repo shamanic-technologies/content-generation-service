@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "../db/index.js";
 import { emailGenerations } from "../db/schema.js";
-import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, arrayContains, sql, type SQL } from "drizzle-orm";
 import { StatsByModelRequestSchema } from "../schemas.js";
 
 const router = Router();
@@ -27,7 +27,7 @@ router.post("/stats/by-model", async (req, res) => {
 
     const conditions: SQL[] = [];
     if (hasRunIds) conditions.push(inArray(emailGenerations.runId, runIds!));
-    if (brandId) conditions.push(eq(emailGenerations.brandId, brandId));
+    if (brandId) conditions.push(arrayContains(emailGenerations.brandIds, [brandId]));
     if (campaignId) conditions.push(eq(emailGenerations.campaignId, campaignId));
 
     // If orgId provided, filter directly (it's already the internal UUID)

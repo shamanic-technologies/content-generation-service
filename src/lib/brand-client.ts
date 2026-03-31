@@ -1,7 +1,8 @@
 /**
  * HTTP client for brand-service.
- * Calls POST /brands/{brandId}/extract-fields to resolve brand info.
- * Brand-service caches results for 30 days per (brandId, fieldKey).
+ * Calls POST /brands/extract-fields to resolve brand info.
+ * Brand-service reads x-brand-id from the header (CSV-separated brand UUIDs).
+ * Results are cached 30 days per (brandId, fieldKey, campaignId).
  */
 
 const BRAND_SERVICE_URL = process.env.BRAND_SERVICE_URL || "http://localhost:3030";
@@ -44,18 +45,18 @@ function buildHeaders(identity: ServiceIdentity): Record<string, string> {
 }
 
 /**
- * Extract fields from a brand via AI. Brand-service caches results for 30 days,
- * so repeated calls with the same fields are free (no LLM cost).
+ * Extract fields from brands via AI. Brand-service reads x-brand-id from the
+ * header (CSV of brand UUIDs) and resolves fields across all brands.
+ * Results are cached 30 days, so repeated calls are free (no LLM cost).
  */
 export async function extractBrandFields(
-  brandId: string,
   fields: ExtractFieldRequest[],
   identity: ServiceIdentity
 ): Promise<Map<string, string>> {
   if (fields.length === 0) return new Map();
 
   const response = await fetch(
-    `${BRAND_SERVICE_URL}/brands/${brandId}/extract-fields`,
+    `${BRAND_SERVICE_URL}/brands/extract-fields`,
     {
       method: "POST",
       headers: buildHeaders(identity),
@@ -64,12 +65,11 @@ export async function extractBrandFields(
   );
 
   if (!response.ok) {
-    console.warn(`[brand-client] Failed to extract fields for brand ${brandId}: ${response.status}`);
+    console.warn(`[brand-client] Failed to extract brand fields: ${response.status}`);
     return new Map();
   }
 
   const data = (await response.json()) as {
-    brandId: string;
     results: ExtractFieldResult[];
   };
 
