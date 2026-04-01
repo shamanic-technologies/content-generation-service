@@ -50,7 +50,7 @@ const baseParams = {
   variables: { name: "Sarah" },
 };
 
-describe("generateFromTemplate always appends AI disclaimer", () => {
+describe("generateFromTemplate AI disclaimer opt-in", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetch.mockResolvedValue({
@@ -66,8 +66,20 @@ describe("generateFromTemplate always appends AI disclaimer", () => {
     });
   });
 
-  it("appends disclaimer to ALL sequence steps", async () => {
+  it("does NOT append disclaimer by default", async () => {
     const result = await generateFromTemplate(baseParams, IDENTITY);
+
+    for (const step of result.sequence) {
+      expect(step.bodyHtml).not.toContain(AI_DISCLAIMER_HTML);
+      expect(step.bodyText).not.toContain(AI_DISCLAIMER_TEXT);
+    }
+  });
+
+  it("appends disclaimer to ALL sequence steps when includeAiDisclaimer is true", async () => {
+    const result = await generateFromTemplate(
+      { ...baseParams, includeAiDisclaimer: true },
+      IDENTITY
+    );
 
     expect(result.sequence).toHaveLength(3);
 
@@ -78,7 +90,10 @@ describe("generateFromTemplate always appends AI disclaimer", () => {
   });
 
   it("disclaimer appears at the end of bodyHtml, not the beginning", async () => {
-    const result = await generateFromTemplate(baseParams, IDENTITY);
+    const result = await generateFromTemplate(
+      { ...baseParams, includeAiDisclaimer: true },
+      IDENTITY
+    );
 
     const html = result.sequence[0].bodyHtml;
     expect(html).toMatch(/.*<\/p><p style="font-size:11px/);

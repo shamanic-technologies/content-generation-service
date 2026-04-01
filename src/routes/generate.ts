@@ -37,6 +37,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       idempotencyKey,
       workflowSlug: bodyWorkflowName,
       featureSlug: bodyFeatureSlug,
+      includeAiDisclaimer,
     } = parsed.data;
 
     // Header values (from workflow-service) serve as fallback when body values are missing
@@ -111,6 +112,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       {
         promptTemplate: storedPrompt.prompt,
         variables,
+        includeAiDisclaimer,
         campaignContext,
       },
       { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug }
