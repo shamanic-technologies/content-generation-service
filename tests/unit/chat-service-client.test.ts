@@ -44,6 +44,8 @@ describe("chat-service client (generateFromTemplate)", () => {
     expect(body.systemPrompt).toBeDefined();
     expect(body.responseFormat).toBe("json");
     expect(body.maxTokens).toBe(3072);
+    expect(body.provider).toBe("google");
+    expect(body.model).toBe("pro");
   });
 
   it("passes identity headers to chat-service", async () => {
