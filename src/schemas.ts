@@ -311,6 +311,7 @@ export const GenerateRequestSchema = registry.register(
       idempotencyKey: z.string().optional(),
       workflowSlug: z.string().optional(),
       featureSlug: z.string().optional().describe("Feature slug for tracking"),
+      includeAiDisclaimer: z.boolean().optional().default(false).describe("When true, appends a small AI-generated disclaimer to the email body"),
     })
     .openapi("GenerateRequest")
 );

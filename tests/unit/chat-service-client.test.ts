@@ -140,7 +140,7 @@ describe("chat-service client (generateFromTemplate)", () => {
     const result = await generateFromTemplate(PARAMS, IDENTITY);
     expect(result.subject).toBe("Clean");
     expect(result.sequence).toHaveLength(1);
-    expect(result.sequence[0].bodyText).toBe("Hello\n\n" + AI_DISCLAIMER_TEXT);
+    expect(result.sequence[0].bodyText).toBe("Hello");
   });
 
   it("includes JSON schema instructions in systemPrompt", async () => {

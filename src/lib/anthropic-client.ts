@@ -31,6 +31,7 @@ export interface ChatServiceIdentity {
 export interface GenerateFromTemplateParams {
   promptTemplate: string;
   variables: Record<string, unknown>;
+  includeAiDisclaimer?: boolean;
   campaignContext?: Record<string, unknown> | null;
 }
 
@@ -201,13 +202,15 @@ export async function generateFromTemplate(
 
   let parsed = parseSequenceFromJson(data.json);
 
-  parsed = {
-    subject: parsed.subject,
-    sequence: parsed.sequence.map((step) => {
-      const patched = appendAiDisclaimer(step.bodyHtml, step.bodyText);
-      return { ...step, ...patched };
-    }),
-  };
+  if (params.includeAiDisclaimer) {
+    parsed = {
+      subject: parsed.subject,
+      sequence: parsed.sequence.map((step) => {
+        const patched = appendAiDisclaimer(step.bodyHtml, step.bodyText);
+        return { ...step, ...patched };
+      }),
+    };
+  }
 
   return {
     ...parsed,
