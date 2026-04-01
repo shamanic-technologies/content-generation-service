@@ -185,6 +185,8 @@ export async function generateFromTemplate(
       systemPrompt: GLOBAL_SYSTEM_PROMPT,
       responseFormat: "json",
       maxTokens: 3072,
+      provider: "google",
+      model: "pro",
     }),
   });
 
