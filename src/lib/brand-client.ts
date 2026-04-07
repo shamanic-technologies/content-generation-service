@@ -1,6 +1,6 @@
 /**
  * HTTP client for brand-service.
- * Calls POST /brands/extract-fields to resolve brand info.
+ * Calls POST /orgs/brands/extract-fields to resolve brand info.
  * Brand-service reads x-brand-id from the header (CSV-separated brand UUIDs).
  * Results are cached 30 days per (brandId, fieldKey, campaignId).
  */
@@ -56,7 +56,7 @@ export async function extractBrandFields(
   if (fields.length === 0) return new Map();
 
   const response = await fetch(
-    `${BRAND_SERVICE_URL}/brands/extract-fields`,
+    `${BRAND_SERVICE_URL}/orgs/brands/extract-fields`,
     {
       method: "POST",
       headers: buildHeaders(identity),

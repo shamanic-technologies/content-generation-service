@@ -78,7 +78,7 @@ describe("brand-client", () => {
     expect(result.get("socialProof")).toBe('{"metrics":{"users":1500}}');
   });
 
-  it("calls POST /brands/extract-fields (no path param) and forwards x-brand-id header", async () => {
+  it("calls POST /orgs/brands/extract-fields (no path param) and forwards x-brand-id header", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ results: [] }),
@@ -90,8 +90,8 @@ describe("brand-client", () => {
     );
 
     const [url, opts] = fetchMock.mock.calls[0];
-    expect(url).toContain("/brands/extract-fields");
-    expect(url).not.toContain("/brands/brand-1/extract-fields");
+    expect(url).toContain("/orgs/brands/extract-fields");
+    expect(url).not.toContain("/orgs/brands/brand-1/extract-fields");
     expect(opts.method).toBe("POST");
     expect(JSON.parse(opts.body)).toEqual({
       fields: [{ key: "industry", description: "The brand's industry" }],
