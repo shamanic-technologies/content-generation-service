@@ -7,6 +7,18 @@ const { extractBrandFields } = await import("../../src/lib/brand-client.js");
 
 const identity = { orgId: "org-1", userId: "user-1", runId: "run-1", brandId: "brand-1" };
 
+/** Helper to build the { brands, fields } response shape that brand-service returns */
+function brandResponse(fields: Record<string, { value: unknown; cached?: boolean }>) {
+  const fieldsObj: Record<string, { value: unknown; byBrand: Record<string, { value: unknown; cached: boolean }> }> = {};
+  for (const [key, f] of Object.entries(fields)) {
+    fieldsObj[key] = {
+      value: f.value,
+      byBrand: { "acme.com": { value: f.value, cached: f.cached ?? false } },
+    };
+  }
+  return { brands: [{ brandId: "brand-1", domain: "acme.com", name: "Acme" }], fields: fieldsObj };
+}
+
 describe("brand-client", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -19,12 +31,10 @@ describe("brand-client", () => {
   it("extracts fields and returns a Map of key→string", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({
-        results: [
-          { key: "industry", value: "SaaS", cached: false, extractedAt: "2026-01-01", expiresAt: null, sourceUrls: [] },
-          { key: "targetGeo", value: ["US", "EU"], cached: true, extractedAt: "2026-01-01", expiresAt: null, sourceUrls: [] },
-          { key: "unknown", value: null, cached: false, extractedAt: "2026-01-01", expiresAt: null, sourceUrls: [] },
-        ],
+      json: async () => brandResponse({
+        industry: { value: "SaaS" },
+        targetGeo: { value: ["US", "EU"], cached: true },
+        unknown: { value: null },
       }),
     });
 
@@ -63,10 +73,8 @@ describe("brand-client", () => {
   it("coerces object values to JSON strings", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({
-        results: [
-          { key: "socialProof", value: { metrics: { users: 1500 } }, cached: false, extractedAt: "2026-01-01", expiresAt: null, sourceUrls: [] },
-        ],
+      json: async () => brandResponse({
+        socialProof: { value: { metrics: { users: 1500 } } },
       }),
     });
 
@@ -81,7 +89,7 @@ describe("brand-client", () => {
   it("calls POST /orgs/brands/extract-fields (no path param) and forwards x-brand-id header", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ results: [] }),
+      json: async () => brandResponse({}),
     });
 
     await extractBrandFields(
@@ -103,7 +111,7 @@ describe("brand-client", () => {
   it("forwards CSV brand IDs via x-brand-id header", async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ results: [] }),
+      json: async () => brandResponse({}),
     });
 
     const multiBrandIdentity = { orgId: "org-1", userId: "user-1", runId: "run-1", brandId: "brand-1,brand-2,brand-3" };
