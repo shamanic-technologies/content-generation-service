@@ -23,10 +23,14 @@ export interface ExtractFieldRequest {
   description: string;
 }
 
-export interface ExtractFieldResult {
-  key: string;
+export interface BrandFieldValue {
   value: string | string[] | Record<string, unknown> | null;
-  cached: boolean;
+  byBrand: Record<string, { value: string | string[] | Record<string, unknown> | null; cached: boolean }>;
+}
+
+export interface ExtractFieldsResponse {
+  brands: { brandId: string; domain: string; name: string }[];
+  fields: Record<string, BrandFieldValue>;
 }
 
 function buildHeaders(identity: ServiceIdentity): Record<string, string> {
@@ -69,20 +73,18 @@ export async function extractBrandFields(
     return new Map();
   }
 
-  const data = (await response.json()) as {
-    results: ExtractFieldResult[];
-  };
+  const data = (await response.json()) as ExtractFieldsResponse;
 
   const result = new Map<string, string>();
-  for (const r of data.results) {
-    if (r.value == null) continue;
+  for (const [key, field] of Object.entries(data.fields)) {
+    if (field.value == null) continue;
     // Coerce to string for template substitution
-    if (typeof r.value === "string") {
-      result.set(r.key, r.value);
-    } else if (Array.isArray(r.value)) {
-      result.set(r.key, r.value.join(", "));
+    if (typeof field.value === "string") {
+      result.set(key, field.value);
+    } else if (Array.isArray(field.value)) {
+      result.set(key, field.value.join(", "));
     } else {
-      result.set(r.key, JSON.stringify(r.value));
+      result.set(key, JSON.stringify(field.value));
     }
   }
 
