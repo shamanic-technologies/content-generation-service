@@ -34,7 +34,7 @@ describe("Email Generation Service Database", () => {
           orgId,
           runId: "run_123",
           apolloEnrichmentId: "enrich_456",
-          brandId: "test-brand",
+          brandIds: ["test-brand"],
           campaignId: "test-campaign",
           leadFirstName: "John",
           leadLastName: "Doe",
