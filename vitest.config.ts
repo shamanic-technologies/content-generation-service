@@ -9,5 +9,6 @@ export default defineConfig({
     exclude: ["node_modules", "dist"],
     fileParallelism: false,
     maxWorkers: 1,
+    hookTimeout: 30000,
   },
 });

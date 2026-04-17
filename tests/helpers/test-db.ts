@@ -18,7 +18,7 @@ export async function insertTestEmailGeneration(
     apolloEnrichmentId?: string;
     subject?: string;
     bodyText?: string;
-    brandId?: string;
+    brandIds?: string[];
     campaignId?: string;
   } = {}
 ) {
@@ -30,7 +30,7 @@ export async function insertTestEmailGeneration(
       apolloEnrichmentId: data.apolloEnrichmentId || `test-enrichment-${Date.now()}`,
       subject: data.subject || "Test Subject",
       bodyText: data.bodyText || "Test body content",
-      brandId: data.brandId || "test-brand",
+      brandIds: data.brandIds || ["test-brand"],
       campaignId: data.campaignId || "test-campaign",
     })
     .returning();
