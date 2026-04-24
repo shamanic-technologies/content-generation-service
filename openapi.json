@@ -798,6 +798,57 @@
           "reason"
         ]
       },
+      "TransferBrandRequest": {
+        "type": "object",
+        "properties": {
+          "brandId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The brand UUID to transfer"
+          },
+          "sourceOrgId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Current owning org UUID"
+          },
+          "targetOrgId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Destination org UUID"
+          }
+        },
+        "required": [
+          "brandId",
+          "sourceOrgId",
+          "targetOrgId"
+        ]
+      },
+      "TransferBrandResponse": {
+        "type": "object",
+        "properties": {
+          "updatedTables": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tableName": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "tableName",
+                "count"
+              ]
+            }
+          }
+        },
+        "required": [
+          "updatedTables"
+        ]
+      },
       "OrgId": {
         "type": "string"
       },
@@ -2124,6 +2175,47 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SubmagicErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/transfer-brand": {
+      "post": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Transfer solo-brand rows from one org to another",
+        "description": "Finds all rows where org_id = sourceOrgId and brand_ids contains exactly one element equal to brandId, then updates org_id to targetOrgId. Skips co-branding rows (multiple brand IDs). Idempotent.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferBrandRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transfer complete — returns count of updated rows per table",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferBrandResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
