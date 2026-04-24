@@ -847,3 +847,57 @@ registry.registerPath({
     },
   },
 });
+
+// ---------------------------------------------------------------------------
+// POST /internal/transfer-brand — Re-assign solo-brand rows to a new org
+// ---------------------------------------------------------------------------
+export const TransferBrandRequestSchema = registry.register(
+  "TransferBrandRequest",
+  z
+    .object({
+      brandId: z.string().uuid().describe("The brand UUID to transfer"),
+      sourceOrgId: z.string().uuid().describe("Current owning org UUID"),
+      targetOrgId: z.string().uuid().describe("Destination org UUID"),
+    })
+    .openapi("TransferBrandRequest")
+);
+
+const TransferBrandResponseSchema = registry.register(
+  "TransferBrandResponse",
+  z
+    .object({
+      updatedTables: z.array(
+        z.object({
+          tableName: z.string(),
+          count: z.number(),
+        })
+      ),
+    })
+    .openapi("TransferBrandResponse")
+);
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/transfer-brand",
+  tags: ["Internal"],
+  summary: "Transfer solo-brand rows from one org to another",
+  description:
+    "Finds all rows where org_id = sourceOrgId and brand_ids contains exactly one element equal to brandId, " +
+    "then updates org_id to targetOrgId. Skips co-branding rows (multiple brand IDs). Idempotent.",
+  request: {
+    body: {
+      required: true,
+      content: { "application/json": { schema: TransferBrandRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Transfer complete — returns count of updated rows per table",
+      content: { "application/json": { schema: TransferBrandResponseSchema } },
+    },
+    400: {
+      description: "Invalid request body",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
