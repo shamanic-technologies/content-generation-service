@@ -1,7 +1,6 @@
 import { Router, Request, Response } from "express";
 import { db } from "../db/index.js";
-import { emailGenerations } from "../db/schema.js";
-import { eq, and, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { TransferBrandRequestSchema } from "../schemas.js";
 
 const router = Router();
@@ -26,15 +25,16 @@ router.post("/internal/transfer-brand", async (req: Request, res: Response) => {
   //   org_id = sourceOrgId
   //   brand_ids has exactly 1 element
   //   that element is brandId
-  const result = await db.execute(sql`
+  const result = await db.execute<{ count: string }>(sql`
     UPDATE email_generations
     SET org_id = ${targetOrgId}
     WHERE org_id = ${sourceOrgId}
       AND array_length(brand_ids, 1) = 1
       AND brand_ids[1] = ${brandId}
+    RETURNING 1
   `);
 
-  const count = Number(result.rowCount ?? 0);
+  const count = result.length;
 
   console.log(
     `[content-generation-service] transfer-brand: updated ${count} email_generations rows ` +

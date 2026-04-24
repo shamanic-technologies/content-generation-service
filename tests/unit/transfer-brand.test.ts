@@ -63,7 +63,7 @@ describe("POST /internal/transfer-brand", () => {
   });
 
   it("returns updated count when rows are transferred", async () => {
-    mockExecute.mockResolvedValueOnce({ rowCount: 5 });
+    mockExecute.mockResolvedValueOnce([{ "1": 1 }, { "1": 1 }, { "1": 1 }, { "1": 1 }, { "1": 1 }]);
     const app = buildApp();
     const res = await request(app)
       .post("/internal/transfer-brand")
@@ -77,7 +77,7 @@ describe("POST /internal/transfer-brand", () => {
   });
 
   it("returns count 0 when no rows match (idempotent re-run)", async () => {
-    mockExecute.mockResolvedValueOnce({ rowCount: 0 });
+    mockExecute.mockResolvedValueOnce([]);
     const app = buildApp();
     const res = await request(app)
       .post("/internal/transfer-brand")
