@@ -855,9 +855,10 @@ export const TransferBrandRequestSchema = registry.register(
   "TransferBrandRequest",
   z
     .object({
-      brandId: z.string().uuid().describe("The brand UUID to transfer"),
+      sourceBrandId: z.string().uuid().describe("The brand UUID to transfer from the source org"),
       sourceOrgId: z.string().uuid().describe("Current owning org UUID"),
       targetOrgId: z.string().uuid().describe("Destination org UUID"),
+      targetBrandId: z.string().uuid().optional().describe("Brand UUID in the target org to rewrite to (when target org already has this brand)"),
     })
     .openapi("TransferBrandRequest")
 );
@@ -882,8 +883,9 @@ registry.registerPath({
   tags: ["Internal"],
   summary: "Transfer solo-brand rows from one org to another",
   description:
-    "Finds all rows where org_id = sourceOrgId and brand_ids contains exactly one element equal to brandId, " +
-    "then updates org_id to targetOrgId. Skips co-branding rows (multiple brand IDs). Idempotent.",
+    "Finds all rows where org_id = sourceOrgId and brand_ids contains exactly one element equal to sourceBrandId, " +
+    "then updates org_id to targetOrgId. When targetBrandId is provided, also rewrites brand_ids to the target brand. " +
+    "Skips co-branding rows (multiple brand IDs). Idempotent.",
   request: {
     body: {
       required: true,

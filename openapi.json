@@ -801,10 +801,10 @@
       "TransferBrandRequest": {
         "type": "object",
         "properties": {
-          "brandId": {
+          "sourceBrandId": {
             "type": "string",
             "format": "uuid",
-            "description": "The brand UUID to transfer"
+            "description": "The brand UUID to transfer from the source org"
           },
           "sourceOrgId": {
             "type": "string",
@@ -815,10 +815,15 @@
             "type": "string",
             "format": "uuid",
             "description": "Destination org UUID"
+          },
+          "targetBrandId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Brand UUID in the target org to rewrite to (when target org already has this brand)"
           }
         },
         "required": [
-          "brandId",
+          "sourceBrandId",
           "sourceOrgId",
           "targetOrgId"
         ]
@@ -2188,7 +2193,7 @@
           "Internal"
         ],
         "summary": "Transfer solo-brand rows from one org to another",
-        "description": "Finds all rows where org_id = sourceOrgId and brand_ids contains exactly one element equal to brandId, then updates org_id to targetOrgId. Skips co-branding rows (multiple brand IDs). Idempotent.",
+        "description": "Finds all rows where org_id = sourceOrgId and brand_ids contains exactly one element equal to sourceBrandId, then updates org_id to targetOrgId. When targetBrandId is provided, also rewrites brand_ids to the target brand. Skips co-branding rows (multiple brand IDs). Idempotent.",
         "requestBody": {
           "required": true,
           "content": {
