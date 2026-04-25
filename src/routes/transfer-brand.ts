@@ -22,31 +22,29 @@ router.post("/internal/transfer-brand", async (req: Request, res: Response) => {
 
   const { sourceBrandId, sourceOrgId, targetOrgId, targetBrandId } = parsed.data;
 
-  // Update email_generations where:
-  //   org_id = sourceOrgId
-  //   brand_ids has exactly 1 element
-  //   that element is sourceBrandId
-  // When targetBrandId is present, also rewrite brand_ids to the target brand.
-  const result = targetBrandId
-    ? await db.execute<{ count: string }>(sql`
-        UPDATE email_generations
-        SET org_id = ${targetOrgId},
-            brand_ids = ARRAY[${targetBrandId}]
-        WHERE org_id = ${sourceOrgId}
-          AND array_length(brand_ids, 1) = 1
-          AND brand_ids[1] = ${sourceBrandId}
-        RETURNING 1
-      `)
-    : await db.execute<{ count: string }>(sql`
-        UPDATE email_generations
-        SET org_id = ${targetOrgId}
-        WHERE org_id = ${sourceOrgId}
-          AND array_length(brand_ids, 1) = 1
-          AND brand_ids[1] = ${sourceBrandId}
-        RETURNING 1
-      `);
+  // Step 1: Re-assign org_id on solo-brand rows matching sourceBrandId + sourceOrgId
+  const step1 = await db.execute<{ count: string }>(sql`
+    UPDATE email_generations
+    SET org_id = ${targetOrgId}
+    WHERE org_id = ${sourceOrgId}
+      AND array_length(brand_ids, 1) = 1
+      AND brand_ids[1] = ${sourceBrandId}
+    RETURNING 1
+  `);
 
-  const count = result.length;
+  let count = step1.length;
+
+  // Step 2: If targetBrandId provided, rewrite brand_ids on ALL rows still referencing sourceBrandId (no org filter)
+  if (targetBrandId) {
+    const step2 = await db.execute<{ count: string }>(sql`
+      UPDATE email_generations
+      SET brand_ids = ARRAY[${targetBrandId}]
+      WHERE array_length(brand_ids, 1) = 1
+        AND brand_ids[1] = ${sourceBrandId}
+      RETURNING 1
+    `);
+    count += step2.length;
+  }
 
   console.log(
     `[content-generation-service] transfer-brand: updated ${count} email_generations rows ` +

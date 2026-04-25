@@ -86,7 +86,10 @@ describe("POST /internal/transfer-brand", () => {
     expect(mockExecute).toHaveBeenCalledOnce();
   });
 
-  it("returns updated count when rows are transferred with targetBrandId (conflict rewrite)", async () => {
+  it("returns combined count when rows are transferred with targetBrandId (conflict rewrite)", async () => {
+    // Step 1: org reassignment returns 3 rows
+    mockExecute.mockResolvedValueOnce([{ "1": 1 }, { "1": 1 }, { "1": 1 }]);
+    // Step 2: brand rewrite returns 3 rows
     mockExecute.mockResolvedValueOnce([{ "1": 1 }, { "1": 1 }, { "1": 1 }]);
     const app = buildApp();
     const res = await request(app)
@@ -95,9 +98,9 @@ describe("POST /internal/transfer-brand", () => {
       .expect(200);
 
     expect(res.body).toEqual({
-      updatedTables: [{ tableName: "email_generations", count: 3 }],
+      updatedTables: [{ tableName: "email_generations", count: 6 }],
     });
-    expect(mockExecute).toHaveBeenCalledOnce();
+    expect(mockExecute).toHaveBeenCalledTimes(2);
   });
 
   it("returns count 0 when no rows match (idempotent re-run)", async () => {
