@@ -9,7 +9,8 @@ const router = Router();
  * POST /internal/transfer-brand
  *
  * Re-assigns solo-brand email_generations rows from sourceOrgId to targetOrgId.
- * Solo-brand = brand_ids array has exactly one element equal to brandId.
+ * Solo-brand = brand_ids array has exactly one element equal to sourceBrandId.
+ * When targetBrandId is provided, also rewrites brand_ids to the target brand.
  * Co-branding rows (multiple brand IDs) are skipped.
  * Idempotent: running twice is a no-op (rows already have targetOrgId).
  */
@@ -19,26 +20,35 @@ router.post("/internal/transfer-brand", async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.message });
   }
 
-  const { brandId, sourceOrgId, targetOrgId } = parsed.data;
+  const { sourceBrandId, sourceOrgId, targetOrgId, targetBrandId } = parsed.data;
 
-  // Update email_generations where:
-  //   org_id = sourceOrgId
-  //   brand_ids has exactly 1 element
-  //   that element is brandId
-  const result = await db.execute<{ count: string }>(sql`
+  // Step 1: Re-assign org_id on solo-brand rows matching sourceBrandId + sourceOrgId
+  const step1 = await db.execute<{ count: string }>(sql`
     UPDATE email_generations
     SET org_id = ${targetOrgId}
     WHERE org_id = ${sourceOrgId}
       AND array_length(brand_ids, 1) = 1
-      AND brand_ids[1] = ${brandId}
+      AND brand_ids[1] = ${sourceBrandId}
     RETURNING 1
   `);
 
-  const count = result.length;
+  let count = step1.length;
+
+  // Step 2: If targetBrandId provided, rewrite brand_ids on ALL rows still referencing sourceBrandId (no org filter)
+  if (targetBrandId) {
+    const step2 = await db.execute<{ count: string }>(sql`
+      UPDATE email_generations
+      SET brand_ids = ARRAY[${targetBrandId}]
+      WHERE array_length(brand_ids, 1) = 1
+        AND brand_ids[1] = ${sourceBrandId}
+      RETURNING 1
+    `);
+    count += step2.length;
+  }
 
   console.log(
     `[content-generation-service] transfer-brand: updated ${count} email_generations rows ` +
-    `(brandId=${brandId}, ${sourceOrgId} → ${targetOrgId})`
+    `(sourceBrandId=${sourceBrandId}${targetBrandId ? `, targetBrandId=${targetBrandId}` : ""}, ${sourceOrgId} → ${targetOrgId})`
   );
 
   res.json({
