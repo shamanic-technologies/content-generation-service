@@ -14,6 +14,7 @@ import {
   getWorkflowDynastyMap,
   getFeatureDynastyMap,
 } from "../lib/dynasty-client.js";
+import { traceEvent } from "../lib/trace-event.js";
 
 const router = Router();
 
@@ -48,6 +49,8 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     const workflowSlug = bodyWorkflowName || req.workflowSlug;
     const featureSlug = bodyFeatureSlug || req.featureSlug;
 
+    traceEvent(req.runId!, { service: "content-generation-service", event: "generate-start", detail: `type=${type}, brandIds=${brandIds.join(",")}, campaignId=${campaignId ?? "none"}, idempotencyKey=${idempotencyKey ?? "none"}` }, req.headers).catch(() => {});
+
     // Idempotency: return existing generation if key matches
     if (idempotencyKey) {
       const existing = await db.query.emailGenerations.findFirst({
@@ -58,6 +61,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       });
 
       if (existing) {
+        traceEvent(req.runId!, { service: "content-generation-service", event: "idempotency-hit", detail: `Returning cached generation id=${existing.id} for key=${idempotencyKey}` }, req.headers).catch(() => {});
         return res.json({
           id: existing.id,
           subject: existing.subject ?? "",
@@ -79,6 +83,8 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       });
     }
 
+    traceEvent(req.runId!, { service: "content-generation-service", event: "prompt-resolved", detail: `Loaded stored prompt type=${type}, promptId=${storedPrompt.id ?? "unknown"}` }, req.headers).catch(() => {});
+
     // Convention 2: fetch campaign featureInputs for LLM context enrichment
     const serviceIdentity = { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug };
     let campaignContext: Record<string, unknown> | null = null;
@@ -92,6 +98,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         const afterSubstitution = substituteVariables(storedPrompt.prompt, variables);
         const unfilled = findUnfilledPlaceholders(afterSubstitution);
         if (unfilled.length > 0) {
+          traceEvent(req.runId!, { service: "content-generation-service", event: "brand-extract", detail: `Extracting ${unfilled.length} unfilled fields from brand-service: ${unfilled.join(", ")}`, data: { brandIds, fields: unfilled } }, req.headers).catch(() => {});
           const fields = unfilled.map((key) => ({
             key,
             description: `Value for the "${key}" field needed in content generation`,
@@ -108,6 +115,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
 
     // Generate using the stored prompt + variable substitution + campaign context
     // Chat-service handles key resolution, billing, and cost tracking internally
+    traceEvent(req.runId!, { service: "content-generation-service", event: "llm-call-start", detail: `Calling chat-service with prompt type=${type}, variableCount=${Object.keys(variables).length}, hasCampaignContext=${!!campaignContext}` }, req.headers).catch(() => {});
     const result = await generateFromTemplate(
       {
         promptTemplate: storedPrompt.prompt,
@@ -117,6 +125,8 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       },
       { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug }
     );
+
+    traceEvent(req.runId!, { service: "content-generation-service", event: "llm-call-done", detail: `model=${result.model}, tokensIn=${result.tokensInput}, tokensOut=${result.tokensOutput}, sequenceLen=${result.sequence?.length ?? 0}`, data: { model: result.model, tokensInput: result.tokensInput, tokensOutput: result.tokensOutput } }, req.headers).catch(() => {});
 
     // Extract lead/client fields from variables for dedicated columns
     const str = (v: unknown): string | null =>
@@ -180,6 +190,8 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       });
     }
 
+    traceEvent(req.runId!, { service: "content-generation-service", event: "generate-done", detail: `generationId=${generation.id}, subject="${result.subject?.slice(0, 60) ?? ""}"` }, req.headers).catch(() => {});
+
     res.json({
       id: generation.id,
       subject: result.subject,
@@ -196,6 +208,9 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       });
     }
     console.error("Generate error:", error);
+    if (req.runId) {
+      traceEvent(req.runId, { service: "content-generation-service", event: "generate-error", detail: error instanceof Error ? error.message : "Unknown error", level: "error" }, req.headers).catch(() => {});
+    }
     res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
   }
 });
