@@ -9,6 +9,7 @@ import {
   pollExportUrl,
 } from "../lib/submagic-client.js";
 import { uploadToStorage } from "../lib/storage-client.js";
+import { traceEvent } from "../lib/trace-event.js";
 
 const router = Router();
 
@@ -53,6 +54,8 @@ router.post("/submagic/process", serviceAuth, async (req: AuthenticatedRequest, 
   } = parsed.data;
 
   try {
+    traceEvent(req.runId!, { service: "content-generation-service", event: "submagic-start", detail: `title=${title}, template=${templateName}, language=${language}` }, req.headers).catch(() => {});
+
     // Resolve Submagic API key via key-service
     const { key: submagicApiKey } = await decryptKey(
       "submagic",
@@ -67,6 +70,8 @@ router.post("/submagic/process", serviceAuth, async (req: AuthenticatedRequest, 
         featureSlug: req.featureSlug,
       },
     );
+
+    traceEvent(req.runId!, { service: "content-generation-service", event: "submagic-key-resolved", detail: "Decrypted submagic API key via key-service" }, req.headers).catch(() => {});
 
     // 1. Create Submagic project
     console.log("[submagic] Creating project:", title);
@@ -83,6 +88,7 @@ router.post("/submagic/process", serviceAuth, async (req: AuthenticatedRequest, 
       cleanAudio,
     });
     console.log("[submagic] Project created:", projectId);
+    traceEvent(req.runId!, { service: "content-generation-service", event: "submagic-project-created", detail: `projectId=${projectId}` }, req.headers).catch(() => {});
 
     // 2. Poll until project is completed
     console.log("[submagic] Polling for completion...");
@@ -102,6 +108,7 @@ router.post("/submagic/process", serviceAuth, async (req: AuthenticatedRequest, 
     console.log("[submagic] Polling for export URL...");
     const { videoUrl: submagicVideoUrl } = await pollExportUrl(submagicApiKey, projectId);
     console.log("[submagic] Export ready:", submagicVideoUrl);
+    traceEvent(req.runId!, { service: "content-generation-service", event: "submagic-export-ready", detail: `projectId=${projectId}, exportUrl=${submagicVideoUrl}` }, req.headers).catch(() => {});
 
     // 5. Re-upload to persistent R2 storage via cloudflare-storage-service
     console.log("[submagic] Uploading to persistent storage...");
@@ -124,6 +131,8 @@ router.post("/submagic/process", serviceAuth, async (req: AuthenticatedRequest, 
     );
     console.log("[submagic] Stored permanently:", permanentVideoUrl);
 
+    traceEvent(req.runId!, { service: "content-generation-service", event: "submagic-done", detail: `projectId=${projectId}, permanentUrl=${permanentVideoUrl}` }, req.headers).catch(() => {});
+
     return res.status(200).json({
       projectId,
       videoUrl: permanentVideoUrl,
@@ -132,6 +141,9 @@ router.post("/submagic/process", serviceAuth, async (req: AuthenticatedRequest, 
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     console.error("[submagic] Processing failed:", message);
+    if (req.runId) {
+      traceEvent(req.runId, { service: "content-generation-service", event: "submagic-error", detail: message, level: "error" }, req.headers).catch(() => {});
+    }
     return res.status(502).json({
       error: "Submagic processing failed",
       reason: message,
