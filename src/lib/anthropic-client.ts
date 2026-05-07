@@ -1,21 +1,6 @@
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
 const CHAT_SERVICE_API_KEY = process.env.CHAT_SERVICE_API_KEY || "";
 
-// ─── AI disclaimer ──────────────────────────────────────────────────────────
-
-export const AI_DISCLAIMER_TEXT =
-  "This message was drafted with AI assistance on behalf of our client. While we strive for accuracy, all claims should be verified directly. For any questions or clarifications, reply to this email and we'll connect you with the appropriate contact.";
-
-export const AI_DISCLAIMER_HTML =
-  `<p style="font-size:11px;color:#999;font-style:italic;margin-top:24px;">${AI_DISCLAIMER_TEXT}</p>`;
-
-export function appendAiDisclaimer(bodyHtml: string, bodyText: string): { bodyHtml: string; bodyText: string } {
-  return {
-    bodyHtml: bodyHtml + AI_DISCLAIMER_HTML,
-    bodyText: bodyText + "\n\n" + AI_DISCLAIMER_TEXT,
-  };
-}
-
 // ─── Template generation ────────────────────────────────────────────────────
 
 export interface ChatServiceIdentity {
@@ -31,7 +16,6 @@ export interface ChatServiceIdentity {
 export interface GenerateFromTemplateParams {
   promptTemplate: string;
   variables: Record<string, unknown>;
-  includeAiDisclaimer?: boolean;
   campaignContext?: Record<string, unknown> | null;
 }
 
@@ -202,17 +186,7 @@ export async function generateFromTemplate(
 
   const data = await response.json() as ChatCompleteResponse;
 
-  let parsed = parseSequenceFromJson(data.json);
-
-  if (params.includeAiDisclaimer) {
-    parsed = {
-      subject: parsed.subject,
-      sequence: parsed.sequence.map((step) => {
-        const patched = appendAiDisclaimer(step.bodyHtml, step.bodyText);
-        return { ...step, ...patched };
-      }),
-    };
-  }
+  const parsed = parseSequenceFromJson(data.json);
 
   return {
     ...parsed,
