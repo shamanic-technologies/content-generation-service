@@ -140,7 +140,6 @@ describe("POST /generate (template-based)", () => {
           recipientInfo: "Name: John Doe\nCompany: Acme Corp",
           senderInfo: "Name: MyBrand\nURL: https://mybrand.com",
         },
-        includeAiDisclaimer: false,
         campaignContext: null,
       },
       expect.objectContaining({
