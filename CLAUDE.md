@@ -22,7 +22,7 @@ Microservice that generates personalized content (emails, calendar events, etc.)
 - `src/routes/stats.ts` — POST /stats and POST /stats/by-model endpoints
 - `src/routes/health.ts` — GET /health endpoint
 - `src/middleware/auth.ts` — Authentication middleware (X-Clerk-Org-Id header)
-- `src/lib/anthropic-client.ts` — Chat-service client + email template utilities (prompt substitution, AI disclaimer, JSON parsing)
+- `src/lib/anthropic-client.ts` — Chat-service client + email template utilities (prompt substitution, JSON parsing)
 - `src/lib/runs-client.ts` — Client for runs-service (run tracking)
 - `src/lib/key-client.ts` — Client for key-service (used by submagic route)
 - `src/db/schema.ts` — Drizzle ORM database schema
