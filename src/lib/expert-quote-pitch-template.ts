@@ -1,5 +1,5 @@
 // Stored prompt template for journalist-quote pitch generation (Featured.com).
-// Registered at boot; consumed by POST /generate-pitch.
+// Registered at boot; consumed by POST /generate-expert-quote-pitch.
 //
 // Char range 100-2500 is enforced server-side after generation; we still ask the
 // model to land inside that window to minimise retries.

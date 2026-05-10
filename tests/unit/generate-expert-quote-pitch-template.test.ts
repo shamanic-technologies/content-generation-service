@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { generatePitchFromTemplate, PitchLengthError, InsufficientCreditsError } from "../../src/lib/anthropic-client";
+import { generateExpertQuotePitchFromTemplate, ExpertQuotePitchLengthError, InsufficientCreditsError } from "../../src/lib/anthropic-client";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -28,7 +28,7 @@ function pitchOf(len: number, prefix = "x"): string {
   return prefix + "y".repeat(Math.max(0, len - prefix.length));
 }
 
-describe("generatePitchFromTemplate", () => {
+describe("generateExpertQuotePitchFromTemplate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -36,7 +36,7 @@ describe("generatePitchFromTemplate", () => {
   it("calls chat-service with responseFormat 'text' and substituted prompt", async () => {
     mockFetch.mockResolvedValueOnce(textResponse(pitchOf(500)));
 
-    const result = await generatePitchFromTemplate(
+    const result = await generateExpertQuotePitchFromTemplate(
       { promptTemplate: TEMPLATE, variables: VARIABLES, minChars: MIN, maxChars: MAX },
       IDENTITY
     );
@@ -57,7 +57,7 @@ describe("generatePitchFromTemplate", () => {
     const pitch = pitchOf(800, "Hello, ");
     mockFetch.mockResolvedValueOnce(textResponse(pitch));
 
-    const result = await generatePitchFromTemplate(
+    const result = await generateExpertQuotePitchFromTemplate(
       { promptTemplate: TEMPLATE, variables: VARIABLES, minChars: MIN, maxChars: MAX },
       IDENTITY
     );
@@ -74,7 +74,7 @@ describe("generatePitchFromTemplate", () => {
       .mockResolvedValueOnce(textResponse(pitchOf(50))) // too short
       .mockResolvedValueOnce(textResponse(pitchOf(500))); // valid
 
-    const result = await generatePitchFromTemplate(
+    const result = await generateExpertQuotePitchFromTemplate(
       { promptTemplate: TEMPLATE, variables: VARIABLES, minChars: MIN, maxChars: MAX },
       IDENTITY
     );
@@ -93,7 +93,7 @@ describe("generatePitchFromTemplate", () => {
       .mockResolvedValueOnce(textResponse(pitchOf(MAX + 200))) // too long
       .mockResolvedValueOnce(textResponse(pitchOf(800))); // valid
 
-    const result = await generatePitchFromTemplate(
+    const result = await generateExpertQuotePitchFromTemplate(
       { promptTemplate: TEMPLATE, variables: VARIABLES, minChars: MIN, maxChars: MAX },
       IDENTITY
     );
@@ -106,35 +106,35 @@ describe("generatePitchFromTemplate", () => {
     expect(retryBody.systemPrompt).toContain("TOO LONG");
   });
 
-  it("throws PitchLengthError when both attempts are too short", async () => {
+  it("throws ExpertQuotePitchLengthError when both attempts are too short", async () => {
     mockFetch
       .mockResolvedValueOnce(textResponse(pitchOf(40)))
       .mockResolvedValueOnce(textResponse(pitchOf(60)));
 
     await expect(
-      generatePitchFromTemplate(
+      generateExpertQuotePitchFromTemplate(
         { promptTemplate: TEMPLATE, variables: VARIABLES, minChars: MIN, maxChars: MAX },
         IDENTITY
       )
-    ).rejects.toBeInstanceOf(PitchLengthError);
+    ).rejects.toBeInstanceOf(ExpertQuotePitchLengthError);
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
-  it("throws PitchLengthError when both attempts are too long", async () => {
+  it("throws ExpertQuotePitchLengthError when both attempts are too long", async () => {
     mockFetch
       .mockResolvedValueOnce(textResponse(pitchOf(MAX + 100)))
       .mockResolvedValueOnce(textResponse(pitchOf(MAX + 50)));
 
     try {
-      await generatePitchFromTemplate(
+      await generateExpertQuotePitchFromTemplate(
         { promptTemplate: TEMPLATE, variables: VARIABLES, minChars: MIN, maxChars: MAX },
         IDENTITY
       );
-      expect.fail("expected PitchLengthError");
+      expect.fail("expected ExpertQuotePitchLengthError");
     } catch (err) {
-      expect(err).toBeInstanceOf(PitchLengthError);
-      const e = err as PitchLengthError;
+      expect(err).toBeInstanceOf(ExpertQuotePitchLengthError);
+      const e = err as ExpertQuotePitchLengthError;
       expect(e.charCount).toBe(MAX + 50);
       expect(e.minChars).toBe(MIN);
       expect(e.maxChars).toBe(MAX);
@@ -147,7 +147,7 @@ describe("generatePitchFromTemplate", () => {
     const innerPitch = pitchOf(500, "Real pitch starts here");
     mockFetch.mockResolvedValueOnce(textResponse('```text\n"' + innerPitch + '"\n```'));
 
-    const result = await generatePitchFromTemplate(
+    const result = await generateExpertQuotePitchFromTemplate(
       { promptTemplate: TEMPLATE, variables: VARIABLES, minChars: MIN, maxChars: MAX },
       IDENTITY
     );
@@ -165,7 +165,7 @@ describe("generatePitchFromTemplate", () => {
     });
 
     await expect(
-      generatePitchFromTemplate(
+      generateExpertQuotePitchFromTemplate(
         { promptTemplate: TEMPLATE, variables: VARIABLES, minChars: MIN, maxChars: MAX },
         IDENTITY
       )
@@ -175,7 +175,7 @@ describe("generatePitchFromTemplate", () => {
   it("forwards identity headers to chat-service", async () => {
     mockFetch.mockResolvedValueOnce(textResponse(pitchOf(500)));
 
-    await generatePitchFromTemplate(
+    await generateExpertQuotePitchFromTemplate(
       { promptTemplate: TEMPLATE, variables: VARIABLES, minChars: MIN, maxChars: MAX },
       { orgId: "org-1", userId: "user-1", runId: "run-1", campaignId: "camp-9", brandId: "brand-9", workflowSlug: "wf", featureSlug: "feat" }
     );

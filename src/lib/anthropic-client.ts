@@ -200,19 +200,19 @@ export async function generateFromTemplate(
 
 // ─── Pitch generation (free-text, char-range enforced) ─────────────────────
 //
-// Used by POST /generate-pitch for journalist-quote responses (Featured.com).
+// Used by POST /generate-expert-quote-pitch for journalist-quote responses (Featured.com).
 // Output is plain text constrained to [minChars, maxChars]. If the first
 // attempt is out of range, we retry once with a corrective nudge in the
-// system prompt before giving up with PitchLengthError.
+// system prompt before giving up with ExpertQuotePitchLengthError.
 
-export interface GeneratePitchParams {
+export interface GenerateExpertQuotePitchParams {
   promptTemplate: string;
   variables: Record<string, unknown>;
   minChars: number;
   maxChars: number;
 }
 
-export interface PitchResult {
+export interface ExpertQuotePitchResult {
   pitch: string;
   charCount: number;
   attempts: number;
@@ -223,7 +223,7 @@ export interface PitchResult {
   responseRaw: object;
 }
 
-export class PitchLengthError extends Error {
+export class ExpertQuotePitchLengthError extends Error {
   status = 400;
   charCount: number;
   minChars: number;
@@ -332,12 +332,12 @@ function cleanPitchText(raw: string): string {
 /**
  * Generate a free-text pitch with strict char-range enforcement.
  * Retries once with a corrective nudge if the first attempt is out of range.
- * Throws PitchLengthError if both attempts fail; InsufficientCreditsError on 402.
+ * Throws ExpertQuotePitchLengthError if both attempts fail; InsufficientCreditsError on 402.
  */
-export async function generatePitchFromTemplate(
-  params: GeneratePitchParams,
+export async function generateExpertQuotePitchFromTemplate(
+  params: GenerateExpertQuotePitchParams,
   identity: ChatServiceIdentity
-): Promise<PitchResult> {
+): Promise<ExpertQuotePitchResult> {
   const { promptTemplate, variables, minChars, maxChars } = params;
   const prompt = substituteVariables(promptTemplate, variables);
 
@@ -374,7 +374,7 @@ export async function generatePitchFromTemplate(
     }
   }
 
-  throw new PitchLengthError(lastCharCount ?? 0, minChars, maxChars, 2, lastPitch);
+  throw new ExpertQuotePitchLengthError(lastCharCount ?? 0, minChars, maxChars, 2, lastPitch);
 }
 
 function textToHtml(text: string): string {

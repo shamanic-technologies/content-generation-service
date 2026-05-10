@@ -3,12 +3,12 @@ import { eq, and, inArray, arrayContains, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
-import { generateFromTemplate, generatePitchFromTemplate, substituteVariables, findUnfilledPlaceholders, InsufficientCreditsError, PitchLengthError } from "../lib/anthropic-client.js";
+import { generateFromTemplate, generateExpertQuotePitchFromTemplate, substituteVariables, findUnfilledPlaceholders, InsufficientCreditsError, ExpertQuotePitchLengthError } from "../lib/anthropic-client.js";
 import { EXPERT_QUOTE_PITCH_TYPE } from "../lib/expert-quote-pitch-template.js";
 import { createRun, updateRun } from "../lib/runs-client.js";
 import { getCampaignFeatureInputs } from "../lib/campaign-client.js";
 import { extractBrandFields } from "../lib/brand-client.js";
-import { GenerateRequestSchema, GeneratePitchRequestSchema, StatsRequestSchema, StatsQuerySchema } from "../schemas.js";
+import { GenerateRequestSchema, GenerateExpertQuotePitchRequestSchema, StatsRequestSchema, StatsQuerySchema } from "../schemas.js";
 import {
   resolveWorkflowDynastySlugs,
   resolveFeatureDynastySlugs,
@@ -218,13 +218,13 @@ const PITCH_MIN_CHARS = 100;
 const PITCH_MAX_CHARS = 2500;
 
 /**
- * POST /generate-pitch — Generate a journalist-quote pitch (Featured.com).
+ * POST /generate-expert-quote-pitch — Generate a journalist-quote pitch (Featured.com).
  * Loads the stored `expert-quote-pitch` template, substitutes brand + request
  * inputs, and enforces a 100-2500 char output range with one retry on miss.
  */
-router.post("/generate-pitch", serviceAuth, async (req: AuthenticatedRequest, res) => {
+router.post("/generate-expert-quote-pitch", serviceAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const parsed = GeneratePitchRequestSchema.safeParse(req.body);
+    const parsed = GenerateExpertQuotePitchRequestSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
@@ -237,7 +237,7 @@ router.post("/generate-pitch", serviceAuth, async (req: AuthenticatedRequest, re
     const workflowSlug = bodyWorkflowSlug || req.workflowSlug;
     const featureSlug = bodyFeatureSlug || req.featureSlug;
 
-    traceEvent(req.runId!, { service: "content-generation-service", event: "generate-pitch-start", detail: `outlet=${request.mediaOutlet}, brandIds=${brandIds.join(",")}` }, req.headers).catch(() => {});
+    traceEvent(req.runId!, { service: "content-generation-service", event: "generate-expert-quote-pitch-start", detail: `outlet=${request.mediaOutlet}, brandIds=${brandIds.join(",")}` }, req.headers).catch(() => {});
 
     const storedPrompt = await db.query.prompts.findFirst({
       where: eq(prompts.type, EXPERT_QUOTE_PITCH_TYPE),
@@ -264,7 +264,7 @@ router.post("/generate-pitch", serviceAuth, async (req: AuthenticatedRequest, re
 
     const identity = { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug };
 
-    const result = await generatePitchFromTemplate(
+    const result = await generateExpertQuotePitchFromTemplate(
       {
         promptTemplate: storedPrompt.prompt,
         variables,
@@ -274,7 +274,7 @@ router.post("/generate-pitch", serviceAuth, async (req: AuthenticatedRequest, re
       identity
     );
 
-    traceEvent(req.runId!, { service: "content-generation-service", event: "generate-pitch-done", detail: `chars=${result.charCount}, attempts=${result.attempts}, model=${result.model}` }, req.headers).catch(() => {});
+    traceEvent(req.runId!, { service: "content-generation-service", event: "generate-expert-quote-pitch-done", detail: `chars=${result.charCount}, attempts=${result.attempts}, model=${result.model}` }, req.headers).catch(() => {});
 
     res.json({
       pitch: result.pitch,
@@ -284,8 +284,8 @@ router.post("/generate-pitch", serviceAuth, async (req: AuthenticatedRequest, re
       tokensOutput: result.tokensOutput,
     });
   } catch (error) {
-    if (error instanceof PitchLengthError) {
-      traceEvent(req.runId!, { service: "content-generation-service", event: "generate-pitch-length-violation", detail: `chars=${error.charCount}, range=[${error.minChars},${error.maxChars}], attempts=${error.attempts}`, level: "warn" }, req.headers).catch(() => {});
+    if (error instanceof ExpertQuotePitchLengthError) {
+      traceEvent(req.runId!, { service: "content-generation-service", event: "generate-expert-quote-pitch-length-violation", detail: `chars=${error.charCount}, range=[${error.minChars},${error.maxChars}], attempts=${error.attempts}`, level: "warn" }, req.headers).catch(() => {});
       return res.status(400).json({
         error: `Generated pitch length ${error.charCount} chars is outside the required range [${error.minChars}, ${error.maxChars}] after ${error.attempts} attempts.`,
         charCount: error.charCount,
@@ -301,9 +301,9 @@ router.post("/generate-pitch", serviceAuth, async (req: AuthenticatedRequest, re
         required_cents: error.required_cents,
       });
     }
-    console.error("[content-generation-service] /generate-pitch error:", error);
+    console.error("[content-generation-service] /generate-expert-quote-pitch error:", error);
     if (req.runId) {
-      traceEvent(req.runId, { service: "content-generation-service", event: "generate-pitch-error", detail: error instanceof Error ? error.message : "Unknown error", level: "error" }, req.headers).catch(() => {});
+      traceEvent(req.runId, { service: "content-generation-service", event: "generate-expert-quote-pitch-error", detail: error instanceof Error ? error.message : "Unknown error", level: "error" }, req.headers).catch(() => {});
     }
     res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
   }

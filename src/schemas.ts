@@ -372,9 +372,9 @@ registry.registerPath({
 });
 
 // ---------------------------------------------------------------------------
-// POST /generate-pitch — Free-text pitch for journalist quote requests
+// POST /generate-expert-quote-pitch — Free-text pitch for journalist quote requests
 // ---------------------------------------------------------------------------
-const PitchBrandInputSchema = z
+const ExpertQuotePitchBrandInputSchema = z
   .object({
     name: z.string().describe("Brand or expert name"),
     industry: z.string().describe("Industry or sector"),
@@ -384,30 +384,30 @@ const PitchBrandInputSchema = z
   })
   .passthrough();
 
-const PitchRequestInputSchema = z.object({
+const ExpertQuotePitchRequestInputSchema = z.object({
   question: z.string().describe("The journalist's question / request body"),
   mediaOutlet: z.string().describe("Name of the publication"),
   source: z.string().describe("Reporter / journalist name"),
   deadline: z.string().optional().describe("Submission deadline as a free-form string (e.g. 'Friday at 5pm ET')"),
 });
 
-export const GeneratePitchRequestSchema = registry.register(
-  "GeneratePitchRequest",
+export const GenerateExpertQuotePitchRequestSchema = registry.register(
+  "GenerateExpertQuotePitchRequest",
   z
     .object({
-      brand: PitchBrandInputSchema,
-      request: PitchRequestInputSchema,
+      brand: ExpertQuotePitchBrandInputSchema,
+      request: ExpertQuotePitchRequestInputSchema,
       additionalContext: z.string().optional().describe("Any extra context the caller wants the model to consider"),
       brandIds: z.array(z.string()).optional().describe("Brand UUIDs for tracking. Falls back to x-brand-id header."),
       campaignId: z.string().optional(),
       workflowSlug: z.string().optional(),
       featureSlug: z.string().optional(),
     })
-    .openapi("GeneratePitchRequest")
+    .openapi("GenerateExpertQuotePitchRequest")
 );
 
-const GeneratePitchResponseSchema = registry.register(
-  "GeneratePitchResponse",
+const GenerateExpertQuotePitchResponseSchema = registry.register(
+  "GenerateExpertQuotePitchResponse",
   z
     .object({
       pitch: z.string().describe("Pitch text, 100-2500 chars"),
@@ -416,11 +416,11 @@ const GeneratePitchResponseSchema = registry.register(
       tokensInput: z.number(),
       tokensOutput: z.number(),
     })
-    .openapi("GeneratePitchResponse")
+    .openapi("GenerateExpertQuotePitchResponse")
 );
 
-const PitchLengthErrorResponseSchema = registry.register(
-  "PitchLengthErrorResponse",
+const ExpertQuotePitchLengthErrorResponseSchema = registry.register(
+  "ExpertQuotePitchLengthErrorResponse",
   z
     .object({
       error: z.string(),
@@ -429,33 +429,33 @@ const PitchLengthErrorResponseSchema = registry.register(
       maxChars: z.number().int(),
       attempts: z.number().int(),
     })
-    .openapi("PitchLengthErrorResponse")
+    .openapi("ExpertQuotePitchLengthErrorResponse")
 );
 
 registry.registerPath({
   method: "post",
-  path: "/generate-pitch",
+  path: "/generate-expert-quote-pitch",
   tags: ["Content Generation"],
   summary: "Generate a journalist-quote pitch (Featured.com 100-2500 char constraint)",
   description:
     "Renders the stored 'expert-quote-pitch' prompt with brand + request inputs, sends to chat-service for free-text generation, " +
     "and enforces a 100-2500 character output range. If the first attempt is out of range, retries once with a corrective nudge. " +
-    "Returns 400 PitchLengthErrorResponse if both attempts are out of range — no truncation that breaks meaning.",
+    "Returns 400 ExpertQuotePitchLengthErrorResponse if both attempts are out of range — no truncation that breaks meaning.",
   request: {
     headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
     body: {
       required: true,
-      content: { "application/json": { schema: GeneratePitchRequestSchema } },
+      content: { "application/json": { schema: GenerateExpertQuotePitchRequestSchema } },
     },
   },
   responses: {
     200: {
       description: "Generated pitch within the configured char range",
-      content: { "application/json": { schema: GeneratePitchResponseSchema } },
+      content: { "application/json": { schema: GenerateExpertQuotePitchResponseSchema } },
     },
     400: {
       description: "Invalid request body or pitch length out of range after retry",
-      content: { "application/json": { schema: PitchLengthErrorResponseSchema } },
+      content: { "application/json": { schema: ExpertQuotePitchLengthErrorResponseSchema } },
     },
     401: {
       description: "Unauthorized",

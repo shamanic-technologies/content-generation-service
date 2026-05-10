@@ -243,7 +243,7 @@
           "tokensOutput"
         ]
       },
-      "GeneratePitchRequest": {
+      "GenerateExpertQuotePitchRequest": {
         "type": "object",
         "properties": {
           "brand": {
@@ -333,7 +333,7 @@
           "request"
         ]
       },
-      "GeneratePitchResponse": {
+      "GenerateExpertQuotePitchResponse": {
         "type": "object",
         "properties": {
           "pitch": {
@@ -363,7 +363,7 @@
           "tokensOutput"
         ]
       },
-      "PitchLengthErrorResponse": {
+      "ExpertQuotePitchLengthErrorResponse": {
         "type": "object",
         "properties": {
           "error": {
@@ -1565,13 +1565,13 @@
         }
       }
     },
-    "/generate-pitch": {
+    "/generate-expert-quote-pitch": {
       "post": {
         "tags": [
           "Content Generation"
         ],
         "summary": "Generate a journalist-quote pitch (Featured.com 100-2500 char constraint)",
-        "description": "Renders the stored 'expert-quote-pitch' prompt with brand + request inputs, sends to chat-service for free-text generation, and enforces a 100-2500 character output range. If the first attempt is out of range, retries once with a corrective nudge. Returns 400 PitchLengthErrorResponse if both attempts are out of range — no truncation that breaks meaning.",
+        "description": "Renders the stored 'expert-quote-pitch' prompt with brand + request inputs, sends to chat-service for free-text generation, and enforces a 100-2500 character output range. If the first attempt is out of range, retries once with a corrective nudge. Returns 400 ExpertQuotePitchLengthErrorResponse if both attempts are out of range — no truncation that breaks meaning.",
         "parameters": [
           {
             "schema": {
@@ -1635,7 +1635,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/GeneratePitchRequest"
+                "$ref": "#/components/schemas/GenerateExpertQuotePitchRequest"
               }
             }
           }
@@ -1646,7 +1646,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GeneratePitchResponse"
+                  "$ref": "#/components/schemas/GenerateExpertQuotePitchResponse"
                 }
               }
             }
@@ -1656,7 +1656,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PitchLengthErrorResponse"
+                  "$ref": "#/components/schemas/ExpertQuotePitchLengthErrorResponse"
                 }
               }
             }

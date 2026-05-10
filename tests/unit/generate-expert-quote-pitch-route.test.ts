@@ -65,7 +65,7 @@ vi.mock("../../src/lib/trace-event.js", () => ({
   traceEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
-const mockGeneratePitch = vi.fn();
+const mockGenerateExpertQuotePitch = vi.fn();
 vi.mock("../../src/lib/anthropic-client.js", async () => {
   const actual = await vi.importActual<typeof import("../../src/lib/anthropic-client.js")>(
     "../../src/lib/anthropic-client.js"
@@ -73,7 +73,7 @@ vi.mock("../../src/lib/anthropic-client.js", async () => {
   return {
     ...actual,
     generateFromTemplate: vi.fn(),
-    generatePitchFromTemplate: (...args: unknown[]) => mockGeneratePitch(...args),
+    generateExpertQuotePitchFromTemplate: (...args: unknown[]) => mockGenerateExpertQuotePitch(...args),
   };
 });
 
@@ -131,7 +131,7 @@ const FIXTURE_C = {
   },
 };
 
-describe("POST /generate-pitch", () => {
+describe("POST /generate-expert-quote-pitch", () => {
   let app: express.Express;
 
   beforeEach(async () => {
@@ -143,7 +143,7 @@ describe("POST /generate-pitch", () => {
       prompt: EXPERT_QUOTE_PITCH_TEMPLATE,
       variables: EXPERT_QUOTE_PITCH_VARIABLES,
     });
-    mockGeneratePitch.mockResolvedValue({
+    mockGenerateExpertQuotePitch.mockResolvedValue({
       pitch: "x".repeat(500),
       charCount: 500,
       attempts: 1,
@@ -160,7 +160,7 @@ describe("POST /generate-pitch", () => {
 
   it("fixture A — SaaS founder — returns pitch in [100,2500]", async () => {
     const res = await request(app)
-      .post("/generate-pitch")
+      .post("/generate-expert-quote-pitch")
       .set("X-Org-Id", "org-1")
       .set("X-User-Id", "user-1")
       .set("X-Run-Id", "run-1")
@@ -176,7 +176,7 @@ describe("POST /generate-pitch", () => {
 
   it("fixture B — agency owner — passes nested brand/request fields to template variables", async () => {
     const res = await request(app)
-      .post("/generate-pitch")
+      .post("/generate-expert-quote-pitch")
       .set("X-Org-Id", "org-1")
       .set("X-User-Id", "user-1")
       .set("X-Run-Id", "run-1")
@@ -185,8 +185,8 @@ describe("POST /generate-pitch", () => {
 
     expect(res.body.pitch).toBeDefined();
 
-    expect(mockGeneratePitch).toHaveBeenCalledTimes(1);
-    const [params] = mockGeneratePitch.mock.calls[0];
+    expect(mockGenerateExpertQuotePitch).toHaveBeenCalledTimes(1);
+    const [params] = mockGenerateExpertQuotePitch.mock.calls[0];
     expect(params.minChars).toBe(100);
     expect(params.maxChars).toBe(2500);
     expect(params.variables).toMatchObject({
@@ -205,24 +205,24 @@ describe("POST /generate-pitch", () => {
 
   it("fixture C — DTC ecommerce — passes deadline through when provided", async () => {
     await request(app)
-      .post("/generate-pitch")
+      .post("/generate-expert-quote-pitch")
       .set("X-Org-Id", "org-1")
       .set("X-User-Id", "user-1")
       .set("X-Run-Id", "run-1")
       .send(FIXTURE_C)
       .expect(200);
 
-    const [params] = mockGeneratePitch.mock.calls[0];
+    const [params] = mockGenerateExpertQuotePitch.mock.calls[0];
     expect(params.variables.requestDeadline).toBe("next Tuesday");
     expect(params.variables.additionalContext).toBe("(none)");
   });
 
-  it("returns 400 with length-violation details when generator throws PitchLengthError", async () => {
-    const { PitchLengthError } = await import("../../src/lib/anthropic-client.js");
-    mockGeneratePitch.mockRejectedValueOnce(new PitchLengthError(40, 100, 2500, 2, "too short pitch"));
+  it("returns 400 with length-violation details when generator throws ExpertQuotePitchLengthError", async () => {
+    const { ExpertQuotePitchLengthError } = await import("../../src/lib/anthropic-client.js");
+    mockGenerateExpertQuotePitch.mockRejectedValueOnce(new ExpertQuotePitchLengthError(40, 100, 2500, 2, "too short pitch"));
 
     const res = await request(app)
-      .post("/generate-pitch")
+      .post("/generate-expert-quote-pitch")
       .set("X-Org-Id", "org-1")
       .set("X-User-Id", "user-1")
       .set("X-Run-Id", "run-1")
@@ -238,7 +238,7 @@ describe("POST /generate-pitch", () => {
 
   it("returns 400 when request body is invalid", async () => {
     const res = await request(app)
-      .post("/generate-pitch")
+      .post("/generate-expert-quote-pitch")
       .set("X-Org-Id", "org-1")
       .set("X-User-Id", "user-1")
       .set("X-Run-Id", "run-1")
@@ -252,7 +252,7 @@ describe("POST /generate-pitch", () => {
     mockPromptFindFirst.mockResolvedValueOnce(null);
 
     const res = await request(app)
-      .post("/generate-pitch")
+      .post("/generate-expert-quote-pitch")
       .set("X-Org-Id", "org-1")
       .set("X-User-Id", "user-1")
       .set("X-Run-Id", "run-1")
