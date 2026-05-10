@@ -198,6 +198,185 @@ export async function generateFromTemplate(
   };
 }
 
+// ─── Pitch generation (free-text, char-range enforced) ─────────────────────
+//
+// Used by POST /generate-pitch for journalist-quote responses (Featured.com).
+// Output is plain text constrained to [minChars, maxChars]. If the first
+// attempt is out of range, we retry once with a corrective nudge in the
+// system prompt before giving up with PitchLengthError.
+
+export interface GeneratePitchParams {
+  promptTemplate: string;
+  variables: Record<string, unknown>;
+  minChars: number;
+  maxChars: number;
+}
+
+export interface PitchResult {
+  pitch: string;
+  charCount: number;
+  attempts: number;
+  tokensInput: number;
+  tokensOutput: number;
+  model: string;
+  promptRaw: string;
+  responseRaw: object;
+}
+
+export class PitchLengthError extends Error {
+  status = 400;
+  charCount: number;
+  minChars: number;
+  maxChars: number;
+  attempts: number;
+  lastPitch: string;
+
+  constructor(charCount: number, minChars: number, maxChars: number, attempts: number, lastPitch: string) {
+    super(`Pitch length ${charCount} chars outside [${minChars}, ${maxChars}] after ${attempts} attempts`);
+    this.charCount = charCount;
+    this.minChars = minChars;
+    this.maxChars = maxChars;
+    this.attempts = attempts;
+    this.lastPitch = lastPitch;
+  }
+}
+
+interface ChatTextResponse {
+  content: string;
+  tokensInput: number;
+  tokensOutput: number;
+  model: string;
+}
+
+function buildPitchSystemPrompt(minChars: number, maxChars: number, retry: boolean, lastCharCount: number | null): string {
+  const lines = [
+    "You are writing a single block of plain text the user will paste into a journalist's quote-request form.",
+    "Universal rules:",
+    `- The output MUST be between ${minChars} and ${maxChars} characters total. Count carefully.`,
+    "- Output the pitch text only — no preamble, no labels, no JSON, no markdown fences, no surrounding quotes.",
+    "- Never use placeholders like [Your name] or [Company]. The pitch must be ready to submit as-is.",
+    "- Never include a sign-off, signature, or 'Best,' line.",
+  ];
+  if (retry && lastCharCount !== null) {
+    if (lastCharCount < minChars) {
+      lines.push(
+        `Previous attempt was ${lastCharCount} chars — TOO SHORT. Add concrete details, examples, or a second supporting point. Stay between ${minChars} and ${maxChars} characters this time.`
+      );
+    } else {
+      lines.push(
+        `Previous attempt was ${lastCharCount} chars — TOO LONG. Trim filler, drop the weakest sentence, keep only the strongest claim. Stay between ${minChars} and ${maxChars} characters this time.`
+      );
+    }
+  }
+  return lines.join("\n");
+}
+
+async function callChatServiceForText(
+  prompt: string,
+  systemPrompt: string,
+  identity: ChatServiceIdentity
+): Promise<ChatTextResponse> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Api-Key": CHAT_SERVICE_API_KEY,
+    "x-org-id": identity.orgId,
+    "x-user-id": identity.userId,
+    "x-run-id": identity.runId,
+  };
+  if (identity.campaignId) headers["x-campaign-id"] = identity.campaignId;
+  if (identity.brandId) headers["x-brand-id"] = identity.brandId;
+  if (identity.workflowSlug) headers["x-workflow-slug"] = identity.workflowSlug;
+  if (identity.featureSlug) headers["x-feature-slug"] = identity.featureSlug;
+
+  const response = await fetch(`${CHAT_SERVICE_URL}/complete`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      message: prompt,
+      systemPrompt,
+      responseFormat: "text",
+      maxTokens: 2048,
+      provider: "google",
+      model: "pro",
+    }),
+  });
+
+  if (response.status === 402) {
+    const error = await response.json() as { balance_cents: number; required_cents: number };
+    throw new InsufficientCreditsError(error.balance_cents, error.required_cents);
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`chat-service /complete failed: ${response.status} - ${errorText}`);
+  }
+
+  return await response.json() as ChatTextResponse;
+}
+
+function cleanPitchText(raw: string): string {
+  let text = raw.trim();
+  // Strip surrounding markdown code fences if present (```...``` or ```text...```).
+  text = text.replace(/^```(?:[a-z]+)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+  // Strip surrounding straight or curly quotes if the entire body is wrapped.
+  if (
+    (text.startsWith('"') && text.endsWith('"')) ||
+    (text.startsWith("“") && text.endsWith("”")) ||
+    (text.startsWith("'") && text.endsWith("'"))
+  ) {
+    text = text.slice(1, -1).trim();
+  }
+  return text;
+}
+
+/**
+ * Generate a free-text pitch with strict char-range enforcement.
+ * Retries once with a corrective nudge if the first attempt is out of range.
+ * Throws PitchLengthError if both attempts fail; InsufficientCreditsError on 402.
+ */
+export async function generatePitchFromTemplate(
+  params: GeneratePitchParams,
+  identity: ChatServiceIdentity
+): Promise<PitchResult> {
+  const { promptTemplate, variables, minChars, maxChars } = params;
+  const prompt = substituteVariables(promptTemplate, variables);
+
+  let lastCharCount: number | null = null;
+  let lastPitch = "";
+  let totalTokensInput = 0;
+  let totalTokensOutput = 0;
+  let lastModel = "";
+  let lastResponse: ChatTextResponse | null = null;
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const systemPrompt = buildPitchSystemPrompt(minChars, maxChars, attempt > 1, lastCharCount);
+    const data = await callChatServiceForText(prompt, systemPrompt, identity);
+    lastResponse = data;
+    totalTokensInput += data.tokensInput;
+    totalTokensOutput += data.tokensOutput;
+    lastModel = data.model;
+
+    const pitch = cleanPitchText(data.content);
+    lastPitch = pitch;
+    lastCharCount = pitch.length;
+
+    if (lastCharCount >= minChars && lastCharCount <= maxChars) {
+      return {
+        pitch,
+        charCount: lastCharCount,
+        attempts: attempt,
+        tokensInput: totalTokensInput,
+        tokensOutput: totalTokensOutput,
+        model: lastModel,
+        promptRaw: prompt,
+        responseRaw: data,
+      };
+    }
+  }
+
+  throw new PitchLengthError(lastCharCount ?? 0, minChars, maxChars, 2, lastPitch);
+}
+
 function textToHtml(text: string): string {
   return text
     .split("\n\n")

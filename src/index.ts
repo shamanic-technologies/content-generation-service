@@ -5,7 +5,14 @@ import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { eq } from "drizzle-orm";
 import { db } from "./db/index.js";
+import { prompts } from "./db/schema.js";
+import {
+  EXPERT_QUOTE_PITCH_TYPE,
+  EXPERT_QUOTE_PITCH_TEMPLATE,
+  EXPERT_QUOTE_PITCH_VARIABLES,
+} from "./lib/expert-quote-pitch-template.js";
 import { apiKeyAuth } from "./middleware/auth.js";
 import healthRoutes from "./routes/health.js";
 import generateRoutes from "./routes/generate.js";
@@ -63,17 +70,52 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
   res.status(500).json({ error: "Internal server error" });
 });
 
+/**
+ * Idempotently register platform-owned prompt templates at boot.
+ * Inserts only if the type does not exist; never overwrites a tuned version.
+ * To roll out a new revision, register it with a versioned type via PUT /prompts.
+ */
+async function registerPlatformTemplates() {
+  const platformTemplates = [
+    {
+      type: EXPERT_QUOTE_PITCH_TYPE,
+      prompt: EXPERT_QUOTE_PITCH_TEMPLATE,
+      variables: EXPERT_QUOTE_PITCH_VARIABLES,
+    },
+  ];
+
+  for (const tpl of platformTemplates) {
+    const existing = await db.query.prompts.findFirst({
+      where: eq(prompts.type, tpl.type),
+    });
+    if (existing) {
+      console.log(`[content-generation-service] Platform template '${tpl.type}' already registered (skip).`);
+      continue;
+    }
+    await db.insert(prompts).values({
+      orgId: null,
+      type: tpl.type,
+      prompt: tpl.prompt,
+      variables: tpl.variables,
+    });
+    console.log(`[content-generation-service] Registered platform template '${tpl.type}'.`);
+  }
+}
+
 // Only start server if not in test environment
 if (process.env.NODE_ENV !== "test") {
   migrate(db, { migrationsFolder: "./drizzle" })
     .then(() => {
       console.log("Migrations complete");
+      return registerPlatformTemplates();
+    })
+    .then(() => {
       app.listen(Number(PORT), "::", () => {
         console.log(`Content generation service running on port ${PORT}`);
       });
     })
     .catch((err) => {
-      console.error("Migration failed:", err);
+      console.error("Boot failed:", err);
       process.exit(1);
     });
 }

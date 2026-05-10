@@ -3,11 +3,12 @@ import { eq, and, inArray, arrayContains, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
-import { generateFromTemplate, substituteVariables, findUnfilledPlaceholders, InsufficientCreditsError } from "../lib/anthropic-client.js";
+import { generateFromTemplate, generatePitchFromTemplate, substituteVariables, findUnfilledPlaceholders, InsufficientCreditsError, PitchLengthError } from "../lib/anthropic-client.js";
+import { EXPERT_QUOTE_PITCH_TYPE } from "../lib/expert-quote-pitch-template.js";
 import { createRun, updateRun } from "../lib/runs-client.js";
 import { getCampaignFeatureInputs } from "../lib/campaign-client.js";
 import { extractBrandFields } from "../lib/brand-client.js";
-import { GenerateRequestSchema, StatsRequestSchema, StatsQuerySchema } from "../schemas.js";
+import { GenerateRequestSchema, GeneratePitchRequestSchema, StatsRequestSchema, StatsQuerySchema } from "../schemas.js";
 import {
   resolveWorkflowDynastySlugs,
   resolveFeatureDynastySlugs,
@@ -208,6 +209,101 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     console.error("Generate error:", error);
     if (req.runId) {
       traceEvent(req.runId, { service: "content-generation-service", event: "generate-error", detail: error instanceof Error ? error.message : "Unknown error", level: "error" }, req.headers).catch(() => {});
+    }
+    res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
+  }
+});
+
+const PITCH_MIN_CHARS = 100;
+const PITCH_MAX_CHARS = 2500;
+
+/**
+ * POST /generate-pitch — Generate a journalist-quote pitch (Featured.com).
+ * Loads the stored `expert-quote-pitch` template, substitutes brand + request
+ * inputs, and enforces a 100-2500 char output range with one retry on miss.
+ */
+router.post("/generate-pitch", serviceAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const parsed = GeneratePitchRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
+    }
+
+    const { brand, request, additionalContext, brandIds: bodyBrandIds, campaignId: bodyCampaignId, workflowSlug: bodyWorkflowSlug, featureSlug: bodyFeatureSlug } = parsed.data;
+
+    const brandIds = bodyBrandIds?.length ? bodyBrandIds : (req.brandIds ?? []);
+    const brandId = brandIds.length > 0 ? brandIds.join(",") : req.brandId;
+    const campaignId = bodyCampaignId || req.campaignId;
+    const workflowSlug = bodyWorkflowSlug || req.workflowSlug;
+    const featureSlug = bodyFeatureSlug || req.featureSlug;
+
+    traceEvent(req.runId!, { service: "content-generation-service", event: "generate-pitch-start", detail: `outlet=${request.mediaOutlet}, brandIds=${brandIds.join(",")}` }, req.headers).catch(() => {});
+
+    const storedPrompt = await db.query.prompts.findFirst({
+      where: eq(prompts.type, EXPERT_QUOTE_PITCH_TYPE),
+    });
+
+    if (!storedPrompt) {
+      return res.status(404).json({
+        error: `No prompt found for type=${EXPERT_QUOTE_PITCH_TYPE}. Service should register it at boot via POST /platform-prompts.`,
+      });
+    }
+
+    const variables: Record<string, unknown> = {
+      brandName: brand.name,
+      brandIndustry: brand.industry,
+      brandExpertise: brand.expertise,
+      brandVoice: brand.voice,
+      brandTargetAudience: brand.targetAudience,
+      requestQuestion: request.question,
+      requestMediaOutlet: request.mediaOutlet,
+      requestSource: request.source,
+      requestDeadline: request.deadline ?? "not specified",
+      additionalContext: additionalContext ?? "(none)",
+    };
+
+    const identity = { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug };
+
+    const result = await generatePitchFromTemplate(
+      {
+        promptTemplate: storedPrompt.prompt,
+        variables,
+        minChars: PITCH_MIN_CHARS,
+        maxChars: PITCH_MAX_CHARS,
+      },
+      identity
+    );
+
+    traceEvent(req.runId!, { service: "content-generation-service", event: "generate-pitch-done", detail: `chars=${result.charCount}, attempts=${result.attempts}, model=${result.model}` }, req.headers).catch(() => {});
+
+    res.json({
+      pitch: result.pitch,
+      charCount: result.charCount,
+      attempts: result.attempts,
+      tokensInput: result.tokensInput,
+      tokensOutput: result.tokensOutput,
+    });
+  } catch (error) {
+    if (error instanceof PitchLengthError) {
+      traceEvent(req.runId!, { service: "content-generation-service", event: "generate-pitch-length-violation", detail: `chars=${error.charCount}, range=[${error.minChars},${error.maxChars}], attempts=${error.attempts}`, level: "warn" }, req.headers).catch(() => {});
+      return res.status(400).json({
+        error: `Generated pitch length ${error.charCount} chars is outside the required range [${error.minChars}, ${error.maxChars}] after ${error.attempts} attempts.`,
+        charCount: error.charCount,
+        minChars: error.minChars,
+        maxChars: error.maxChars,
+        attempts: error.attempts,
+      });
+    }
+    if (error instanceof InsufficientCreditsError) {
+      return res.status(402).json({
+        error: "Insufficient credits",
+        balance_cents: error.balance_cents,
+        required_cents: error.required_cents,
+      });
+    }
+    console.error("[content-generation-service] /generate-pitch error:", error);
+    if (req.runId) {
+      traceEvent(req.runId, { service: "content-generation-service", event: "generate-pitch-error", detail: error instanceof Error ? error.message : "Unknown error", level: "error" }, req.headers).catch(() => {});
     }
     res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
   }

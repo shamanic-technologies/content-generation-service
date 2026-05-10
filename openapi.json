@@ -243,6 +243,153 @@
           "tokensOutput"
         ]
       },
+      "GeneratePitchRequest": {
+        "type": "object",
+        "properties": {
+          "brand": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Brand or expert name"
+              },
+              "industry": {
+                "type": "string",
+                "description": "Industry or sector"
+              },
+              "expertise": {
+                "type": "string",
+                "description": "Specific expertise / what the expert is qualified to speak on"
+              },
+              "voice": {
+                "type": "string",
+                "description": "Voice / tone descriptor (e.g. 'plainspoken, no jargon, slightly contrarian')"
+              },
+              "targetAudience": {
+                "type": "string",
+                "description": "Audience the expert normally speaks to"
+              }
+            },
+            "required": [
+              "name",
+              "industry",
+              "expertise",
+              "voice",
+              "targetAudience"
+            ],
+            "additionalProperties": {
+              "nullable": true
+            }
+          },
+          "request": {
+            "type": "object",
+            "properties": {
+              "question": {
+                "type": "string",
+                "description": "The journalist's question / request body"
+              },
+              "mediaOutlet": {
+                "type": "string",
+                "description": "Name of the publication"
+              },
+              "source": {
+                "type": "string",
+                "description": "Reporter / journalist name"
+              },
+              "deadline": {
+                "type": "string",
+                "description": "Submission deadline as a free-form string (e.g. 'Friday at 5pm ET')"
+              }
+            },
+            "required": [
+              "question",
+              "mediaOutlet",
+              "source"
+            ]
+          },
+          "additionalContext": {
+            "type": "string",
+            "description": "Any extra context the caller wants the model to consider"
+          },
+          "brandIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Brand UUIDs for tracking. Falls back to x-brand-id header."
+          },
+          "campaignId": {
+            "type": "string"
+          },
+          "workflowSlug": {
+            "type": "string"
+          },
+          "featureSlug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "brand",
+          "request"
+        ]
+      },
+      "GeneratePitchResponse": {
+        "type": "object",
+        "properties": {
+          "pitch": {
+            "type": "string",
+            "description": "Pitch text, 100-2500 chars"
+          },
+          "charCount": {
+            "type": "integer",
+            "description": "Length of pitch in characters"
+          },
+          "attempts": {
+            "type": "integer",
+            "description": "Number of generation attempts (1 or 2)"
+          },
+          "tokensInput": {
+            "type": "number"
+          },
+          "tokensOutput": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "pitch",
+          "charCount",
+          "attempts",
+          "tokensInput",
+          "tokensOutput"
+        ]
+      },
+      "PitchLengthErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "charCount": {
+            "type": "integer"
+          },
+          "minChars": {
+            "type": "integer"
+          },
+          "maxChars": {
+            "type": "integer"
+          },
+          "attempts": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "error",
+          "charCount",
+          "minChars",
+          "maxChars",
+          "attempts"
+        ]
+      },
       "EmailGeneration": {
         "type": "object",
         "properties": {
@@ -1407,6 +1554,135 @@
           },
           "404": {
             "description": "Prompt not found for this type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generate-pitch": {
+      "post": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "Generate a journalist-quote pitch (Featured.com 100-2500 char constraint)",
+        "description": "Renders the stored 'expert-quote-pitch' prompt with brand + request inputs, sends to chat-service for free-text generation, and enforces a 100-2500 character output range. If the first attempt is out of range, retries once with a corrective nudge. Returns 400 PitchLengthErrorResponse if both attempts are out of range — no truncation that breaks meaning.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-workflow-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-feature-slug",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GeneratePitchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Generated pitch within the configured char range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GeneratePitchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body or pitch length out of range after retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PitchLengthErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Insufficient credits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsufficientCreditsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "expert-quote-pitch template not registered",
             "content": {
               "application/json": {
                 "schema": {
