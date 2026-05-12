@@ -217,6 +217,44 @@ describe("POST /generate-expert-quote-pitch", () => {
     expect(params.variables.additionalContext).toBe("(none)");
   });
 
+  it("accepts null mediaOutlet and source, substitutes 'not specified' in template variables", async () => {
+    await request(app)
+      .post("/generate-expert-quote-pitch")
+      .set("X-Org-Id", "org-1")
+      .set("X-User-Id", "user-1")
+      .set("X-Run-Id", "run-1")
+      .send({
+        brand: FIXTURE_A.brand,
+        request: {
+          question: FIXTURE_A.request.question,
+          mediaOutlet: null,
+          source: null,
+        },
+      })
+      .expect(200);
+
+    const [params] = mockGenerateExpertQuotePitch.mock.calls[0];
+    expect(params.variables.requestMediaOutlet).toBe("not specified");
+    expect(params.variables.requestSource).toBe("not specified");
+  });
+
+  it("accepts omitted mediaOutlet and source, substitutes 'not specified' in template variables", async () => {
+    await request(app)
+      .post("/generate-expert-quote-pitch")
+      .set("X-Org-Id", "org-1")
+      .set("X-User-Id", "user-1")
+      .set("X-Run-Id", "run-1")
+      .send({
+        brand: FIXTURE_A.brand,
+        request: { question: FIXTURE_A.request.question },
+      })
+      .expect(200);
+
+    const [params] = mockGenerateExpertQuotePitch.mock.calls[0];
+    expect(params.variables.requestMediaOutlet).toBe("not specified");
+    expect(params.variables.requestSource).toBe("not specified");
+  });
+
   it("returns 400 with length-violation details when generator throws ExpertQuotePitchLengthError", async () => {
     const { ExpertQuotePitchLengthError } = await import("../../src/lib/anthropic-client.js");
     mockGenerateExpertQuotePitch.mockRejectedValueOnce(new ExpertQuotePitchLengthError(40, 100, 2500, 2, "too short pitch"));

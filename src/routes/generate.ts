@@ -256,8 +256,8 @@ router.post("/generate-expert-quote-pitch", serviceAuth, async (req: Authenticat
       brandVoice: brand.voice,
       brandTargetAudience: brand.targetAudience,
       requestQuestion: request.question,
-      requestMediaOutlet: request.mediaOutlet,
-      requestSource: request.source,
+      requestMediaOutlet: request.mediaOutlet ?? "not specified",
+      requestSource: request.source ?? "not specified",
       requestDeadline: request.deadline ?? "not specified",
       additionalContext: additionalContext ?? "(none)",
     };
