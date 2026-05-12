@@ -290,10 +290,12 @@
               },
               "mediaOutlet": {
                 "type": "string",
+                "nullable": true,
                 "description": "Name of the publication"
               },
               "source": {
                 "type": "string",
+                "nullable": true,
                 "description": "Reporter / journalist name"
               },
               "deadline": {
@@ -302,9 +304,7 @@
               }
             },
             "required": [
-              "question",
-              "mediaOutlet",
-              "source"
+              "question"
             ]
           },
           "additionalContext": {
