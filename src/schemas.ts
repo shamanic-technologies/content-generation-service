@@ -386,8 +386,8 @@ const ExpertQuotePitchBrandInputSchema = z
 
 const ExpertQuotePitchRequestInputSchema = z.object({
   question: z.string().describe("The journalist's question / request body"),
-  mediaOutlet: z.string().describe("Name of the publication"),
-  source: z.string().describe("Reporter / journalist name"),
+  mediaOutlet: z.string().nullable().optional().describe("Name of the publication"),
+  source: z.string().nullable().optional().describe("Reporter / journalist name"),
   deadline: z.string().optional().describe("Submission deadline as a free-form string (e.g. 'Friday at 5pm ET')"),
 });
 
