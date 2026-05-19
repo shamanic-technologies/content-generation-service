@@ -68,8 +68,8 @@ const mockGenerateFromTemplate = vi.fn().mockResolvedValue({
   responseRaw: {},
 });
 
-vi.mock("../../src/lib/anthropic-client.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/lib/anthropic-client.js")>();
+vi.mock("../../src/lib/chat-service-client.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/lib/chat-service-client.js")>();
   return {
     ...actual,
     generateFromTemplate: (...args: unknown[]) => mockGenerateFromTemplate(...args),

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { generateFromTemplate, InsufficientCreditsError, AI_DISCLAIMER_TEXT } from "../../src/lib/anthropic-client";
+import { generateFromTemplate, InsufficientCreditsError } from "../../src/lib/chat-service-client";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -42,10 +42,31 @@ describe("chat-service client (generateFromTemplate)", () => {
     const body = JSON.parse(opts.body);
     expect(body.message).toContain("Sarah");
     expect(body.systemPrompt).toBeDefined();
-    expect(body.responseFormat).toBe("json");
-    expect(body.maxTokens).toBe(3072);
     expect(body.provider).toBe("google");
     expect(body.model).toBe("pro");
+    // responseSchema enables Gemini structured-output mode (fixes Bad escaped character in JSON).
+    // responseFormat + maxTokens are intentionally absent: responseSchema implies JSON mode,
+    // and chat-service silently drops maxTokens.
+    expect(body.responseFormat).toBeUndefined();
+    expect(body.maxTokens).toBeUndefined();
+    expect(body.responseSchema).toEqual({
+      type: "object",
+      properties: {
+        subject: { type: "string" },
+        emails: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              body: { type: "string" },
+              daysSinceLastStep: { type: "number" },
+            },
+            required: ["body", "daysSinceLastStep"],
+          },
+        },
+      },
+      required: ["subject", "emails"],
+    });
   });
 
   it("passes identity headers to chat-service", async () => {

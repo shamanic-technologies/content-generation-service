@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { generateExpertQuotePitchFromTemplate, ExpertQuotePitchLengthError, InsufficientCreditsError } from "../../src/lib/anthropic-client";
+import { generateExpertQuotePitchFromTemplate, ExpertQuotePitchLengthError, InsufficientCreditsError } from "../../src/lib/chat-service-client";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);

@@ -66,9 +66,9 @@ vi.mock("../../src/lib/trace-event.js", () => ({
 }));
 
 const mockGenerateExpertQuotePitch = vi.fn();
-vi.mock("../../src/lib/anthropic-client.js", async () => {
-  const actual = await vi.importActual<typeof import("../../src/lib/anthropic-client.js")>(
-    "../../src/lib/anthropic-client.js"
+vi.mock("../../src/lib/chat-service-client.js", async () => {
+  const actual = await vi.importActual<typeof import("../../src/lib/chat-service-client.js")>(
+    "../../src/lib/chat-service-client.js"
   );
   return {
     ...actual,
@@ -256,7 +256,7 @@ describe("POST /generate-expert-quote-pitch", () => {
   });
 
   it("returns 400 with length-violation details when generator throws ExpertQuotePitchLengthError", async () => {
-    const { ExpertQuotePitchLengthError } = await import("../../src/lib/anthropic-client.js");
+    const { ExpertQuotePitchLengthError } = await import("../../src/lib/chat-service-client.js");
     mockGenerateExpertQuotePitch.mockRejectedValueOnce(new ExpertQuotePitchLengthError(40, 100, 2500, 2, "too short pitch"));
 
     const res = await request(app)

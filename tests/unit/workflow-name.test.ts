@@ -75,7 +75,7 @@ vi.mock("../../src/lib/brand-client.js", () => ({
   extractBrandFields: vi.fn().mockResolvedValue(new Map()),
 }));
 
-vi.mock("../../src/lib/anthropic-client.js", () => ({
+vi.mock("../../src/lib/chat-service-client.js", () => ({
   generateFromTemplate: vi.fn().mockResolvedValue({
     subject: "Test subject",
     sequence: [
