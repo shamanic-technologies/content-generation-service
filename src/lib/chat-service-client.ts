@@ -87,6 +87,32 @@ export function findUnfilledPlaceholders(text: string): string[] {
   return [...new Set(matches.map((m) => m.slice(2, -2)))];
 }
 
+// ─── Gemini structured-output schema ───────────────────────────────────────
+// Forwarded to chat-service as `responseSchema`, which flips Gemini into
+// structured-output mode and enforces JSON shape + string escaping server-side.
+// Keep in sync with `ChatCompleteResponse.json` below and the schema described
+// in GLOBAL_SYSTEM_PROMPT. Permissive (no `additionalProperties: false`) — if
+// the provider is ever switched to anthropic, chat-service will 400 unless
+// `additionalProperties: false` is added here and on `emails.items`.
+const GENERATE_RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    subject: { type: "string" },
+    emails: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          body: { type: "string" },
+          daysSinceLastStep: { type: "number" },
+        },
+        required: ["body", "daysSinceLastStep"],
+      },
+    },
+  },
+  required: ["subject", "emails"],
+} as const;
+
 // ─── Global system prompt ────────────────────────────────────────────────────
 // Applied to every generation call. Contains universal rules that should NOT
 // be repeated in individual prompt templates.
@@ -167,8 +193,7 @@ export async function generateFromTemplate(
     body: JSON.stringify({
       message: prompt,
       systemPrompt: GLOBAL_SYSTEM_PROMPT,
-      responseFormat: "json",
-      maxTokens: 3072,
+      responseSchema: GENERATE_RESPONSE_SCHEMA,
       provider: "google",
       model: "pro",
     }),

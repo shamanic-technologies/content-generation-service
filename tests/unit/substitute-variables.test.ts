@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { substituteVariables, coerceToString, formatCampaignContext, findUnfilledPlaceholders } from "../../src/lib/anthropic-client";
+import { substituteVariables, coerceToString, formatCampaignContext, findUnfilledPlaceholders } from "../../src/lib/chat-service-client";
 
 describe("substituteVariables", () => {
   it("replaces single variable", () => {

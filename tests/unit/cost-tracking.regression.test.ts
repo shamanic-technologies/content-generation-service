@@ -82,7 +82,7 @@ vi.mock("../../src/lib/brand-client.js", () => ({
 // Mock anthropic client (now backed by chat-service)
 const MOCK_TOKENS_INPUT = 1500;
 const MOCK_TOKENS_OUTPUT = 300;
-vi.mock("../../src/lib/anthropic-client.js", () => ({
+vi.mock("../../src/lib/chat-service-client.js", () => ({
   generateFromTemplate: vi.fn().mockResolvedValue({
     subject: "Test subject",
     sequence: [
