@@ -69,7 +69,7 @@ const mockGenerateFromTemplate = vi.fn().mockResolvedValue({
   responseRaw: {},
 });
 
-vi.mock("../../src/lib/anthropic-client.js", () => ({
+vi.mock("../../src/lib/chat-service-client.js", () => ({
   generateFromTemplate: (...args: unknown[]) => mockGenerateFromTemplate(...args),
   InsufficientCreditsError: class InsufficientCreditsError extends Error {
     status = 402;

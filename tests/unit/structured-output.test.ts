@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { generateFromTemplate } from "../../src/lib/anthropic-client";
+import { generateFromTemplate } from "../../src/lib/chat-service-client";
 
 const CHAT_JSON = {
   subject: "Quick question",
@@ -38,7 +38,7 @@ describe("structured JSON output via chat-service", () => {
     });
   });
 
-  it("sends responseFormat 'json' to chat-service /complete", async () => {
+  it("sends Gemini responseSchema to chat-service /complete (structured-output mode)", async () => {
     await generateFromTemplate(
       {
         promptTemplate: "Write an email to {{recipientName}}",
@@ -53,10 +53,32 @@ describe("structured JSON output via chat-service", () => {
     expect(url).toContain("/complete");
 
     const body = JSON.parse(options.body);
-    expect(body.responseFormat).toBe("json");
-    expect(body.maxTokens).toBe(3072);
     expect(body.message).toContain("Sarah");
     expect(body.systemPrompt).toBeDefined();
+    // responseSchema flips Gemini into structured-output mode, which enforces
+    // JSON shape + string escaping server-side. responseFormat + maxTokens are
+    // intentionally absent: responseSchema implies JSON mode, chat-service
+    // silently drops maxTokens.
+    expect(body.responseFormat).toBeUndefined();
+    expect(body.maxTokens).toBeUndefined();
+    expect(body.responseSchema).toEqual({
+      type: "object",
+      properties: {
+        subject: { type: "string" },
+        emails: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              body: { type: "string" },
+              daysSinceLastStep: { type: "number" },
+            },
+            required: ["body", "daysSinceLastStep"],
+          },
+        },
+      },
+      required: ["subject", "emails"],
+    });
   });
 
   it("parses JSON response into subject and 3-step sequence", async () => {
