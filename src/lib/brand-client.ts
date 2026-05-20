@@ -2,7 +2,7 @@
  * HTTP client for brand-service.
  * Calls POST /orgs/brands/extract-fields to resolve brand info.
  * Brand-service reads x-brand-id from the header (CSV-separated brand UUIDs).
- * Results are cached 30 days per (brandId, fieldKey, campaignId).
+ * Results are cached 30 days per (brandId, fieldKey, hash(description)).
  */
 
 const BRAND_SERVICE_URL = process.env.BRAND_SERVICE_URL || "http://localhost:3030";
