@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { generateFromTemplate, AI_DISCLAIMER_TEXT } from "../../src/lib/chat-service-client";
+import { generateFromTemplate } from "../../src/lib/chat-service-client";
 
 function mockChatResponse(emails: Array<{ body: string; daysSinceLastStep: number }>) {
   const jsonPayload = { subject: "Test subject", emails };
