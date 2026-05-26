@@ -60,7 +60,7 @@ describe("GET /platform-prompts", () => {
       orgId: null,
       type: "cold-email",
       prompt: "Write a cold email to {{leadFirstName}}",
-      variables: ["leadFirstName"],
+      variables: [{ name: "leadFirstName", description: "Lead first name" }],
       createdAt: NOW,
       updatedAt: NOW,
     });
@@ -92,7 +92,7 @@ describe("POST /platform-prompts", () => {
       orgId: null,
       type: "cold-email",
       prompt: "Write a cold email to {{leadFirstName}}",
-      variables: ["leadFirstName"],
+      variables: [{ name: "leadFirstName", description: "Lead first name" }],
       createdAt: NOW,
       updatedAt: NOW,
     }]);
@@ -102,7 +102,7 @@ describe("POST /platform-prompts", () => {
       .send({
         type: "cold-email",
         prompt: "Write a cold email to {{leadFirstName}}",
-        variables: ["leadFirstName"],
+        variables: [{ name: "leadFirstName", description: "Lead first name" }],
       })
       .expect(201);
 
@@ -117,7 +117,7 @@ describe("POST /platform-prompts", () => {
       orgId: null,
       type: "cold-email",
       prompt: "Existing prompt",
-      variables: ["leadFirstName"],
+      variables: [{ name: "leadFirstName", description: "Lead first name" }],
       createdAt: NOW,
       updatedAt: NOW,
     });
@@ -127,7 +127,7 @@ describe("POST /platform-prompts", () => {
       .send({
         type: "cold-email",
         prompt: "Different prompt content",
-        variables: ["leadFirstName"],
+        variables: [{ name: "leadFirstName", description: "Lead first name" }],
       })
       .expect(200);
 
@@ -142,7 +142,7 @@ describe("POST /platform-prompts", () => {
       orgId: null,
       type: "cold-email",
       prompt: "Write an email to {{name}}",
-      variables: ["name"],
+      variables: [{ name: "name", description: "Recipient name" }],
       createdAt: NOW,
       updatedAt: NOW,
     }]);
@@ -152,7 +152,7 @@ describe("POST /platform-prompts", () => {
       .send({
         type: "cold-email",
         prompt: "Write an email to {{name}}",
-        variables: ["name"],
+        variables: [{ name: "name", description: "Recipient name" }],
       })
       .expect(201);
   });

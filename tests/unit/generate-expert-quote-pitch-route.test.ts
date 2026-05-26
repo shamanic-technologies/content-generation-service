@@ -84,50 +84,81 @@ function makeApp() {
 }
 
 const FIXTURE_A = {
-  brand: {
-    name: "Acme SaaS",
-    industry: "B2B SaaS",
-    expertise: "scaling early-stage engineering teams",
-    voice: "blunt, no jargon, anecdote-driven",
-    targetAudience: "early-stage founders and CTOs",
-  },
-  request: {
-    question: "What's the most common mistake startups make when their team grows from 5 to 25 engineers?",
-    mediaOutlet: "TechCrunch",
-    source: "Jane Doe",
-    deadline: "Friday at 5pm ET",
+  variables: {
+    brand: {
+      name: "Acme SaaS",
+      industry: "B2B SaaS",
+      expertise: "scaling early-stage engineering teams",
+      voice: "blunt, no jargon, anecdote-driven",
+      targetAudience: "early-stage founders and CTOs",
+    },
+    request: {
+      question: "What's the most common mistake startups make when their team grows from 5 to 25 engineers?",
+      mediaOutlet: "TechCrunch",
+      source: "Jane Doe",
+      deadline: "Friday at 5pm ET",
+    },
   },
 };
 
 const FIXTURE_B = {
-  brand: {
-    name: "Northwind Agency",
-    industry: "Marketing services",
-    expertise: "content strategy for fintech",
-    voice: "warm, specific, slightly contrarian",
-    targetAudience: "fintech CMOs",
+  variables: {
+    brand: {
+      name: "Northwind Agency",
+      industry: "Marketing services",
+      expertise: "content strategy for fintech",
+      voice: "warm, specific, slightly contrarian",
+      targetAudience: "fintech CMOs",
+    },
+    request: {
+      question: "How should fintechs balance growth content vs. compliance content?",
+      mediaOutlet: "Modern Marketer",
+      source: "Sam Reporter",
+    },
+    additionalContext: "Recently published a study on conversion lift from regulatory deep-dives.",
   },
-  request: {
-    question: "How should fintechs balance growth content vs. compliance content?",
-    mediaOutlet: "Modern Marketer",
-    source: "Sam Reporter",
-  },
-  additionalContext: "Recently published a study on conversion lift from regulatory deep-dives.",
 };
 
 const FIXTURE_C = {
-  brand: {
-    name: "Glow & Grow",
-    industry: "DTC ecommerce — skincare",
-    expertise: "supply chain for sub-$50 SKUs",
-    voice: "practical, founder-first, no fluff",
-    targetAudience: "DTC operators",
+  variables: {
+    brand: {
+      name: "Glow & Grow",
+      industry: "DTC ecommerce — skincare",
+      expertise: "supply chain for sub-$50 SKUs",
+      voice: "practical, founder-first, no fluff",
+      targetAudience: "DTC operators",
+    },
+    request: {
+      question: "What's the right way to think about MOQ when launching a new SKU under $50?",
+      mediaOutlet: "Retail Dive",
+      source: "Pat Editor",
+      deadline: "next Tuesday",
+    },
   },
-  request: {
-    question: "What's the right way to think about MOQ when launching a new SKU under $50?",
-    mediaOutlet: "Retail Dive",
-    source: "Pat Editor",
-    deadline: "next Tuesday",
+};
+
+const FIXTURE_MULTIBRAND = {
+  variables: {
+    brand: [
+      {
+        name: "Acme SaaS",
+        industry: "B2B SaaS",
+        expertise: "scaling early-stage engineering teams",
+        voice: "blunt, no jargon, anecdote-driven",
+        targetAudience: "early-stage founders and CTOs",
+      },
+      {
+        name: "Northwind Agency",
+        industry: "Marketing services",
+        expertise: "content strategy for fintech",
+        voice: "warm, specific, slightly contrarian",
+        targetAudience: "fintech CMOs",
+      },
+    ],
+    request: {
+      question: "Where do early-stage SaaS and B2B agencies converge on content strategy?",
+      mediaOutlet: "Modern Marketer",
+    },
   },
 };
 
@@ -174,7 +205,7 @@ describe("POST /generate-expert-quote-pitch", () => {
     expect(res.body.tokensInput).toBe(200);
   });
 
-  it("fixture B — agency owner — passes nested brand/request fields to template variables", async () => {
+  it("fixture B — passes caller's variables object through to the template renderer unchanged", async () => {
     const res = await request(app)
       .post("/generate-expert-quote-pitch")
       .set("X-Org-Id", "org-1")
@@ -189,21 +220,27 @@ describe("POST /generate-expert-quote-pitch", () => {
     const [params] = mockGenerateExpertQuotePitch.mock.calls[0];
     expect(params.minChars).toBe(100);
     expect(params.maxChars).toBe(2500);
-    expect(params.variables).toMatchObject({
-      brandName: "Northwind Agency",
-      brandIndustry: "Marketing services",
-      brandExpertise: "content strategy for fintech",
-      brandVoice: "warm, specific, slightly contrarian",
-      brandTargetAudience: "fintech CMOs",
-      requestQuestion: FIXTURE_B.request.question,
-      requestMediaOutlet: "Modern Marketer",
-      requestSource: "Sam Reporter",
-      requestDeadline: "not specified",
-      additionalContext: FIXTURE_B.additionalContext,
-    });
+    // Caller's variables JSON is forwarded as-is — no shape mapping in the route.
+    expect(params.variables).toEqual(FIXTURE_B.variables);
   });
 
-  it("fixture C — DTC ecommerce — passes deadline through when provided", async () => {
+  it("fixture multibrand — passes an array of brand profiles untouched", async () => {
+    await request(app)
+      .post("/generate-expert-quote-pitch")
+      .set("X-Org-Id", "org-1")
+      .set("X-User-Id", "user-1")
+      .set("X-Run-Id", "run-1")
+      .send(FIXTURE_MULTIBRAND)
+      .expect(200);
+
+    const [params] = mockGenerateExpertQuotePitch.mock.calls[0];
+    expect(Array.isArray(params.variables.brand)).toBe(true);
+    expect(params.variables.brand).toHaveLength(2);
+    expect(params.variables.brand[0]).toMatchObject({ name: "Acme SaaS" });
+    expect(params.variables.brand[1]).toMatchObject({ name: "Northwind Agency" });
+  });
+
+  it("fixture C — caller-provided deadline survives the route untouched", async () => {
     await request(app)
       .post("/generate-expert-quote-pitch")
       .set("X-Org-Id", "org-1")
@@ -213,46 +250,27 @@ describe("POST /generate-expert-quote-pitch", () => {
       .expect(200);
 
     const [params] = mockGenerateExpertQuotePitch.mock.calls[0];
-    expect(params.variables.requestDeadline).toBe("next Tuesday");
-    expect(params.variables.additionalContext).toBe("(none)");
+    expect((params.variables.request as { deadline: string }).deadline).toBe("next Tuesday");
   });
 
-  it("accepts null mediaOutlet and source, substitutes 'not specified' in template variables", async () => {
+  it("accepts arbitrary JSON inside variables (no schema enforcement on inner shape)", async () => {
     await request(app)
       .post("/generate-expert-quote-pitch")
       .set("X-Org-Id", "org-1")
       .set("X-User-Id", "user-1")
       .set("X-Run-Id", "run-1")
       .send({
-        brand: FIXTURE_A.brand,
-        request: {
-          question: FIXTURE_A.request.question,
-          mediaOutlet: null,
-          source: null,
+        variables: {
+          brand: "Acme SaaS",
+          request: { question: "Any thoughts?" },
+          additionalContext: { tagline: "fast follow-up", priority: 1 },
         },
       })
       .expect(200);
 
     const [params] = mockGenerateExpertQuotePitch.mock.calls[0];
-    expect(params.variables.requestMediaOutlet).toBe("not specified");
-    expect(params.variables.requestSource).toBe("not specified");
-  });
-
-  it("accepts omitted mediaOutlet and source, substitutes 'not specified' in template variables", async () => {
-    await request(app)
-      .post("/generate-expert-quote-pitch")
-      .set("X-Org-Id", "org-1")
-      .set("X-User-Id", "user-1")
-      .set("X-Run-Id", "run-1")
-      .send({
-        brand: FIXTURE_A.brand,
-        request: { question: FIXTURE_A.request.question },
-      })
-      .expect(200);
-
-    const [params] = mockGenerateExpertQuotePitch.mock.calls[0];
-    expect(params.variables.requestMediaOutlet).toBe("not specified");
-    expect(params.variables.requestSource).toBe("not specified");
+    expect(params.variables.brand).toBe("Acme SaaS");
+    expect(params.variables.additionalContext).toEqual({ tagline: "fast follow-up", priority: 1 });
   });
 
   it("returns 400 with length-violation details when generator throws ExpertQuotePitchLengthError", async () => {
@@ -274,13 +292,25 @@ describe("POST /generate-expert-quote-pitch", () => {
     expect(res.body.attempts).toBe(2);
   });
 
-  it("returns 400 when request body is invalid", async () => {
+  it("returns 400 when request body is invalid (missing variables)", async () => {
     const res = await request(app)
       .post("/generate-expert-quote-pitch")
       .set("X-Org-Id", "org-1")
       .set("X-User-Id", "user-1")
       .set("X-Run-Id", "run-1")
-      .send({ brand: { name: "Acme" } })
+      .send({})
+      .expect(400);
+
+    expect(res.body.error).toBeDefined();
+  });
+
+  it("returns 400 when legacy `brand: {...}` body shape is sent (no fallback)", async () => {
+    const res = await request(app)
+      .post("/generate-expert-quote-pitch")
+      .set("X-Org-Id", "org-1")
+      .set("X-User-Id", "user-1")
+      .set("X-Run-Id", "run-1")
+      .send({ brand: { name: "Acme" }, request: { question: "?" } })
       .expect(400);
 
     expect(res.body.error).toBeDefined();
@@ -306,9 +336,25 @@ describe("expert-quote-pitch template content", () => {
     const referenced = new Set(
       Array.from(EXPERT_QUOTE_PITCH_TEMPLATE.matchAll(/\{\{(\w+)\}\}/g)).map((m) => m[1])
     );
+    const declared = new Set(EXPERT_QUOTE_PITCH_VARIABLES.map((v) => v.name));
     for (const v of referenced) {
-      expect(EXPERT_QUOTE_PITCH_VARIABLES).toContain(v);
+      expect(declared.has(v)).toBe(true);
     }
+  });
+
+  it("declares each variable with a name and a description", () => {
+    for (const v of EXPERT_QUOTE_PITCH_VARIABLES) {
+      expect(typeof v.name).toBe("string");
+      expect(v.name.length).toBeGreaterThan(0);
+      expect(typeof v.description).toBe("string");
+      expect(v.description.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("documents multibrand input flexibility in variable descriptions", () => {
+    const brandVar = EXPERT_QUOTE_PITCH_VARIABLES.find((v) => v.name === "brand");
+    expect(brandVar).toBeDefined();
+    expect(brandVar!.description.toLowerCase()).toMatch(/multibrand|array of brand|multiple brands/);
   });
 
   it("bans common AI-giveaway phrases in the prompt itself", () => {
@@ -319,5 +365,9 @@ describe("expert-quote-pitch template content", () => {
 
   it("instructs the model to land between 100 and 2500 characters", () => {
     expect(EXPERT_QUOTE_PITCH_TEMPLATE).toMatch(/100 and 2500 characters/);
+  });
+
+  it("instructs the model to speak as a collective when multiple brands are provided", () => {
+    expect(EXPERT_QUOTE_PITCH_TEMPLATE).toMatch(/multiple brands|collective|never invent a single primary/i);
   });
 });
