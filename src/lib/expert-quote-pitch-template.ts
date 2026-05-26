@@ -3,38 +3,40 @@
 //
 // Char range 100-2500 is enforced server-side after generation; we still ask the
 // model to land inside that window to minimise retries.
+//
+// Inputs are declared as { name, description }. The caller decides the JSON
+// shape per name — string, object, or array. Multibrand is the default, so
+// `brand` typically arrives as an object or as an array of brand profiles.
 
 export const EXPERT_QUOTE_PITCH_TYPE = "expert-quote-pitch";
 
 export const EXPERT_QUOTE_PITCH_VARIABLES = [
-  "brandName",
-  "brandIndustry",
-  "brandExpertise",
-  "brandVoice",
-  "brandTargetAudience",
-  "requestQuestion",
-  "requestMediaOutlet",
-  "requestSource",
-  "requestDeadline",
-  "additionalContext",
+  {
+    name: "brand",
+    description:
+      "JSON describing the expert / brand speaking. Multibrand is the default — caller may pass an array of brand profiles, a single object, or any shape that captures who is speaking. Common fields: name, industry, expertise, voice, targetAudience. When multiple brands are provided, the model treats them as a collective speaker.",
+  },
+  {
+    name: "request",
+    description:
+      "JSON describing the journalist's request. Common fields: question (string), mediaOutlet (string|null), source (string|null — reporter name), deadline (string).",
+  },
+  {
+    name: "additionalContext",
+    description:
+      "Optional free-form extra context the caller wants the model to consider. String or object — caller's choice.",
+  },
 ];
 
 export const EXPERT_QUOTE_PITCH_TEMPLATE = `You are an expert pitching a quote in response to a journalist's request on Featured.com.
 
 ## Expert profile
-- Name: {{brandName}}
-- Industry: {{brandIndustry}}
-- Expertise: {{brandExpertise}}
-- Voice / tone: {{brandVoice}}
-- Audience the expert speaks to: {{brandTargetAudience}}
+{{brand}}
 
 ## Journalist request
-- Outlet: {{requestMediaOutlet}}
-- Reporter: {{requestSource}}
-- Deadline: {{requestDeadline}}
-- Question: {{requestQuestion}}
+{{request}}
 
-## Additional context (optional)
+## Additional context
 {{additionalContext}}
 
 ## Task
@@ -42,6 +44,7 @@ Write the pitch the expert will submit as their answer. The pitch must:
 - Address the journalist's question directly with a concrete, opinionated take.
 - Sound like the expert speaking — match the voice / tone described above.
 - Reference the expert's specific experience, data, or examples (no generic platitudes).
+- When the expert profile describes multiple brands, speak as the collective — never invent a single primary if multiple are given. Weave them naturally when each contributes a distinct perspective.
 - Be between 100 and 2500 characters total. Aim for 600-1200 characters.
 - Read like a quote a journalist would paste into a story.
 

@@ -62,6 +62,23 @@
           "service"
         ]
       },
+      "PromptVariable": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Variable name as referenced in the prompt body via {{name}}."
+          },
+          "description": {
+            "type": "string",
+            "description": "Free-form description of what the caller should put for this variable. Caller decides the JSON shape — string, array, object, whatever fits the template. Multibrand is the default, so brand-related variables typically receive arrays or objects, not scalars."
+          }
+        },
+        "required": [
+          "name",
+          "description"
+        ]
+      },
       "CreatePromptRequest": {
         "type": "object",
         "properties": {
@@ -76,9 +93,9 @@
           "variables": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PromptVariable"
             },
-            "description": "List of expected variable names used in the prompt"
+            "description": "Inputs the template expects. Each entry is { name, description }; the caller decides the JSON shape per name."
           }
         },
         "required": [
@@ -101,9 +118,9 @@
           "variables": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PromptVariable"
             },
-            "description": "List of expected variable names used in the prompt"
+            "description": "Inputs the template expects. Each entry is { name, description }; the caller decides the JSON shape per name."
           }
         },
         "required": [
@@ -127,7 +144,7 @@
           "variables": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PromptVariable"
             }
           },
           "createdAt": {
@@ -158,7 +175,7 @@
             "additionalProperties": {
               "nullable": true
             },
-            "description": "Variable values to substitute into the prompt template. Non-string values (arrays, objects) are coerced to strings. Recognised keys (used for dedicated DB columns and dashboard display): leadFirstName, leadLastName, leadTitle, leadCompanyName, leadCompanyIndustry, organizationDomain, clientCompanyName. Keys must be flat — e.g. send { leadFirstName: \"Alice\" }, NOT { lead: { data: { firstName: \"Alice\" } } }."
+            "description": "Variable values to substitute into the prompt template. Any JSON values allowed — strings, arrays, or objects. Caller decides the shape per variable. Objects and arrays are rendered as readable markdown into the prompt; the LLM reads whatever's provided. Multibrand is the default in this platform, so brand-related variables typically receive arrays or objects, not scalars. Per-template input expectations are published via GET /platform-prompts?type=<type> (.variables: Array<{ name, description }>). When values are string-typed, recognised keys may also populate dedicated dashboard columns: leadFirstName, leadLastName, leadTitle, leadCompanyName, leadCompanyIndustry, organizationDomain, clientCompanyName."
           },
           "brandIds": {
             "type": "array",
@@ -246,70 +263,12 @@
       "GenerateExpertQuotePitchRequest": {
         "type": "object",
         "properties": {
-          "brand": {
+          "variables": {
             "type": "object",
-            "properties": {
-              "name": {
-                "type": "string",
-                "description": "Brand or expert name"
-              },
-              "industry": {
-                "type": "string",
-                "description": "Industry or sector"
-              },
-              "expertise": {
-                "type": "string",
-                "description": "Specific expertise / what the expert is qualified to speak on"
-              },
-              "voice": {
-                "type": "string",
-                "description": "Voice / tone descriptor (e.g. 'plainspoken, no jargon, slightly contrarian')"
-              },
-              "targetAudience": {
-                "type": "string",
-                "description": "Audience the expert normally speaks to"
-              }
-            },
-            "required": [
-              "name",
-              "industry",
-              "expertise",
-              "voice",
-              "targetAudience"
-            ],
             "additionalProperties": {
               "nullable": true
-            }
-          },
-          "request": {
-            "type": "object",
-            "properties": {
-              "question": {
-                "type": "string",
-                "description": "The journalist's question / request body"
-              },
-              "mediaOutlet": {
-                "type": "string",
-                "nullable": true,
-                "description": "Name of the publication"
-              },
-              "source": {
-                "type": "string",
-                "nullable": true,
-                "description": "Reporter / journalist name"
-              },
-              "deadline": {
-                "type": "string",
-                "description": "Submission deadline as a free-form string (e.g. 'Friday at 5pm ET')"
-              }
             },
-            "required": [
-              "question"
-            ]
-          },
-          "additionalContext": {
-            "type": "string",
-            "description": "Any extra context the caller wants the model to consider"
+            "description": "Variable values to substitute into the stored 'expert-quote-pitch' template. Any JSON values allowed — strings, arrays, or objects. Caller decides the shape per variable. Multibrand is the default in this platform, so brand-related variables typically receive arrays or objects. Per-template input expectations are published via GET /platform-prompts?type=expert-quote-pitch (.variables)."
           },
           "brandIds": {
             "type": "array",
@@ -329,8 +288,7 @@
           }
         },
         "required": [
-          "brand",
-          "request"
+          "variables"
         ]
       },
       "GenerateExpertQuotePitchResponse": {
