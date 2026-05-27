@@ -80,7 +80,7 @@ export const prompts = pgTable(
     orgId: uuid("org_id"), // nullable: traceability only (who created it)
     type: text("type").notNull(),
     prompt: text("prompt").notNull(), // template text with {{variables}}
-    variables: jsonb("variables").$type<string[]>().notNull().default([]),
+    variables: jsonb("variables").$type<Array<{ name: string; description: string }>>().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -55,12 +55,27 @@ describe("substituteVariables", () => {
     expect(result).toBe("Titles: Executive Director, Program Manager, Community Leader");
   });
 
-  it("coerces objects to JSON strings", () => {
+  it("renders objects as markdown bullets", () => {
     const result = substituteVariables("Params: {{params}}", {
       params: { personTitles: ["CEO"], qKeywords: "blockchain" },
     });
-    expect(result).toContain('"personTitles"');
-    expect(result).toContain('"qKeywords"');
+    expect(result).toContain("- person titles: CEO");
+    expect(result).toContain("- q keywords: blockchain");
+  });
+
+  it("renders arrays of brand objects as numbered markdown blocks (multibrand)", () => {
+    const result = substituteVariables("Profile: {{brand}}", {
+      brand: [
+        { name: "Acme", industry: "B2B SaaS" },
+        { name: "Northwind", industry: "Marketing services" },
+      ],
+    });
+    expect(result).toContain("1.");
+    expect(result).toContain("2.");
+    expect(result).toContain("- name: Acme");
+    expect(result).toContain("- industry: B2B SaaS");
+    expect(result).toContain("- name: Northwind");
+    expect(result).toContain("- industry: Marketing services");
   });
 
   it("coerces numbers and booleans to strings", () => {
@@ -89,12 +104,31 @@ describe("coerceToString", () => {
     expect(coerceToString(["a", "b", "c"])).toBe("a, b, c");
   });
 
-  it("JSON-stringifies objects", () => {
-    expect(coerceToString({ key: "value" })).toBe('{"key":"value"}');
+  it("renders plain objects as markdown bullets", () => {
+    expect(coerceToString({ key: "value" })).toBe("- key: value");
   });
 
-  it("JSON-stringifies mixed arrays", () => {
+  it("renders arrays of objects as numbered markdown blocks", () => {
+    const result = coerceToString([
+      { name: "A", role: "primary" },
+      { name: "B", role: "secondary" },
+    ]);
+    expect(result).toContain("1.");
+    expect(result).toContain("- name: A");
+    expect(result).toContain("- role: primary");
+    expect(result).toContain("2.");
+    expect(result).toContain("- name: B");
+    expect(result).toContain("- role: secondary");
+  });
+
+  it("JSON-stringifies mixed-type arrays (non-uniform)", () => {
     expect(coerceToString([1, "two", true])).toBe('[1,"two",true]');
+  });
+
+  it("handles nested objects via indented bullets", () => {
+    const result = coerceToString({ outer: { inner: "deep" } });
+    expect(result).toContain("- outer:");
+    expect(result).toContain("- inner: deep");
   });
 
   it("stringifies null", () => {
@@ -135,7 +169,9 @@ describe("formatCampaignContext", () => {
       config: { key: "val" },
     });
     expect(result).toContain("- tags: sales, outreach");
-    expect(result).toContain('- config: {"key":"val"}');
+    // config object renders as nested markdown
+    expect(result).toContain("- config:");
+    expect(result).toContain("- key: val");
   });
 });
 

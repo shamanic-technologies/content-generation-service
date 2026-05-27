@@ -94,13 +94,29 @@ registry.registerPath({
 // ---------------------------------------------------------------------------
 // Shared prompt schemas
 // ---------------------------------------------------------------------------
+export const PromptVariableSchema = registry.register(
+  "PromptVariable",
+  z
+    .object({
+      name: z.string().describe("Variable name as referenced in the prompt body via {{name}}."),
+      description: z.string().describe(
+        "Free-form description of what the caller should put for this variable. " +
+        "Caller decides the JSON shape — string, array, object, whatever fits the template. " +
+        "Multibrand is the default, so brand-related variables typically receive arrays or objects, not scalars."
+      ),
+    })
+    .openapi("PromptVariable")
+);
+
 export const CreatePromptRequestSchema = registry.register(
   "CreatePromptRequest",
   z
     .object({
       type: z.string().describe("Unique prompt identifier, e.g. 'cold-email' or 'welcome-email'"),
       prompt: z.string().describe("Prompt template text with {{variable}} placeholders. Must NOT contain company-specific data — only {{variables}}."),
-      variables: z.array(z.string()).describe("List of expected variable names used in the prompt"),
+      variables: z.array(PromptVariableSchema).describe(
+        "Inputs the template expects. Each entry is { name, description }; the caller decides the JSON shape per name."
+      ),
     })
     .openapi("CreatePromptRequest")
 );
@@ -111,7 +127,9 @@ export const VersionPromptRequestSchema = registry.register(
     .object({
       sourceType: z.string().describe("The type of the prompt to create a new version from, e.g. 'cold-email'"),
       prompt: z.string().describe("New prompt template text with {{variable}} placeholders. Must NOT contain company-specific data — only {{variables}}."),
-      variables: z.array(z.string()).describe("List of expected variable names used in the prompt"),
+      variables: z.array(PromptVariableSchema).describe(
+        "Inputs the template expects. Each entry is { name, description }; the caller decides the JSON shape per name."
+      ),
     })
     .openapi("VersionPromptRequest")
 );
@@ -123,7 +141,7 @@ const PromptResponseSchema = registry.register(
       id: z.string(),
       type: z.string(),
       prompt: z.string(),
-      variables: z.array(z.string()),
+      variables: z.array(PromptVariableSchema),
       createdAt: z.string(),
       updatedAt: z.string(),
     })
@@ -298,10 +316,12 @@ export const GenerateRequestSchema = registry.register(
       type: z.string().describe("Which stored prompt to use, e.g. 'cold-email' or 'welcome-email'"),
       variables: z.record(z.string(), z.unknown()).describe(
         "Variable values to substitute into the prompt template. " +
-        "Non-string values (arrays, objects) are coerced to strings. " +
-        "Recognised keys (used for dedicated DB columns and dashboard display): " +
-        "leadFirstName, leadLastName, leadTitle, leadCompanyName, leadCompanyIndustry, organizationDomain, clientCompanyName. " +
-        "Keys must be flat — e.g. send { leadFirstName: \"Alice\" }, NOT { lead: { data: { firstName: \"Alice\" } } }."
+        "Any JSON values allowed — strings, arrays, or objects. Caller decides the shape per variable. " +
+        "Objects and arrays are rendered as readable markdown into the prompt; the LLM reads whatever's provided. " +
+        "Multibrand is the default in this platform, so brand-related variables typically receive arrays or objects, not scalars. " +
+        "Per-template input expectations are published via GET /platform-prompts?type=<type> (.variables: Array<{ name, description }>). " +
+        "When values are string-typed, recognised keys may also populate dedicated dashboard columns: " +
+        "leadFirstName, leadLastName, leadTitle, leadCompanyName, leadCompanyIndustry, organizationDomain, clientCompanyName."
       ),
       // Tracking / linking
       brandIds: z.array(z.string()).optional().describe("Brand UUIDs associated with this generation. Falls back to parsed x-brand-id header (CSV) if omitted."),
@@ -374,30 +394,16 @@ registry.registerPath({
 // ---------------------------------------------------------------------------
 // POST /generate-expert-quote-pitch — Free-text pitch for journalist quote requests
 // ---------------------------------------------------------------------------
-const ExpertQuotePitchBrandInputSchema = z
-  .object({
-    name: z.string().describe("Brand or expert name"),
-    industry: z.string().describe("Industry or sector"),
-    expertise: z.string().describe("Specific expertise / what the expert is qualified to speak on"),
-    voice: z.string().describe("Voice / tone descriptor (e.g. 'plainspoken, no jargon, slightly contrarian')"),
-    targetAudience: z.string().describe("Audience the expert normally speaks to"),
-  })
-  .passthrough();
-
-const ExpertQuotePitchRequestInputSchema = z.object({
-  question: z.string().describe("The journalist's question / request body"),
-  mediaOutlet: z.string().nullable().optional().describe("Name of the publication"),
-  source: z.string().nullable().optional().describe("Reporter / journalist name"),
-  deadline: z.string().optional().describe("Submission deadline as a free-form string (e.g. 'Friday at 5pm ET')"),
-});
-
 export const GenerateExpertQuotePitchRequestSchema = registry.register(
   "GenerateExpertQuotePitchRequest",
   z
     .object({
-      brand: ExpertQuotePitchBrandInputSchema,
-      request: ExpertQuotePitchRequestInputSchema,
-      additionalContext: z.string().optional().describe("Any extra context the caller wants the model to consider"),
+      variables: z.record(z.string(), z.unknown()).describe(
+        "Variable values to substitute into the stored 'expert-quote-pitch' template. " +
+        "Any JSON values allowed — strings, arrays, or objects. Caller decides the shape per variable. " +
+        "Multibrand is the default in this platform, so brand-related variables typically receive arrays or objects. " +
+        "Per-template input expectations are published via GET /platform-prompts?type=expert-quote-pitch (.variables)."
+      ),
       brandIds: z.array(z.string()).optional().describe("Brand UUIDs for tracking. Falls back to x-brand-id header."),
       campaignId: z.string().optional(),
       workflowSlug: z.string().optional(),

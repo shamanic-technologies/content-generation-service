@@ -229,7 +229,7 @@ router.post("/generate-expert-quote-pitch", serviceAuth, async (req: Authenticat
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
 
-    const { brand, request, additionalContext, brandIds: bodyBrandIds, campaignId: bodyCampaignId, workflowSlug: bodyWorkflowSlug, featureSlug: bodyFeatureSlug } = parsed.data;
+    const { variables, brandIds: bodyBrandIds, campaignId: bodyCampaignId, workflowSlug: bodyWorkflowSlug, featureSlug: bodyFeatureSlug } = parsed.data;
 
     const brandIds = bodyBrandIds?.length ? bodyBrandIds : (req.brandIds ?? []);
     const brandId = brandIds.length > 0 ? brandIds.join(",") : req.brandId;
@@ -237,7 +237,7 @@ router.post("/generate-expert-quote-pitch", serviceAuth, async (req: Authenticat
     const workflowSlug = bodyWorkflowSlug || req.workflowSlug;
     const featureSlug = bodyFeatureSlug || req.featureSlug;
 
-    traceEvent(req.runId!, { service: "content-generation-service", event: "generate-expert-quote-pitch-start", detail: `outlet=${request.mediaOutlet}, brandIds=${brandIds.join(",")}` }, req.headers).catch(() => {});
+    traceEvent(req.runId!, { service: "content-generation-service", event: "generate-expert-quote-pitch-start", detail: `brandIds=${brandIds.join(",")}, variableCount=${Object.keys(variables).length}` }, req.headers).catch(() => {});
 
     const storedPrompt = await db.query.prompts.findFirst({
       where: eq(prompts.type, EXPERT_QUOTE_PITCH_TYPE),
@@ -248,19 +248,6 @@ router.post("/generate-expert-quote-pitch", serviceAuth, async (req: Authenticat
         error: `No prompt found for type=${EXPERT_QUOTE_PITCH_TYPE}. Service should register it at boot via POST /platform-prompts.`,
       });
     }
-
-    const variables: Record<string, unknown> = {
-      brandName: brand.name,
-      brandIndustry: brand.industry,
-      brandExpertise: brand.expertise,
-      brandVoice: brand.voice,
-      brandTargetAudience: brand.targetAudience,
-      requestQuestion: request.question,
-      requestMediaOutlet: request.mediaOutlet ?? "not specified",
-      requestSource: request.source ?? "not specified",
-      requestDeadline: request.deadline ?? "not specified",
-      additionalContext: additionalContext ?? "(none)",
-    };
 
     const identity = { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug };
 

@@ -56,9 +56,34 @@ describe("OpenAPI spec — POST /generate variables documentation", () => {
     }
   });
 
-  it("warns about flat key format", () => {
+  it("documents multibrand input flexibility (no 'flat' prescription)", () => {
     const desc: string =
       spec.components.schemas.GenerateRequest.properties.variables.description;
-    expect(desc).toMatch(/flat/i);
+    expect(desc).not.toMatch(/Keys must be flat/i);
+    expect(desc.toLowerCase()).toMatch(/multibrand|arrays.*objects|any json/);
+  });
+});
+
+describe("OpenAPI spec — POST /generate-expert-quote-pitch variables shape", () => {
+  it("exposes `variables: Record<string, unknown>` (no strict brand/request)", () => {
+    const props = spec.components.schemas.GenerateExpertQuotePitchRequest.properties;
+    expect(props).toHaveProperty("variables");
+    expect(props).not.toHaveProperty("brand");
+    expect(props).not.toHaveProperty("request");
+  });
+});
+
+describe("OpenAPI spec — PromptVariable shape", () => {
+  it("defines PromptVariable as { name, description }", () => {
+    expect(spec.components.schemas).toHaveProperty("PromptVariable");
+    const props = spec.components.schemas.PromptVariable.properties;
+    expect(props).toHaveProperty("name");
+    expect(props).toHaveProperty("description");
+  });
+
+  it("CreatePromptRequest.variables is an array of PromptVariable", () => {
+    const props = spec.components.schemas.CreatePromptRequest.properties;
+    expect(props.variables.type).toBe("array");
+    expect(props.variables.items.$ref).toContain("PromptVariable");
   });
 });

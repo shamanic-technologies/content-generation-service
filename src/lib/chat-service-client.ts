@@ -40,14 +40,60 @@ export interface GenerateResult {
  * Coerce an unknown value to a string for template substitution.
  * - strings pass through
  * - arrays of strings are comma-joined
- * - everything else is JSON-stringified
+ * - arrays of objects render as a numbered markdown list, one block per object
+ * - plain objects render as a key/value markdown bullet list
+ * - everything else (numbers, booleans, null, mixed arrays) is JSON-stringified
+ *
+ * Multibrand is the default in this platform — brand-related variables
+ * commonly arrive as objects or arrays of objects. Rendering them as
+ * readable markdown (rather than raw JSON) keeps the prompt clean and lets
+ * the LLM consume the values naturally.
  */
 export function coerceToString(value: unknown): string {
   if (typeof value === "string") return value;
-  if (Array.isArray(value) && value.every((v) => typeof v === "string")) {
-    return value.join(", ");
+  if (value === null || value === undefined) return JSON.stringify(value);
+  if (typeof value !== "object") return JSON.stringify(value);
+
+  if (Array.isArray(value)) {
+    if (value.every((v) => typeof v === "string")) {
+      return value.join(", ");
+    }
+    if (value.every((v) => v !== null && typeof v === "object" && !Array.isArray(v))) {
+      return value
+        .map((item, i) => `${i + 1}.\n${renderObjectAsMarkdown(item as Record<string, unknown>, "   ")}`)
+        .join("\n");
+    }
+    return JSON.stringify(value);
   }
-  return JSON.stringify(value);
+
+  return renderObjectAsMarkdown(value as Record<string, unknown>, "");
+}
+
+function humanizeKey(key: string): string {
+  return key.replace(/([A-Z])/g, " $1").replace(/[_-]+/g, " ").trim().toLowerCase();
+}
+
+function renderObjectAsMarkdown(obj: Record<string, unknown>, indent: string): string {
+  const lines: string[] = [];
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === null || v === undefined) continue;
+    const label = humanizeKey(k);
+    if (typeof v === "object" && !Array.isArray(v)) {
+      lines.push(`${indent}- ${label}:`);
+      lines.push(renderObjectAsMarkdown(v as Record<string, unknown>, indent + "  "));
+    } else if (Array.isArray(v) && v.every((x) => typeof x === "string")) {
+      lines.push(`${indent}- ${label}: ${v.join(", ")}`);
+    } else if (Array.isArray(v) && v.every((x) => x !== null && typeof x === "object" && !Array.isArray(x))) {
+      lines.push(`${indent}- ${label}:`);
+      v.forEach((item, i) => {
+        lines.push(`${indent}  ${i + 1}.`);
+        lines.push(renderObjectAsMarkdown(item as Record<string, unknown>, indent + "     "));
+      });
+    } else {
+      lines.push(`${indent}- ${label}: ${coerceToString(v)}`);
+    }
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -122,6 +168,7 @@ const GLOBAL_SYSTEM_PROMPT = [
   "Universal rules (always apply, regardless of the prompt):",
   "- NEVER include a sign-off, signature, or footer at the end of the email (e.g. '— [Your name]', 'Best, [Name]', 'Regards, …'). The sending service appends the sender's name, title, and organization automatically. Your output must end with the last sentence of the email body — nothing after it.",
   "- NEVER use placeholders like [Your name], [Company], [Insert X], etc. Every piece of text you produce must be ready to send as-is.",
+  "- Template inputs may arrive as strings, arrays, or objects (this platform is multibrand by default — brand-related inputs frequently describe several brands at once). Read whatever shape is provided and weave it naturally; never invent a single primary brand when multiple are given.",
   "",
   "You must respond with a JSON object matching this exact schema:",
   '{"subject": "<email subject line>", "emails": [{"body": "<plain text email body>", "daysSinceLastStep": <number>}]}',
@@ -281,6 +328,7 @@ function buildPitchSystemPrompt(minChars: number, maxChars: number, retry: boole
     "- Output the pitch text only — no preamble, no labels, no JSON, no markdown fences, no surrounding quotes.",
     "- Never use placeholders like [Your name] or [Company]. The pitch must be ready to submit as-is.",
     "- Never include a sign-off, signature, or 'Best,' line.",
+    "- Template inputs may arrive as strings, arrays, or objects (this platform is multibrand by default). When the expert profile describes multiple brands, speak as the collective — never invent a single primary brand when multiple are given.",
   ];
   if (retry && lastCharCount !== null) {
     if (lastCharCount < minChars) {

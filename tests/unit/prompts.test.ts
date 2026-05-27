@@ -64,7 +64,7 @@ describe("GET /prompts", () => {
       orgId: null,
       type: "cold-email",
       prompt: "Write an email to {{recipient}}",
-      variables: ["recipient"],
+      variables: [{ name: "recipient", description: "Recipient name" }],
       createdAt: NOW,
       updatedAt: NOW,
     });
@@ -77,7 +77,7 @@ describe("GET /prompts", () => {
 
     expect(res.body.type).toBe("cold-email");
     expect(res.body.prompt).toBe("Write an email to {{recipient}}");
-    expect(res.body.variables).toEqual(["recipient"]);
+    expect(res.body.variables).toEqual([{ name: "recipient", description: "Recipient name" }]);
   });
 
   it("returns 404 when prompt not found", async () => {
@@ -118,7 +118,7 @@ describe("GET /platform-prompts", () => {
       orgId: null,
       type: "cold-email",
       prompt: "Write an email to {{name}}",
-      variables: ["name"],
+      variables: [{ name: "name", description: "Lead first name" }],
       createdAt: NOW,
       updatedAt: NOW,
     });
@@ -166,7 +166,7 @@ describe("POST /prompts", () => {
       orgId: "org-internal-123",
       type: "cold-email",
       prompt: "Write an email to {{recipient}}",
-      variables: ["recipient"],
+      variables: [{ name: "recipient", description: "Recipient name" }],
       createdAt: NOW,
       updatedAt: NOW,
     }]);
@@ -178,7 +178,7 @@ describe("POST /prompts", () => {
       .send({
         type: "cold-email",
         prompt: "Write an email to {{recipient}}",
-        variables: ["recipient"],
+        variables: [{ name: "recipient", description: "Recipient name" }],
       })
       .expect(201);
 
@@ -192,7 +192,7 @@ describe("POST /prompts", () => {
       orgId: null,
       type: "cold-email",
       prompt: "Existing prompt",
-      variables: ["name"],
+      variables: [{ name: "name", description: "Lead first name" }],
       createdAt: NOW,
       updatedAt: NOW,
     });
@@ -204,7 +204,7 @@ describe("POST /prompts", () => {
       .send({
         type: "cold-email",
         prompt: "Different prompt content",
-        variables: ["name"],
+        variables: [{ name: "name", description: "Lead first name" }],
       })
       .expect(200);
 
@@ -243,7 +243,7 @@ describe("POST /platform-prompts", () => {
       orgId: null,
       type: "cold-email",
       prompt: "Write an email to {{name}}",
-      variables: ["name"],
+      variables: [{ name: "name", description: "Lead first name" }],
       createdAt: NOW,
       updatedAt: NOW,
     }]);
@@ -253,7 +253,7 @@ describe("POST /platform-prompts", () => {
       .send({
         type: "cold-email",
         prompt: "Write an email to {{name}}",
-        variables: ["name"],
+        variables: [{ name: "name", description: "Lead first name" }],
       })
       .expect(201);
 
@@ -267,7 +267,7 @@ describe("POST /platform-prompts", () => {
       orgId: null,
       type: "cold-email",
       prompt: "Existing prompt",
-      variables: ["name"],
+      variables: [{ name: "name", description: "Lead first name" }],
       createdAt: NOW,
       updatedAt: NOW,
     });
@@ -277,7 +277,7 @@ describe("POST /platform-prompts", () => {
       .send({
         type: "cold-email",
         prompt: "New prompt",
-        variables: ["name"],
+        variables: [{ name: "name", description: "Lead first name" }],
       })
       .expect(200);
 
@@ -313,7 +313,7 @@ describe("PUT /prompts", () => {
       orgId: null,
       type: "cold-email",
       prompt: "Old prompt",
-      variables: ["name"],
+      variables: [{ name: "name", description: "Lead first name" }],
       createdAt: NOW,
       updatedAt: NOW,
     });
@@ -324,7 +324,10 @@ describe("PUT /prompts", () => {
       orgId: "org-internal-123",
       type: "cold-email-v2",
       prompt: "Improved prompt for {{name}} with {{brandProfile}}",
-      variables: ["name", "brandProfile"],
+      variables: [
+        { name: "name", description: "Lead first name" },
+        { name: "brandProfile", description: "Brand profile JSON" },
+      ],
       createdAt: NOW,
       updatedAt: NOW,
     }]);
@@ -336,7 +339,10 @@ describe("PUT /prompts", () => {
       .send({
         sourceType: "cold-email",
         prompt: "Improved prompt for {{name}} with {{brandProfile}}",
-        variables: ["name", "brandProfile"],
+        variables: [
+        { name: "name", description: "Lead first name" },
+        { name: "brandProfile", description: "Brand profile JSON" },
+      ],
       })
       .expect(201);
 
@@ -349,7 +355,7 @@ describe("PUT /prompts", () => {
       orgId: null,
       type: "cold-email",
       prompt: "Old prompt",
-      variables: ["name"],
+      variables: [{ name: "name", description: "Lead first name" }],
       createdAt: NOW,
       updatedAt: NOW,
     });
@@ -360,7 +366,7 @@ describe("PUT /prompts", () => {
       orgId: "org-internal-123",
       type: "cold-email-v3",
       prompt: "Even better prompt",
-      variables: ["name"],
+      variables: [{ name: "name", description: "Lead first name" }],
       createdAt: NOW,
       updatedAt: NOW,
     }]);
@@ -372,7 +378,7 @@ describe("PUT /prompts", () => {
       .send({
         sourceType: "cold-email",
         prompt: "Even better prompt",
-        variables: ["name"],
+        variables: [{ name: "name", description: "Lead first name" }],
       })
       .expect(201);
 
@@ -385,7 +391,7 @@ describe("PUT /prompts", () => {
       orgId: null,
       type: "cold-email-v5",
       prompt: "V5 prompt",
-      variables: ["name"],
+      variables: [{ name: "name", description: "Lead first name" }],
       createdAt: NOW,
       updatedAt: NOW,
     });
@@ -401,7 +407,7 @@ describe("PUT /prompts", () => {
       orgId: "org-internal-123",
       type: "cold-email-v6",
       prompt: "V6 prompt",
-      variables: ["name"],
+      variables: [{ name: "name", description: "Lead first name" }],
       createdAt: NOW,
       updatedAt: NOW,
     }]);
@@ -413,7 +419,7 @@ describe("PUT /prompts", () => {
       .send({
         sourceType: "cold-email-v5",
         prompt: "V6 prompt",
-        variables: ["name"],
+        variables: [{ name: "name", description: "Lead first name" }],
       })
       .expect(201);
 
@@ -426,7 +432,7 @@ describe("PUT /prompts", () => {
       orgId: null,
       type: "cold-email",
       prompt: "Write an email to {{name}}",
-      variables: ["name"],
+      variables: [{ name: "name", description: "Lead first name" }],
       createdAt: NOW,
       updatedAt: NOW,
     });
@@ -438,7 +444,7 @@ describe("PUT /prompts", () => {
       .send({
         sourceType: "cold-email",
         prompt: "Write an email to {{name}}",
-        variables: ["name"],
+        variables: [{ name: "name", description: "Lead first name" }],
       })
       .expect(200);
 
@@ -456,7 +462,7 @@ describe("PUT /prompts", () => {
       orgId: "org-internal-123",
       type: "brand-intro",
       prompt: "Introduce {{brandName}}",
-      variables: ["brandName"],
+      variables: [{ name: "brandName", description: "Brand name" }],
       createdAt: NOW,
       updatedAt: NOW,
     }]);
@@ -468,7 +474,7 @@ describe("PUT /prompts", () => {
       .send({
         sourceType: "brand-intro",
         prompt: "Introduce {{brandName}}",
-        variables: ["brandName"],
+        variables: [{ name: "brandName", description: "Brand name" }],
       })
       .expect(201);
 
