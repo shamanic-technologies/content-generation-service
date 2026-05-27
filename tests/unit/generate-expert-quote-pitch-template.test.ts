@@ -33,7 +33,7 @@ describe("generateExpertQuotePitchFromTemplate", () => {
     vi.clearAllMocks();
   });
 
-  it("calls chat-service with responseFormat 'text' and substituted prompt", async () => {
+  it("calls chat-service with substituted prompt (no responseFormat, no maxTokens)", async () => {
     mockFetch.mockResolvedValueOnce(textResponse(pitchOf(500)));
 
     const result = await generateExpertQuotePitchFromTemplate(
@@ -45,7 +45,8 @@ describe("generateExpertQuotePitchFromTemplate", () => {
     const [url, opts] = mockFetch.mock.calls[0];
     expect(url).toContain("/complete");
     const body = JSON.parse(opts.body);
-    expect(body.responseFormat).toBe("text");
+    expect(body.responseFormat).toBeUndefined();
+    expect(body.maxTokens).toBeUndefined();
     expect(body.message).toContain("Acme");
     expect(body.message).toContain("How do you ship faster?");
     expect(body.systemPrompt).toContain("between 100 and 2500 characters");

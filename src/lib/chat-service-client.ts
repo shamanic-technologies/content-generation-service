@@ -367,8 +367,6 @@ async function callChatServiceForText(
     body: JSON.stringify({
       message: prompt,
       systemPrompt,
-      responseFormat: "text",
-      maxTokens: 2048,
       provider: "google",
       model: "pro",
     }),
