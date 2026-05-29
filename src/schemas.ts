@@ -307,6 +307,114 @@ registry.registerPath({
 });
 
 // ---------------------------------------------------------------------------
+// Prompt assignments — per-feature prompt resolution + fork-and-reassign
+// ---------------------------------------------------------------------------
+export const PromptAssignmentResponseSchema = registry.register(
+  "PromptAssignmentResponse",
+  z
+    .object({
+      featureSlug: z.string(),
+      promptType: z.string().describe("The resolved prompt type rendered for this feature."),
+      prompt: z.string(),
+      variables: z.array(PromptVariableSchema),
+      isDefault: z.boolean().describe("true when the feature resolves to the platform default (no override)."),
+    })
+    .openapi("PromptAssignmentResponse")
+);
+
+export const PutPromptAssignmentRequestSchema = registry.register(
+  "PutPromptAssignmentRequest",
+  z
+    .object({
+      featureSlug: z.string().describe("Feature slug whose prompt is being reassigned."),
+      prompt: z.string().describe(
+        "Edited prompt template text with {{variable}} placeholders. The {{var}} tokens MUST exactly match the " +
+        "currently-resolved source template's declared variable-name set — any drop/rename/addition is rejected (400). " +
+        "Must NOT contain company-specific data — only {{variables}}."
+      ),
+      variables: z.array(PromptVariableSchema).describe(
+        "Inputs the template expects. Each entry is { name, description }; the caller decides the JSON shape per name."
+      ),
+    })
+    .openapi("PutPromptAssignmentRequest")
+);
+
+export const PutPromptAssignmentResponseSchema = registry.register(
+  "PutPromptAssignmentResponse",
+  z
+    .object({
+      featureSlug: z.string(),
+      promptType: z.string().describe("The forked prompt type now assigned to this feature."),
+      prompt: z.string(),
+      variables: z.array(PromptVariableSchema),
+    })
+    .openapi("PutPromptAssignmentResponse")
+);
+
+// GET /prompt-assignments?featureSlug= — Read the currently-resolved prompt for a feature
+registry.registerPath({
+  method: "get",
+  path: "/prompt-assignments",
+  tags: ["Prompts"],
+  summary: "Get the currently-resolved prompt for a feature",
+  description:
+    "Resolves the prompt rendered when generating for this feature: feature assignment ▸ platform default. " +
+    "isDefault:true when no override exists (resolves to the platform default).",
+  request: {
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string().optional() }),
+    query: z.object({ featureSlug: z.string().describe("Feature slug to resolve the prompt for") }),
+  },
+  responses: {
+    200: {
+      description: "Resolved prompt for the feature",
+      content: { "application/json": { schema: PromptAssignmentResponseSchema } },
+    },
+    400: {
+      description: "Missing featureSlug query param",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: "Resolved prompt type not registered",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// PUT /prompt-assignments — Fork the resolved prompt + reassign the feature to the fork
+registry.registerPath({
+  method: "put",
+  path: "/prompt-assignments",
+  tags: ["Prompts"],
+  summary: "Fork the resolved prompt and reassign the feature to the fork",
+  description:
+    "Forks the currently-resolved prompt type for the feature (auto-incremented '<type>-vN'), then assigns the feature " +
+    "to the new fork. The source template is never modified. Returns 400 (naming the offending variable) if the {{var}} " +
+    "tokens in the submitted prompt do not exactly match the source template's declared variable-name set — on 400 " +
+    "nothing is forked or assigned.",
+  request: {
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string().optional() }),
+    body: {
+      required: true,
+      content: { "application/json": { schema: PutPromptAssignmentRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "Feature reassigned to the forked prompt",
+      content: { "application/json": { schema: PutPromptAssignmentResponseSchema } },
+    },
+    400: {
+      description: "Invalid request, or submitted variables do not match the source template",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: "Resolved source prompt type not registered",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
 // POST /generate — Generate content using a stored prompt + variables
 // ---------------------------------------------------------------------------
 export const GenerateRequestSchema = registry.register(
@@ -403,6 +511,10 @@ export const GenerateExpertQuotePitchRequestSchema = registry.register(
         "Any JSON values allowed — strings, arrays, or objects. Caller decides the shape per variable. " +
         "Multibrand is the default in this platform, so brand-related variables typically receive arrays or objects. " +
         "Per-template input expectations are published via GET /platform-prompts?type=expert-quote-pitch (.variables)."
+      ),
+      templateType: z.string().optional().describe(
+        "Explicit prompt type to render, overriding feature assignment + platform default. " +
+        "Resolution order: templateType ▸ feature assignment for featureSlug ▸ platform default 'expert-quote-pitch'."
       ),
       brandIds: z.array(z.string()).optional().describe("Brand UUIDs for tracking. Falls back to x-brand-id header."),
       campaignId: z.string().optional(),
