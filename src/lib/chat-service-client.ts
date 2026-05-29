@@ -1,3 +1,5 @@
+import { extractTemplateVariableNames } from "./template-vars.js";
+
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
 const CHAT_SERVICE_API_KEY = process.env.CHAT_SERVICE_API_KEY || "";
 
@@ -128,9 +130,7 @@ export function formatCampaignContext(featureInputs: Record<string, unknown>): s
  * Find {{placeholder}} names that remain unfilled after variable substitution.
  */
 export function findUnfilledPlaceholders(text: string): string[] {
-  const matches = text.match(/\{\{(\w+)\}\}/g);
-  if (!matches) return [];
-  return [...new Set(matches.map((m) => m.slice(2, -2)))];
+  return extractTemplateVariableNames(text);
 }
 
 // ─── Gemini structured-output schema ───────────────────────────────────────

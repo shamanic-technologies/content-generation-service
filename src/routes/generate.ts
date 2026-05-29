@@ -4,7 +4,7 @@ import { db } from "../db/index.js";
 import { emailGenerations, prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { generateFromTemplate, generateExpertQuotePitchFromTemplate, substituteVariables, findUnfilledPlaceholders, InsufficientCreditsError, ExpertQuotePitchLengthError } from "../lib/chat-service-client.js";
-import { EXPERT_QUOTE_PITCH_TYPE } from "../lib/expert-quote-pitch-template.js";
+import { resolveAssignedPromptType } from "../lib/prompt-assignment.js";
 import { createRun, updateRun } from "../lib/runs-client.js";
 import { getCampaignFeatureInputs } from "../lib/campaign-client.js";
 import { extractBrandFields } from "../lib/brand-client.js";
@@ -229,7 +229,7 @@ router.post("/generate-expert-quote-pitch", serviceAuth, async (req: Authenticat
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
 
-    const { variables, brandIds: bodyBrandIds, campaignId: bodyCampaignId, workflowSlug: bodyWorkflowSlug, featureSlug: bodyFeatureSlug } = parsed.data;
+    const { variables, templateType, brandIds: bodyBrandIds, campaignId: bodyCampaignId, workflowSlug: bodyWorkflowSlug, featureSlug: bodyFeatureSlug } = parsed.data;
 
     const brandIds = bodyBrandIds?.length ? bodyBrandIds : (req.brandIds ?? []);
     const brandId = brandIds.length > 0 ? brandIds.join(",") : req.brandId;
@@ -237,15 +237,18 @@ router.post("/generate-expert-quote-pitch", serviceAuth, async (req: Authenticat
     const workflowSlug = bodyWorkflowSlug || req.workflowSlug;
     const featureSlug = bodyFeatureSlug || req.featureSlug;
 
-    traceEvent(req.runId!, { service: "content-generation-service", event: "generate-expert-quote-pitch-start", detail: `brandIds=${brandIds.join(",")}, variableCount=${Object.keys(variables).length}` }, req.headers).catch(() => {});
+    // Resolution order: explicit templateType ▸ feature assignment ▸ platform default.
+    const resolvedType = templateType ?? (await resolveAssignedPromptType(featureSlug));
+
+    traceEvent(req.runId!, { service: "content-generation-service", event: "generate-expert-quote-pitch-start", detail: `brandIds=${brandIds.join(",")}, variableCount=${Object.keys(variables).length}, promptType=${resolvedType}` }, req.headers).catch(() => {});
 
     const storedPrompt = await db.query.prompts.findFirst({
-      where: eq(prompts.type, EXPERT_QUOTE_PITCH_TYPE),
+      where: eq(prompts.type, resolvedType),
     });
 
     if (!storedPrompt) {
       return res.status(404).json({
-        error: `No prompt found for type=${EXPERT_QUOTE_PITCH_TYPE}. Service should register it at boot via POST /platform-prompts.`,
+        error: `No prompt found for type=${resolvedType}. Service should register it at boot via POST /platform-prompts.`,
       });
     }
 

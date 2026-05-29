@@ -163,6 +163,90 @@
           "updatedAt"
         ]
       },
+      "PromptAssignmentResponse": {
+        "type": "object",
+        "properties": {
+          "featureSlug": {
+            "type": "string"
+          },
+          "promptType": {
+            "type": "string",
+            "description": "The resolved prompt type rendered for this feature."
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PromptVariable"
+            }
+          },
+          "isDefault": {
+            "type": "boolean",
+            "description": "true when the feature resolves to the platform default (no override)."
+          }
+        },
+        "required": [
+          "featureSlug",
+          "promptType",
+          "prompt",
+          "variables",
+          "isDefault"
+        ]
+      },
+      "PutPromptAssignmentRequest": {
+        "type": "object",
+        "properties": {
+          "featureSlug": {
+            "type": "string",
+            "description": "Feature slug whose prompt is being reassigned."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Edited prompt template text with {{variable}} placeholders. The {{var}} tokens MUST exactly match the currently-resolved source template's declared variable-name set — any drop/rename/addition is rejected (400). Must NOT contain company-specific data — only {{variables}}."
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PromptVariable"
+            },
+            "description": "Inputs the template expects. Each entry is { name, description }; the caller decides the JSON shape per name."
+          }
+        },
+        "required": [
+          "featureSlug",
+          "prompt",
+          "variables"
+        ]
+      },
+      "PutPromptAssignmentResponse": {
+        "type": "object",
+        "properties": {
+          "featureSlug": {
+            "type": "string"
+          },
+          "promptType": {
+            "type": "string",
+            "description": "The forked prompt type now assigned to this feature."
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PromptVariable"
+            }
+          }
+        },
+        "required": [
+          "featureSlug",
+          "promptType",
+          "prompt",
+          "variables"
+        ]
+      },
       "GenerateRequest": {
         "type": "object",
         "properties": {
@@ -269,6 +353,10 @@
               "nullable": true
             },
             "description": "Variable values to substitute into the stored 'expert-quote-pitch' template. Any JSON values allowed — strings, arrays, or objects. Caller decides the shape per variable. Multibrand is the default in this platform, so brand-related variables typically receive arrays or objects. Per-template input expectations are published via GET /platform-prompts?type=expert-quote-pitch (.variables)."
+          },
+          "templateType": {
+            "type": "string",
+            "description": "Explicit prompt type to render, overriding feature assignment + platform default. Resolution order: templateType ▸ feature assignment for featureSlug ▸ platform default 'expert-quote-pitch'."
           },
           "brandIds": {
             "type": "array",
@@ -1382,6 +1470,158 @@
           },
           "400": {
             "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prompt-assignments": {
+      "get": {
+        "tags": [
+          "Prompts"
+        ],
+        "summary": "Get the currently-resolved prompt for a feature",
+        "description": "Resolves the prompt rendered when generating for this feature: feature assignment ▸ platform default. isDefault:true when no override exists (resolves to the platform default).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Feature slug to resolve the prompt for"
+            },
+            "required": true,
+            "description": "Feature slug to resolve the prompt for",
+            "name": "featureSlug",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved prompt for the feature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptAssignmentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing featureSlug query param",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resolved prompt type not registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Prompts"
+        ],
+        "summary": "Fork the resolved prompt and reassign the feature to the fork",
+        "description": "Forks the currently-resolved prompt type for the feature (auto-incremented '<type>-vN'), then assigns the feature to the new fork. The source template is never modified. Returns 400 (naming the offending variable) if the {{var}} tokens in the submitted prompt do not exactly match the source template's declared variable-name set — on 400 nothing is forked or assigned.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutPromptAssignmentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Feature reassigned to the forked prompt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PutPromptAssignmentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, or submitted variables do not match the source template",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resolved source prompt type not registered",
             "content": {
               "application/json": {
                 "schema": {
