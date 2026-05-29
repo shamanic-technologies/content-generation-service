@@ -76,3 +76,33 @@ export async function serviceAuth(
 
   next();
 }
+
+/**
+ * Like serviceAuth, but x-run-id is OPTIONAL. Used by operator/dashboard actions
+ * that have org + user identity but no run context (e.g. the prompt-assignments
+ * editor save). Requires x-org-id + x-user-id; leaves req.runId undefined if absent.
+ */
+export async function serviceAuthRunOptional(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) {
+  const orgId = req.headers["x-org-id"] as string;
+  const userId = req.headers["x-user-id"] as string;
+
+  if (!orgId) {
+    return res.status(400).json({ error: "x-org-id header required" });
+  }
+
+  if (!userId) {
+    return res.status(400).json({ error: "x-user-id header required" });
+  }
+
+  req.orgId = orgId;
+  req.userId = userId;
+
+  const runId = req.headers["x-run-id"] as string | undefined;
+  if (runId) req.runId = runId;
+
+  next();
+}

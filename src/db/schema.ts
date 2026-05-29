@@ -89,6 +89,16 @@ export const prompts = pgTable(
   ]
 );
 
+// Per-feature prompt assignment — maps a feature slug to the prompt type rendered
+// when generating for that feature. Feature-global (NOT org/brand-scoped): the
+// assignment is brand-agnostic, brand facts arrive via the {{brand}} variable at
+// generation time. Absence of a row means the feature resolves to the platform default.
+export const featurePromptAssignment = pgTable("feature_prompt_assignment", {
+  featureSlug: text("feature_slug").primaryKey(),
+  promptType: text("prompt_type").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** @deprecated No longer used after calendar/content endpoint removal. Kept for historical data. */
 export const contentGenerations = pgTable(
   "content_generations",
@@ -142,3 +152,5 @@ export type ContentGeneration = typeof contentGenerations.$inferSelect;
 export type NewContentGeneration = typeof contentGenerations.$inferInsert;
 export type Prompt = typeof prompts.$inferSelect;
 export type NewPrompt = typeof prompts.$inferInsert;
+export type FeaturePromptAssignment = typeof featurePromptAssignment.$inferSelect;
+export type NewFeaturePromptAssignment = typeof featurePromptAssignment.$inferInsert;

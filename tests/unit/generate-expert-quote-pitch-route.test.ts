@@ -17,6 +17,7 @@ vi.mock("../../src/middleware/auth.js", () => ({
 }));
 
 const mockPromptFindFirst = vi.fn();
+const mockAssignmentFindFirst = vi.fn();
 
 vi.mock("../../src/db/index.js", () => ({
   db: {
@@ -31,6 +32,7 @@ vi.mock("../../src/db/index.js", () => ({
     query: {
       prompts: { findFirst: (...args: unknown[]) => mockPromptFindFirst(...args) },
       emailGenerations: { findFirst: vi.fn(), findMany: vi.fn() },
+      featurePromptAssignment: { findFirst: (...args: unknown[]) => mockAssignmentFindFirst(...args) },
     },
   },
 }));
@@ -38,6 +40,7 @@ vi.mock("../../src/db/index.js", () => ({
 vi.mock("../../src/db/schema.js", () => ({
   prompts: { type: { name: "type" }, orgId: { name: "org_id" } },
   emailGenerations: { id: { name: "id" } },
+  featurePromptAssignment: { featureSlug: { name: "feature_slug" }, promptType: { name: "prompt_type" } },
 }));
 
 vi.mock("../../src/lib/runs-client.js", () => ({
@@ -167,6 +170,7 @@ describe("POST /generate-expert-quote-pitch", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockAssignmentFindFirst.mockResolvedValue(null); // no feature assignment by default
     mockPromptFindFirst.mockResolvedValue({
       id: "p-1",
       orgId: null,
@@ -328,6 +332,53 @@ describe("POST /generate-expert-quote-pitch", () => {
       .expect(404);
 
     expect(res.body.error).toContain(EXPERT_QUOTE_PITCH_TYPE);
+  });
+
+  // --- Resolution order: explicit templateType ▸ feature assignment ▸ platform default ---
+
+  it("explicit templateType overrides assignment + default (no assignment lookup)", async () => {
+    await request(app)
+      .post("/generate-expert-quote-pitch")
+      .set("X-Org-Id", "org-1")
+      .set("X-User-Id", "user-1")
+      .set("X-Run-Id", "run-1")
+      .send({ ...FIXTURE_A, templateType: "expert-quote-pitch-v9" })
+      .expect(200);
+
+    // templateType short-circuits resolution — assignment table is never consulted.
+    expect(mockAssignmentFindFirst).not.toHaveBeenCalled();
+    expect(mockPromptFindFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it("no templateType + assignment present → consults the assignment table", async () => {
+    mockAssignmentFindFirst.mockResolvedValue({
+      featureSlug: "pr-expert-quote-opportunities",
+      promptType: "expert-quote-pitch-v2",
+    });
+
+    await request(app)
+      .post("/generate-expert-quote-pitch")
+      .set("X-Org-Id", "org-1")
+      .set("X-User-Id", "user-1")
+      .set("X-Run-Id", "run-1")
+      .set("X-Feature-Slug", "pr-expert-quote-opportunities")
+      .send({ ...FIXTURE_A, featureSlug: "pr-expert-quote-opportunities" })
+      .expect(200);
+
+    expect(mockAssignmentFindFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it("no templateType + no assignment → falls back to platform default", async () => {
+    await request(app)
+      .post("/generate-expert-quote-pitch")
+      .set("X-Org-Id", "org-1")
+      .set("X-User-Id", "user-1")
+      .set("X-Run-Id", "run-1")
+      .send({ ...FIXTURE_A, featureSlug: "pr-expert-quote-opportunities" })
+      .expect(200);
+
+    expect(mockAssignmentFindFirst).toHaveBeenCalledTimes(1);
+    expect(mockPromptFindFirst).toHaveBeenCalledTimes(1);
   });
 });
 
