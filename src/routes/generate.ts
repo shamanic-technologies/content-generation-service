@@ -5,6 +5,7 @@ import { emailGenerations, prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { generateFromTemplate, generateExpertQuotePitchFromTemplate, substituteVariables, findUnfilledPlaceholders, InsufficientCreditsError, ExpertQuotePitchLengthError } from "../lib/chat-service-client.js";
 import { resolveAssignedPromptType } from "../lib/prompt-assignment.js";
+import { assertExpertQuotePitchVariables, ExpertQuotePitchInputError } from "../lib/expert-quote-pitch-template.js";
 import { createRun, updateRun } from "../lib/runs-client.js";
 import { getCampaignFeatureInputs } from "../lib/campaign-client.js";
 import { extractBrandFields } from "../lib/brand-client.js";
@@ -250,6 +251,20 @@ router.post("/generate-expert-quote-pitch", serviceAuth, async (req: Authenticat
       return res.status(404).json({
         error: `No prompt found for type=${resolvedType}. Service should register it at boot via POST /platform-prompts.`,
       });
+    }
+
+    // Explicit, all-required input contract — fail loud (400) before spending an
+    // LLM call when a declared variable is missing or a brand object is incomplete.
+    try {
+      assertExpertQuotePitchVariables(
+        variables,
+        (storedPrompt.variables as Array<{ name: string }>) ?? []
+      );
+    } catch (validationError) {
+      if (validationError instanceof ExpertQuotePitchInputError) {
+        return res.status(400).json({ error: validationError.message });
+      }
+      throw validationError;
     }
 
     const identity = { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug };

@@ -25,7 +25,7 @@ Microservice that generates personalized content (emails, calendar events, etc.)
 - `src/lib/chat-service-client.ts` — Chat-service client + email template utilities (prompt substitution, JSON parsing)
 - `src/lib/runs-client.ts` — Client for runs-service (run tracking)
 - `src/lib/key-client.ts` — Client for key-service (used by submagic route)
-- `src/lib/expert-quote-pitch-template.ts` — Source of truth for the `expert-quote-pitch` platform template (body + variables metadata)
+- `src/lib/expert-quote-pitch-template.ts` — Source of truth for the `expert-quote-pitch` platform template (body + variables metadata) + `assertExpertQuotePitchVariables` (all-required input guard) + `EXPERT_QUOTE_PITCH_BRAND_FIELDS`
 - `src/lib/register-platform-templates.ts` — Boot-time UPSERT reconcile of platform-owned prompt rows; called from `src/index.ts` after migrations
 - `src/lib/prompt-versioning.ts` — `findNextVersionType` + `createPromptVersion` fork helper (shared by `PUT /prompts` and `PUT /prompt-assignments`)
 - `src/lib/prompt-assignment.ts` — `resolveAssignedPromptType(featureSlug)` + `assertPromptVariablesMatch` integrity guard
@@ -49,9 +49,17 @@ To add a new platform template: create `src/lib/<name>-template.ts` exporting `T
 
 The `variables` array is the self-describing contract callers use to construct the request body for `POST /generate` and `POST /generate-expert-quote-pitch`. Keep descriptions precise — external callers discover input shape via `GET /platform-prompts?type=<type>`.
 
+### `expert-quote-pitch` explicit input contract (all-required)
+
+The request type stays `variables: Record<string, unknown>` (DIS-52 — no per-field Zod schema; callers keep JSON flexibility). Required-ness is enforced at **runtime** by `assertExpertQuotePitchVariables(variables, declaredVariables)`, called in the route before any LLM spend → **400 fail-loud** if anything is missing/empty. Two layers:
+1. **Every declared variable** (driven by the resolved template's `variables` metadata) must be present + non-empty.
+2. **`brands` is multibrand** — ALWAYS an array of objects, each carrying all `EXPERT_QUOTE_PITCH_BRAND_FIELDS` (`brandName`, `brandUrl`, `brandDescription`, `brandHeadquartersLocation`, `brandLogoUrl`) non-empty. The nested sub-fields can't be seen by the top-level `{{token}}` scan, so they get a structural check. Expert attribution is single (`expertName`/`expertTitle`/`expertBio`/`expertPhotoUrl`/`expertLinkedIn`, names mirror features-service campaign inputs / DIS-136). Request fields: `journalistRequest`, `expertAnswerContext`.
+
+**Changing the variable set is a hard break** for callers (journalists-quotes-service DAG + dashboard `/draft` via api-service proxy) AND invalidates every existing org fork (`expert-quote-pitch-v*`, old token set). When the contract changes, ship a data migration that `DELETE`s the stale `feature_prompt_assignment` rows (`prompt_type LIKE 'expert-quote-pitch-v%'`) + the stale fork rows (`prompts.type LIKE 'expert-quote-pitch-v%'`) so the feature falls back to the rebuilt platform default. See `drizzle/0024_reset_expert_quote_pitch_forks.sql`. The api-service proxy is pass-through (body owned by this service) — no gateway change.
+
 ## Per-feature prompt assignment
 
-`feature_prompt_assignment (feature_slug PK, prompt_type, updated_at)` maps a feature slug to the prompt type rendered for it. Feature-global (NOT org/brand scoped — brand facts arrive via `{{brand}}` at generation time).
+`feature_prompt_assignment (feature_slug PK, prompt_type, updated_at)` maps a feature slug to the prompt type rendered for it. Feature-global (NOT org/brand scoped — brand facts arrive via `{{brands}}` at generation time).
 
 - **Resolution order** (`POST /generate-expert-quote-pitch`): explicit `templateType` ▸ feature assignment for `featureSlug` ▸ platform default `expert-quote-pitch`. `resolveAssignedPromptType()` covers the last two; the route applies `templateType` before calling it.
 - `GET /prompt-assignments?featureSlug=` returns the resolved prompt; `isDefault = (resolvedType === platform default)`.
