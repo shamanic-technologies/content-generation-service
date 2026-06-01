@@ -507,10 +507,12 @@ export const GenerateExpertQuotePitchRequestSchema = registry.register(
   z
     .object({
       variables: z.record(z.string(), z.unknown()).describe(
-        "Variable values to substitute into the stored 'expert-quote-pitch' template. " +
-        "Any JSON values allowed — strings, arrays, or objects. Caller decides the shape per variable. " +
-        "Multibrand is the default in this platform, so brand-related variables typically receive arrays or objects. " +
-        "Per-template input expectations are published via GET /platform-prompts?type=expert-quote-pitch (.variables)."
+        "Variable values to substitute into the stored 'expert-quote-pitch' template. ALL of the template's declared " +
+        "variables are REQUIRED and must be non-empty (missing/empty → 400). For the platform template the required set is: " +
+        "`brands` (multibrand — ALWAYS an array of objects; each element MUST include brandName, brandUrl, brandDescription, " +
+        "brandHeadquartersLocation, brandLogoUrl), `expertName`, `expertTitle`, `expertBio`, `expertPhotoUrl`, " +
+        "`expertLinkedIn`, `journalistRequest`, `expertAnswerContext`. Inner JSON shape per variable is caller's choice; " +
+        "the authoritative input list is published via GET /platform-prompts?type=expert-quote-pitch (.variables)."
       ),
       templateType: z.string().optional().describe(
         "Explicit prompt type to render, overriding feature assignment + platform default. " +
