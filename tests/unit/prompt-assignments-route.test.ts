@@ -59,9 +59,12 @@ const SOURCE_ROW = {
   updatedAt: new Date("2025-01-15T00:00:00Z"),
 };
 
-// A valid edited prompt that keeps the {{brand}}/{{request}}/{{additionalContext}} token set.
-const EDITED_PROMPT =
-  "EDITED expert pitch.\n## Expert\n{{brand}}\n## Request\n{{request}}\n## Extra\n{{additionalContext}}\nReturn ONLY the pitch.";
+// The full declared token set for the expert-quote-pitch source template.
+const ALL_TOKENS =
+  "{{brands}} {{expertName}} {{expertTitle}} {{expertBio}} {{expertPhotoUrl}} {{expertLinkedIn}} {{journalistRequest}} {{expertAnswerContext}}";
+
+// A valid edited prompt that keeps the full declared token set.
+const EDITED_PROMPT = `EDITED expert pitch.\n${ALL_TOKENS}\nReturn ONLY the pitch.`;
 
 function makeApp() {
   const app = express();
@@ -105,7 +108,7 @@ describe("GET /prompt-assignments", () => {
       ...SOURCE_ROW,
       id: "p-v2",
       type: "expert-quote-pitch-v2",
-      prompt: "v2 body {{brand}} {{request}} {{additionalContext}}",
+      prompt: `v2 body ${ALL_TOKENS}`,
     });
 
     const res = await request(app)
@@ -194,7 +197,9 @@ describe("PUT /prompt-assignments", () => {
   });
 
   it("dropping a {{var}} → 400 naming the var, no fork, no assignment", async () => {
-    const droppedPrompt = "EDITED {{brand}} {{request}} only"; // drops additionalContext
+    // drops expertAnswerContext
+    const droppedPrompt =
+      "EDITED {{brands}} {{expertName}} {{expertTitle}} {{expertBio}} {{expertPhotoUrl}} {{expertLinkedIn}} {{journalistRequest}}";
 
     const res = await request(app)
       .put("/prompt-assignments")
@@ -207,13 +212,13 @@ describe("PUT /prompt-assignments", () => {
       })
       .expect(400);
 
-    expect(res.body.error).toContain("additionalContext");
+    expect(res.body.error).toContain("expertAnswerContext");
     expect(mockReturning).not.toHaveBeenCalled();
     expect(mockOnConflictDoUpdate).not.toHaveBeenCalled();
   });
 
   it("adding a {{var}} → 400 naming the var, no fork, no assignment", async () => {
-    const addedPrompt = "EDITED {{brand}} {{request}} {{additionalContext}} {{rogue}}";
+    const addedPrompt = `EDITED ${ALL_TOKENS} {{rogue}}`;
 
     const res = await request(app)
       .put("/prompt-assignments")

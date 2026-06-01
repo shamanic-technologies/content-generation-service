@@ -169,6 +169,13 @@
       "when": 1779086400000,
       "tag": "0023_feature_prompt_assignment",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1779172800000,
+      "tag": "0024_reset_expert_quote_pitch_forks",
+      "breakpoints": true
     }
   ]
 }
