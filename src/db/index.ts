@@ -1,6 +1,14 @@
+import net from "node:net";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema.js";
+
+// Neon scale-to-zero cold-start: the first connection after idle hits a resuming compute.
+// Node 20's happy-eyeballs gives each candidate address only 250ms
+// (autoSelectFamilyAttemptTimeout), so the IPv4 connect to Neon times out (and the IPv6
+// candidate is ENETUNREACH on most CI runners) → `AggregateError [ETIMEDOUT]` BEFORE the wake
+// completes. Bump the per-address attempt to 5s so the IPv4 connect waits for the resume.
+net.setDefaultAutoSelectFamilyAttemptTimeout(5000);
 
 const connectionString = process.env.CONTENT_GENERATION_SERVICE_DATABASE_URL;
 
