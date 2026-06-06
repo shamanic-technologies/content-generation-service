@@ -605,6 +605,101 @@
           "generations"
         ]
       },
+      "ExampleEmail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "subject": {
+            "type": "string",
+            "nullable": true
+          },
+          "bodyHtml": {
+            "type": "string",
+            "nullable": true
+          },
+          "bodyText": {
+            "type": "string",
+            "nullable": true
+          },
+          "sequence": {
+            "nullable": true,
+            "description": "Per-step email sequence array (same shape as GET /generations)."
+          },
+          "leadFirstName": {
+            "type": "string",
+            "nullable": true
+          },
+          "leadLastName": {
+            "type": "string",
+            "nullable": true
+          },
+          "leadCompany": {
+            "type": "string",
+            "nullable": true
+          },
+          "leadTitle": {
+            "type": "string",
+            "nullable": true
+          },
+          "leadIndustry": {
+            "type": "string",
+            "nullable": true
+          },
+          "clientCompanyName": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "brand",
+              "org",
+              "global"
+            ],
+            "description": "Cascade tier this example came from, relative to the caller's brandId/orgId."
+          },
+          "brandName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Display name of the SOURCE brand (org/global tiers); null for own-brand scope or when unavailable."
+          }
+        },
+        "required": [
+          "id",
+          "subject",
+          "bodyHtml",
+          "bodyText",
+          "leadFirstName",
+          "leadLastName",
+          "leadCompany",
+          "leadTitle",
+          "leadIndustry",
+          "clientCompanyName",
+          "createdAt",
+          "scope",
+          "brandName"
+        ]
+      },
+      "GenerationsExamplesResponse": {
+        "type": "object",
+        "properties": {
+          "examples": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExampleEmail"
+            }
+          }
+        },
+        "required": [
+          "examples"
+        ]
+      },
       "GenerationSingleResponse": {
         "type": "object",
         "properties": {
@@ -1995,6 +2090,93 @@
           },
           "400": {
             "description": "At least one filter required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generations/examples": {
+      "get": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "Cascade example emails for a workflow (brand → org → global)",
+        "description": "Returns up to `limit` content-bearing example emails for a workflow, with a fallback cascade so it (almost) always returns `limit`: (1) the caller's current brand, then (2) the caller's other brands, then (3) any org (examples are public). Each example is tagged with `scope` (which tier it came from) and `brandName` (the source brand's label for org/global tiers; null for own-brand). Brand-tier rows come first, newest-first within each tier. Content-less / failed generations are skipped. Default limit 3.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Workflow slug to fetch examples for"
+            },
+            "required": true,
+            "description": "Workflow slug to fetch examples for",
+            "name": "workflowSlug",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Caller's current brand UUID — anchors the brand/org cascade tiers"
+            },
+            "required": true,
+            "description": "Caller's current brand UUID — anchors the brand/org cascade tiers",
+            "name": "brandId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Max examples to return (default 3)"
+            },
+            "required": false,
+            "description": "Max examples to return (default 3)",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to `limit` example emails, brand-tier first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationsExamplesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing workflowSlug or brandId",
             "content": {
               "application/json": {
                 "schema": {

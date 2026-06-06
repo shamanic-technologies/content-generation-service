@@ -31,6 +31,7 @@ Microservice that generates personalized content (emails, calendar events, etc.)
 - `src/lib/prompt-assignment.ts` — `resolveAssignedPromptType(featureSlug)` + `assertPromptVariablesMatch` integrity guard
 - `src/lib/template-vars.ts` — `extractTemplateVariableNames` (env-free `{{var}}` parser; single source of truth for the token regex)
 - `src/routes/prompt-assignments.ts` — GET/PUT /prompt-assignments (per-feature prompt resolution + fork-and-reassign)
+- `src/lib/examples-query.ts` — Gold-layer cascade for `GET /generations/examples` (`fetchWorkflowExamples` + `toExampleEmail`); reads the silver view
 - `src/db/schema.ts` — Drizzle ORM database schema
 - `src/db/index.ts` — Database connection
 - `src/instrument.ts` — Sentry instrumentation
@@ -65,6 +66,18 @@ The request type stays `variables: Record<string, unknown>` (DIS-52 — no per-f
 - `GET /prompt-assignments?featureSlug=` returns the resolved prompt; `isDefault = (resolvedType === platform default)`.
 - `PUT /prompt-assignments` forks the resolved type (reusing `createPromptVersion`, source never mutated) then upserts the assignment. The `{{var}}` tokens in the submitted prompt MUST exactly match the source's declared variable-name set — `assertPromptVariablesMatch` throws → 400 naming the offending var, nothing forked/assigned.
 - The two `/prompt-assignments` endpoints use `serviceAuthRunOptional` (x-org-id + x-user-id required, **x-run-id optional**) — an operator/dashboard prompt-editor save has no run context. Do NOT loosen `serviceAuth` itself; other routes depend on `req.runId!` being present.
+
+## Data layering (medallion)
+
+This repo owns a **logical** bronze → silver → gold layering for the workflow example-email feature. It is logical, not three physical tables (Databricks: medallion is "recommended, not required"; Lakshmanan: minimize copies, keep gold small; Baeyens: "medallion is NOT a data model"). One index + one view; gold derives on read.
+
+| Layer | Where | What |
+|-------|-------|------|
+| 🥉 Bronze | `email_generations` table | Raw, append-only generation log — one row per generation. Immutable (no SCD). Source of truth. |
+| 🥈 Silver | `email_examples_silver` **view** (`drizzle/0025`) | Cleansed (drops content-less / failed generations) + conformed (stable example column set) projection over bronze. Plain VIEW — **never materialized**, never written directly, rebuildable from bronze. Declared in `src/db/schema.ts` as `pgView(...).existing()`. |
+| 🥇 Gold | `src/lib/examples-query.ts` (`fetchWorkflowExamples`) | Parameterized cascade (current brand → same-org other brands → any org) computed at read time. "Kept small" = `limit` N. No stored gold. |
+
+**Evolution trigger:** materialize silver (or add a gold table) ONLY if profiling shows the cross-org global tier is slow at scale. Until then the plain view + `idx_emailgen_workflow` index is the floor. Do not add a refresh job / accumulator — that reintroduces state the view avoids.
 
 ## Gotchas
 
