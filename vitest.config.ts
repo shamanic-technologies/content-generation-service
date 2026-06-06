@@ -9,6 +9,9 @@ export default defineConfig({
     exclude: ["node_modules", "dist"],
     fileParallelism: false,
     maxWorkers: 1,
-    hookTimeout: 30000,
+    // 60s: the CI Neon test branch clones the parent (~15k email_generations rows); the first
+    // integration file's hooks pay cold-compute resume + (for db.test.ts) a full-table wipe.
+    hookTimeout: 60000,
+    testTimeout: 30000,
   },
 });

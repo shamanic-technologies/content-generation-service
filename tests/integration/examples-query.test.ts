@@ -1,11 +1,19 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { inArray } from "drizzle-orm";
 import { db } from "../../src/db/index.js";
 import { emailGenerations } from "../../src/db/schema.js";
 import { fetchWorkflowExamples } from "../../src/lib/examples-query.js";
-import { cleanTestData, closeDb, randomId } from "../helpers/test-db.js";
+import { closeDb, randomId } from "../helpers/test-db.js";
 
 const WF = "cold-email-examples-test";
+const OTHER_WF = "different-wf";
 const seq = [{ step: 1, bodyHtml: "<p>x</p>", bodyText: "x", daysSinceLastStep: 0 }];
+
+// Scope cleanup to THIS suite's workflow rows only. The CI Neon branch clones the parent
+// (~15k email_generations rows); a full-table wipe on a cold compute exceeds the hook timeout.
+// All assertions here are isolated by the unique WF slug, so a targeted delete is sufficient
+// and fast (uses idx_emailgen_workflow).
+const cleanup = () => db.delete(emailGenerations).where(inArray(emailGenerations.workflowSlug, [WF, OTHER_WF]));
 
 async function insertGen(opts: {
   orgId: string;
@@ -38,11 +46,11 @@ const t = (secondsAgo: number) => new Date(Date.now() - secondsAgo * 1000);
 
 describe("fetchWorkflowExamples cascade", () => {
   beforeEach(async () => {
-    await cleanTestData();
+    await cleanup();
   });
 
   afterAll(async () => {
-    await cleanTestData();
+    await cleanup();
     await closeDb();
   });
 
@@ -93,7 +101,7 @@ describe("fetchWorkflowExamples cascade", () => {
     const org = randomId();
     const brand = randomId();
     // Different workflow — must not leak in.
-    await insertGen({ orgId: org, brandIds: [brand], subject: "other", workflowSlug: "different-wf" });
+    await insertGen({ orgId: org, brandIds: [brand], subject: "other", workflowSlug: OTHER_WF });
 
     const rows = await fetchWorkflowExamples({ callerOrgId: org, brandId: brand, workflowSlug: WF, limit: 3 });
 
