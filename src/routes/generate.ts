@@ -1,14 +1,15 @@
-import { Router } from "express";
+import { Router, type Response, type NextFunction } from "express";
 import { eq, and, inArray, arrayContains, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, prompts } from "../db/schema.js";
-import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
+import { serviceAuth, serviceAuthRunOptional, AuthenticatedRequest } from "../middleware/auth.js";
 import { generateFromTemplate, generateExpertQuotePitchFromTemplate, substituteVariables, findUnfilledPlaceholders, InsufficientCreditsError, ExpertQuotePitchLengthError } from "../lib/chat-service-client.js";
 import { resolveAssignedPromptType } from "../lib/prompt-assignment.js";
 import { assertExpertQuotePitchVariables, ExpertQuotePitchInputError } from "../lib/expert-quote-pitch-template.js";
 import { createRun, updateRun } from "../lib/runs-client.js";
 import { getCampaignFeatureInputs } from "../lib/campaign-client.js";
-import { extractBrandFields } from "../lib/brand-client.js";
+import { extractBrandFields, resolveBrandNames } from "../lib/brand-client.js";
+import { fetchWorkflowExamples, toExampleEmail } from "../lib/examples-query.js";
 import { GenerateRequestSchema, GenerateExpertQuotePitchRequestSchema, StatsRequestSchema, StatsQuerySchema } from "../schemas.js";
 import {
   resolveWorkflowDynastySlugs,
@@ -343,6 +344,59 @@ router.get("/generations", serviceAuth, async (req: AuthenticatedRequest, res) =
     res.json({ generations });
   } catch (error) {
     console.error("List generations error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * GET /generations/examples - Gold-layer cascade of example emails for a workflow.
+ * Query: workflowSlug (required), brandId (required), limit (default 3).
+ * Cascade brand -> org -> global over the silver view; each row tagged scope + brandName.
+ * Uses serviceAuthRunOptional: a default workflow-picker load has org+user but no run context.
+ */
+router.get(
+  "/generations/examples",
+  // Wrapped (not passed directly) so this module stays import-safe under unit tests that fully
+  // mock src/middleware/auth.js without the newer serviceAuthRunOptional export: the binding is
+  // read at request time, not at route-registration (module-eval) time.
+  (req: AuthenticatedRequest, res: Response, next: NextFunction) => serviceAuthRunOptional(req, res, next),
+  async (req: AuthenticatedRequest, res) => {
+  try {
+    const { workflowSlug, brandId } = req.query as {
+      workflowSlug?: string;
+      brandId?: string;
+      limit?: string;
+    };
+
+    if (!workflowSlug) {
+      return res.status(400).json({ error: "workflowSlug query param required" });
+    }
+    if (!brandId) {
+      return res.status(400).json({ error: "brandId query param required" });
+    }
+
+    // Default 3 (contract); honor a caller-supplied positive limit, no silent ceiling.
+    const parsedLimit = parseInt((req.query.limit as string | undefined) ?? "", 10);
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 3;
+
+    const rows = await fetchWorkflowExamples({
+      callerOrgId: req.orgId!,
+      brandId,
+      workflowSlug,
+      limit,
+    });
+
+    // brandName enrichment for org/global tiers — best-effort batch lookup, null acceptable.
+    const sourceBrandIds = rows
+      .filter((r) => r.scope !== "brand")
+      .map((r) => r.brandIds[0])
+      .filter((id): id is string => Boolean(id));
+    const brandNames = await resolveBrandNames(sourceBrandIds);
+
+    const examples = rows.map((r) => toExampleEmail(r, brandNames));
+    res.json({ examples });
+  } catch (error) {
+    console.error("[content-generation-service] List workflow examples error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

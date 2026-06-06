@@ -691,6 +691,76 @@ registry.registerPath({
 });
 
 // ---------------------------------------------------------------------------
+// GET /generations/examples — Gold-layer cascade of example emails for a workflow
+// ---------------------------------------------------------------------------
+const ExampleEmailSchema = registry.register(
+  "ExampleEmail",
+  z
+    .object({
+      id: z.string().uuid(),
+      subject: z.string().nullable(),
+      bodyHtml: z.string().nullable(),
+      bodyText: z.string().nullable(),
+      sequence: z.unknown().describe("Per-step email sequence array (same shape as GET /generations)."),
+      leadFirstName: z.string().nullable(),
+      leadLastName: z.string().nullable(),
+      leadCompany: z.string().nullable(),
+      leadTitle: z.string().nullable(),
+      leadIndustry: z.string().nullable(),
+      clientCompanyName: z.string().nullable(),
+      createdAt: z.string(),
+      scope: z
+        .enum(["brand", "org", "global"])
+        .describe("Cascade tier this example came from, relative to the caller's brandId/orgId."),
+      brandName: z
+        .string()
+        .nullable()
+        .describe("Display name of the SOURCE brand (org/global tiers); null for own-brand scope or when unavailable."),
+    })
+    .openapi("ExampleEmail")
+);
+
+const GenerationsExamplesResponseSchema = registry.register(
+  "GenerationsExamplesResponse",
+  z
+    .object({
+      examples: z.array(ExampleEmailSchema),
+    })
+    .openapi("GenerationsExamplesResponse")
+);
+
+registry.registerPath({
+  method: "get",
+  path: "/generations/examples",
+  tags: ["Content Generation"],
+  summary: "Cascade example emails for a workflow (brand → org → global)",
+  description:
+    "Returns up to `limit` content-bearing example emails for a workflow, with a fallback cascade so it (almost) " +
+    "always returns `limit`: (1) the caller's current brand, then (2) the caller's other brands, then (3) any org " +
+    "(examples are public). Each example is tagged with `scope` (which tier it came from) and `brandName` (the source " +
+    "brand's label for org/global tiers; null for own-brand). Brand-tier rows come first, newest-first within each tier. " +
+    "Content-less / failed generations are skipped. Default limit 3.",
+  request: {
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string().optional() }),
+    query: z.object({
+      workflowSlug: z.string().describe("Workflow slug to fetch examples for"),
+      brandId: z.string().describe("Caller's current brand UUID — anchors the brand/org cascade tiers"),
+      limit: z.string().optional().describe("Max examples to return (default 3)"),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Up to `limit` example emails, brand-tier first",
+      content: { "application/json": { schema: GenerationsExamplesResponseSchema } },
+    },
+    400: {
+      description: "Missing workflowSlug or brandId",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
 // GET /generations/by-enrichment/:apolloEnrichmentId
 // ---------------------------------------------------------------------------
 const GenerationSingleResponseSchema = registry.register(

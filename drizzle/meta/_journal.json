@@ -176,6 +176,13 @@
       "when": 1779172800000,
       "tag": "0024_reset_expert_quote_pitch_forks",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1779259200000,
+      "tag": "0025_examples_silver_layer",
+      "breakpoints": true
     }
   ]
 }

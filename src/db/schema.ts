@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, uniqueIndex, index, integer, jsonb, boolean } from "drizzle-orm/pg-core";
+import { pgTable, pgView, uuid, text, timestamp, uniqueIndex, index, integer, jsonb, boolean } from "drizzle-orm/pg-core";
 
 // Email generations
 export const emailGenerations = pgTable(
@@ -65,10 +65,36 @@ export const emailGenerations = pgTable(
     index("idx_emailgen_enrichment").on(table.apolloEnrichmentId),
     index("idx_emailgen_campaign").on(table.campaignId),
     index("idx_emailgen_brand_ids").using("gin", table.brandIds),
+    index("idx_emailgen_workflow").on(table.workflowSlug),
     uniqueIndex("idx_emailgen_idempotency").on(table.orgId, table.idempotencyKey),
     uniqueIndex("idx_emailgen_lead").on(table.campaignId, table.leadId),
   ]
 );
+
+// ---------------------------------------------------------------------------
+// Silver layer (medallion) — content-bearing, conformed "example email" projection
+// over the bronze email_generations log. Created as a DB VIEW in drizzle/0025;
+// declared here as .existing() for typed reads. NEVER written directly; rebuildable
+// from bronze at read time. The gold-layer cascade in src/lib/examples-query.ts reads it.
+// See "Data layering" in CLAUDE.md.
+// ---------------------------------------------------------------------------
+export const emailExamplesSilver = pgView("email_examples_silver", {
+  id: uuid("id").notNull(),
+  orgId: uuid("org_id").notNull(),
+  brandIds: text("brand_ids").array().notNull(),
+  workflowSlug: text("workflow_slug"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  subject: text("subject"),
+  bodyHtml: text("body_html"),
+  bodyText: text("body_text"),
+  sequence: jsonb("sequence"),
+  leadFirstName: text("lead_first_name"),
+  leadLastName: text("lead_last_name"),
+  leadCompany: text("lead_company"),
+  leadTitle: text("lead_title"),
+  leadIndustry: text("lead_industry"),
+  clientCompanyName: text("client_company_name"),
+}).existing();
 
 // Prompt templates — type is the unique identifier (like an ID).
 // orgId is optional traceability: records who created the prompt, but does NOT scope visibility.
