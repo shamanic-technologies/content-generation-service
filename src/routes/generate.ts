@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Response, type NextFunction } from "express";
 import { eq, and, inArray, arrayContains, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, prompts } from "../db/schema.js";
@@ -354,7 +354,13 @@ router.get("/generations", serviceAuth, async (req: AuthenticatedRequest, res) =
  * Cascade brand -> org -> global over the silver view; each row tagged scope + brandName.
  * Uses serviceAuthRunOptional: a default workflow-picker load has org+user but no run context.
  */
-router.get("/generations/examples", serviceAuthRunOptional, async (req: AuthenticatedRequest, res) => {
+router.get(
+  "/generations/examples",
+  // Wrapped (not passed directly) so this module stays import-safe under unit tests that fully
+  // mock src/middleware/auth.js without the newer serviceAuthRunOptional export: the binding is
+  // read at request time, not at route-registration (module-eval) time.
+  (req: AuthenticatedRequest, res: Response, next: NextFunction) => serviceAuthRunOptional(req, res, next),
+  async (req: AuthenticatedRequest, res) => {
   try {
     const { workflowSlug, brandId } = req.query as {
       workflowSlug?: string;

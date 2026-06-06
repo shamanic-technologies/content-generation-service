@@ -48,7 +48,9 @@ export interface ExampleEmail {
   brandName: string | null;
 }
 
-const SILVER_COLUMNS = {
+// Built lazily inside fetchTier (NOT at module eval) so importing this module stays safe
+// under unit tests that fully mock src/db/schema.js without the emailExamplesSilver export.
+const silverColumns = () => ({
   id: emailExamplesSilver.id,
   subject: emailExamplesSilver.subject,
   bodyHtml: emailExamplesSilver.bodyHtml,
@@ -62,12 +64,12 @@ const SILVER_COLUMNS = {
   clientCompanyName: emailExamplesSilver.clientCompanyName,
   createdAt: emailExamplesSilver.createdAt,
   brandIds: emailExamplesSilver.brandIds,
-};
+});
 
 async function fetchTier(where: SQL, limit: number, scope: ExampleScope): Promise<ExampleRow[]> {
   if (limit <= 0) return [];
   const rows = await db
-    .select(SILVER_COLUMNS)
+    .select(silverColumns())
     .from(emailExamplesSilver)
     .where(where)
     .orderBy(desc(emailExamplesSilver.createdAt))
