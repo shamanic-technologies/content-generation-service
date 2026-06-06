@@ -90,3 +90,32 @@ export async function extractBrandFields(
 
   return result;
 }
+
+/**
+ * Batch-resolve brand display names by id via brand-service GET /internal/brands.
+ * API-key only (no org/user identity) so it works across orgs (the global cascade tier).
+ * Best-effort by design: the examples endpoint must not block on brand labels — any failure
+ * returns an empty Map and the caller renders brandName as null (contract-sanctioned).
+ */
+export async function resolveBrandNames(brandIds: string[]): Promise<Map<string, string>> {
+  const ids = [...new Set(brandIds.filter(Boolean))].slice(0, 100); // /internal/brands caps at 100
+  if (ids.length === 0) return new Map();
+
+  try {
+    const response = await fetch(
+      `${BRAND_SERVICE_URL}/internal/brands?ids=${encodeURIComponent(ids.join(","))}`,
+      { headers: { "X-Api-Key": BRAND_SERVICE_API_KEY } }
+    );
+
+    if (!response.ok) {
+      console.warn(`[brand-client] resolveBrandNames failed: ${response.status}`);
+      return new Map();
+    }
+
+    const data = (await response.json()) as { brands?: Array<{ id: string; name: string }> };
+    return new Map((data.brands ?? []).map((b) => [b.id, b.name]));
+  } catch (err) {
+    console.warn(`[brand-client] resolveBrandNames error: ${(err as Error).message}`);
+    return new Map();
+  }
+}
