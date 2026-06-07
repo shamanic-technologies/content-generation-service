@@ -261,6 +261,19 @@
             },
             "description": "Variable values to substitute into the prompt template. Any JSON values allowed — strings, arrays, or objects. Caller decides the shape per variable. Objects and arrays are rendered as readable markdown into the prompt; the LLM reads whatever's provided. Multibrand is the default in this platform, so brand-related variables typically receive arrays or objects, not scalars. Per-template input expectations are published via GET /platform-prompts?type=<type> (.variables: Array<{ name, description }>). When values are string-typed, recognised keys may also populate dedicated dashboard columns: leadFirstName, leadLastName, leadTitle, leadCompanyName, leadCompanyIndustry, organizationDomain, clientCompanyName."
           },
+          "model": {
+            "type": "string",
+            "enum": [
+              "haiku",
+              "sonnet",
+              "opus",
+              "flash-lite",
+              "flash",
+              "flash-pro",
+              "pro"
+            ],
+            "description": "LLM model to generate with (version-free alias). Provider is derived automatically: anthropic → haiku | sonnet | opus; google → flash-lite | flash | flash-pro | pro. Omit to use the default 'pro' (google) — unchanged from before this field existed."
+          },
           "brandIds": {
             "type": "array",
             "items": {
@@ -357,6 +370,19 @@
           "templateType": {
             "type": "string",
             "description": "Explicit prompt type to render, overriding feature assignment + platform default. Resolution order: templateType ▸ feature assignment for featureSlug ▸ platform default 'expert-quote-pitch'."
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "haiku",
+              "sonnet",
+              "opus",
+              "flash-lite",
+              "flash",
+              "flash-pro",
+              "pro"
+            ],
+            "description": "LLM model to generate with (version-free alias). Provider is derived automatically: anthropic → haiku | sonnet | opus; google → flash-lite | flash | flash-pro | pro. Omit to use the default 'pro' (google) — unchanged from before this field existed."
           },
           "brandIds": {
             "type": "array",

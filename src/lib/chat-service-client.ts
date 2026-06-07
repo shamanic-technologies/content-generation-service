@@ -1,4 +1,5 @@
 import { extractTemplateVariableNames } from "./template-vars.js";
+import { type ChatModel, MODEL_TO_PROVIDER, DEFAULT_MODEL } from "./chat-models.js";
 
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
 const CHAT_SERVICE_API_KEY = process.env.CHAT_SERVICE_API_KEY || "";
@@ -19,6 +20,7 @@ export interface GenerateFromTemplateParams {
   promptTemplate: string;
   variables: Record<string, unknown>;
   campaignContext?: Record<string, unknown> | null;
+  model?: ChatModel;
 }
 
 export interface SequenceStep {
@@ -133,13 +135,19 @@ export function findUnfilledPlaceholders(text: string): string[] {
   return extractTemplateVariableNames(text);
 }
 
-// ─── Gemini structured-output schema ───────────────────────────────────────
-// Forwarded to chat-service as `responseSchema`, which flips Gemini into
+// ─── Structured-output schema (google vs anthropic) ─────────────────────────
+// Forwarded to chat-service as `responseSchema`, which flips the provider into
 // structured-output mode and enforces JSON shape + string escaping server-side.
 // Keep in sync with `ChatCompleteResponse.json` below and the schema described
-// in GLOBAL_SYSTEM_PROMPT. Permissive (no `additionalProperties: false`) — if
-// the provider is ever switched to anthropic, chat-service will 400 unless
-// `additionalProperties: false` is added here and on `emails.items`.
+// in GLOBAL_SYSTEM_PROMPT.
+//
+// Two variants, picked by the resolved provider:
+//  - GOOGLE: permissive (no `additionalProperties: false`). Gemini ignores that
+//    keyword; this is the historical schema, sent for every google model.
+//  - ANTHROPIC: strict (`additionalProperties: false` on the object AND on
+//    `emails.items`). Anthropic's structured-output API 400s on permissive
+//    schemas, so the strict variant is sent ONLY for anthropic models. The
+//    google path stays byte-identical to before `model` existed.
 const GENERATE_RESPONSE_SCHEMA = {
   type: "object",
   properties: {
@@ -148,6 +156,27 @@ const GENERATE_RESPONSE_SCHEMA = {
       type: "array",
       items: {
         type: "object",
+        properties: {
+          body: { type: "string" },
+          daysSinceLastStep: { type: "number" },
+        },
+        required: ["body", "daysSinceLastStep"],
+      },
+    },
+  },
+  required: ["subject", "emails"],
+} as const;
+
+const GENERATE_RESPONSE_SCHEMA_STRICT = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    subject: { type: "string" },
+    emails: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
         properties: {
           body: { type: "string" },
           daysSinceLastStep: { type: "number" },
@@ -234,15 +263,21 @@ export async function generateFromTemplate(
   if (identity.workflowSlug) headers["x-workflow-slug"] = identity.workflowSlug;
   if (identity.featureSlug) headers["x-feature-slug"] = identity.featureSlug;
 
+  const model = params.model ?? DEFAULT_MODEL;
+  const provider = MODEL_TO_PROVIDER[model];
+  // Anthropic structured-output requires the strict schema; google ignores it.
+  const responseSchema =
+    provider === "anthropic" ? GENERATE_RESPONSE_SCHEMA_STRICT : GENERATE_RESPONSE_SCHEMA;
+
   const response = await fetch(`${CHAT_SERVICE_URL}/complete`, {
     method: "POST",
     headers,
     body: JSON.stringify({
       message: prompt,
       systemPrompt: GLOBAL_SYSTEM_PROMPT,
-      responseSchema: GENERATE_RESPONSE_SCHEMA,
-      provider: "google",
-      model: "pro",
+      responseSchema,
+      provider,
+      model,
     }),
   });
 
@@ -282,6 +317,7 @@ export interface GenerateExpertQuotePitchParams {
   variables: Record<string, unknown>;
   minChars: number;
   maxChars: number;
+  model?: ChatModel;
 }
 
 export interface ExpertQuotePitchResult {
@@ -347,7 +383,8 @@ function buildPitchSystemPrompt(minChars: number, maxChars: number, retry: boole
 async function callChatServiceForText(
   prompt: string,
   systemPrompt: string,
-  identity: ChatServiceIdentity
+  identity: ChatServiceIdentity,
+  model: ChatModel
 ): Promise<ChatTextResponse> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -361,14 +398,15 @@ async function callChatServiceForText(
   if (identity.workflowSlug) headers["x-workflow-slug"] = identity.workflowSlug;
   if (identity.featureSlug) headers["x-feature-slug"] = identity.featureSlug;
 
+  // Free-text pitch: no responseSchema for any provider. Provider derived from alias.
   const response = await fetch(`${CHAT_SERVICE_URL}/complete`, {
     method: "POST",
     headers,
     body: JSON.stringify({
       message: prompt,
       systemPrompt,
-      provider: "google",
-      model: "pro",
+      provider: MODEL_TO_PROVIDER[model],
+      model,
     }),
   });
 
@@ -410,6 +448,7 @@ export async function generateExpertQuotePitchFromTemplate(
   identity: ChatServiceIdentity
 ): Promise<ExpertQuotePitchResult> {
   const { promptTemplate, variables, minChars, maxChars } = params;
+  const model = params.model ?? DEFAULT_MODEL;
   const prompt = substituteVariables(promptTemplate, variables);
 
   let lastCharCount: number | null = null;
@@ -421,7 +460,7 @@ export async function generateExpertQuotePitchFromTemplate(
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     const systemPrompt = buildPitchSystemPrompt(minChars, maxChars, attempt > 1, lastCharCount);
-    const data = await callChatServiceForText(prompt, systemPrompt, identity);
+    const data = await callChatServiceForText(prompt, systemPrompt, identity, model);
     lastResponse = data;
     totalTokensInput += data.tokensInput;
     totalTokensOutput += data.tokensOutput;

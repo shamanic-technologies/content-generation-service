@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { generateFromTemplate, InsufficientCreditsError } from "../../src/lib/chat-service-client";
+import { generateFromTemplate, generateExpertQuotePitchFromTemplate, InsufficientCreditsError } from "../../src/lib/chat-service-client";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -175,5 +175,126 @@ describe("chat-service client (generateFromTemplate)", () => {
     expect(body.systemPrompt).toContain('"subject"');
     expect(body.systemPrompt).toContain('"emails"');
     expect(body.systemPrompt).toContain('"daysSinceLastStep"');
+  });
+});
+
+// ─── Model selection (provider derived from the alias) ───────────────────────
+// The 7 chat-service aliases are unique across providers, so the caller picks ONE
+// model and the provider is derived. Anthropic structured-output requires a STRICT
+// response schema (additionalProperties:false); google ignores it, so the strict
+// schema is sent ONLY for anthropic and the google path stays byte-identical.
+const STRICT_RESPONSE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    subject: { type: "string" },
+    emails: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          body: { type: "string" },
+          daysSinceLastStep: { type: "number" },
+        },
+        required: ["body", "daysSinceLastStep"],
+      },
+    },
+  },
+  required: ["subject", "emails"],
+};
+
+describe("model selection (generateFromTemplate)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("defaults to google/pro with the permissive schema when model is omitted", async () => {
+    mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
+
+    await generateFromTemplate(PARAMS, IDENTITY);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.provider).toBe("google");
+    expect(body.model).toBe("pro");
+    expect(body.responseSchema.additionalProperties).toBeUndefined();
+  });
+
+  it("model=sonnet derives the anthropic provider and sends the strict schema", async () => {
+    mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
+
+    await generateFromTemplate({ ...PARAMS, model: "sonnet" }, IDENTITY);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.provider).toBe("anthropic");
+    expect(body.model).toBe("sonnet");
+    expect(body.responseSchema).toEqual(STRICT_RESPONSE_SCHEMA);
+  });
+
+  it("model=opus derives the anthropic provider", async () => {
+    mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
+
+    await generateFromTemplate({ ...PARAMS, model: "opus" }, IDENTITY);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.provider).toBe("anthropic");
+    expect(body.model).toBe("opus");
+    expect(body.responseSchema.additionalProperties).toBe(false);
+  });
+
+  it("model=flash-pro derives the google provider and keeps the permissive schema", async () => {
+    mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
+
+    await generateFromTemplate({ ...PARAMS, model: "flash-pro" }, IDENTITY);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.provider).toBe("google");
+    expect(body.model).toBe("flash-pro");
+    expect(body.responseSchema.additionalProperties).toBeUndefined();
+  });
+});
+
+describe("model selection (generateExpertQuotePitchFromTemplate, free-text)", () => {
+  const PITCH_PARAMS = {
+    promptTemplate: "Pitch for {{name}}",
+    variables: { name: "Sarah" },
+    minChars: 100,
+    maxChars: 2500,
+  };
+  const PITCH_BODY = "x".repeat(150);
+
+  function textResponse(content: string) {
+    return {
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({ content, tokensInput: 100, tokensOutput: 50, model: "gemini-3-pro" }),
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("defaults to google/pro and never sends a responseSchema", async () => {
+    mockFetch.mockResolvedValueOnce(textResponse(PITCH_BODY));
+
+    await generateExpertQuotePitchFromTemplate(PITCH_PARAMS, IDENTITY);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.provider).toBe("google");
+    expect(body.model).toBe("pro");
+    expect(body.responseSchema).toBeUndefined();
+  });
+
+  it("model=haiku derives the anthropic provider (still no responseSchema)", async () => {
+    mockFetch.mockResolvedValueOnce(textResponse(PITCH_BODY));
+
+    await generateExpertQuotePitchFromTemplate({ ...PITCH_PARAMS, model: "haiku" }, IDENTITY);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.provider).toBe("anthropic");
+    expect(body.model).toBe("haiku");
+    expect(body.responseSchema).toBeUndefined();
   });
 });
