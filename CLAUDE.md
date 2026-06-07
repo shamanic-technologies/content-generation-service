@@ -23,6 +23,7 @@ Microservice that generates personalized content (emails, calendar events, etc.)
 - `src/routes/health.ts` — GET /health endpoint
 - `src/middleware/auth.ts` — Authentication middleware (X-Clerk-Org-Id header)
 - `src/lib/chat-service-client.ts` — Chat-service client + email template utilities (prompt substitution, JSON parsing)
+- `src/lib/chat-models.ts` — `CHAT_MODELS` alias set + `MODEL_TO_PROVIDER` map + `DEFAULT_MODEL`. Standalone (NOT in chat-service-client.ts) so `schemas.ts` can read the enum at module-eval without the ~13 suites that `vi.mock` chat-service-client.js crashing `z.enum(undefined)`
 - `src/lib/runs-client.ts` — Client for runs-service (run tracking)
 - `src/lib/key-client.ts` — Client for key-service (used by submagic route)
 - `src/lib/expert-quote-pitch-template.ts` — Source of truth for the `expert-quote-pitch` platform template (body + variables metadata) + `assertExpertQuotePitchVariables` (all-required input guard) + `EXPERT_QUOTE_PITCH_BRAND_FIELDS`
@@ -66,6 +67,15 @@ The request type stays `variables: Record<string, unknown>` (DIS-52 — no per-f
 - `GET /prompt-assignments?featureSlug=` returns the resolved prompt; `isDefault = (resolvedType === platform default)`.
 - `PUT /prompt-assignments` forks the resolved type (reusing `createPromptVersion`, source never mutated) then upserts the assignment. The `{{var}}` tokens in the submitted prompt MUST exactly match the source's declared variable-name set — `assertPromptVariablesMatch` throws → 400 naming the offending var, nothing forked/assigned.
 - The two `/prompt-assignments` endpoints use `serviceAuthRunOptional` (x-org-id + x-user-id required, **x-run-id optional**) — an operator/dashboard prompt-editor save has no run context. Do NOT loosen `serviceAuth` itself; other routes depend on `req.runId!` being present.
+
+## Per-request model selection
+
+`POST /generate` and `POST /generate-expert-quote-pitch` accept an optional `model` field — a version-free alias from `CHAT_MODELS` (`haiku`, `sonnet`, `opus`, `flash-lite`, `flash`, `flash-pro`, `pro`). Caller picks the LLM per request; omitted → `DEFAULT_MODEL` (`pro`/google), byte-identical to before the field existed.
+
+- **Provider is derived, never sent by the caller.** The 7 aliases are unique across providers, so `MODEL_TO_PROVIDER` maps alias→provider (`chat-models.ts`). No `provider` field on the wire → the provider/model-mismatch error class can't happen.
+- **`/generate` response schema is provider-conditional.** `GENERATE_RESPONSE_SCHEMA` (permissive) is sent for google; `GENERATE_RESPONSE_SCHEMA_STRICT` (`additionalProperties:false` on the object AND `emails.items`) only for anthropic — anthropic's structured-output API 400s on permissive schemas, google ignores the keyword. The google path is unchanged. The pitch route is free-text (no responseSchema) → all 7 work as-is.
+- **No new persistence / cost handling.** chat-service bills per resolved provider+model; the resolved versioned id is already stored in `email_generations.model` and surfaced by `/stats?groupBy=model`, so model-comparison analytics work for free.
+- Adding a model is a 1-line edit to `CHAT_MODELS` + `MODEL_TO_PROVIDER`; the Zod enum + OpenAPI regenerate from `CHAT_MODELS`.
 
 ## Data layering (medallion)
 

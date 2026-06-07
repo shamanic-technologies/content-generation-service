@@ -3,8 +3,21 @@ import {
   extendZodWithOpenApi,
   OpenAPIRegistry,
 } from "@asteasolutions/zod-to-openapi";
+import { CHAT_MODELS } from "./lib/chat-models.js";
 
 extendZodWithOpenApi(z);
+
+// Shared `model` field — version-free alias; provider derived downstream.
+// Optional: omitted → chat-service-client defaults to 'pro' (google), the
+// historical behavior. Source of truth for the alias set is CHAT_MODELS.
+const ModelField = z
+  .enum(CHAT_MODELS)
+  .optional()
+  .describe(
+    "LLM model to generate with (version-free alias). Provider is derived automatically: " +
+      "anthropic → haiku | sonnet | opus; google → flash-lite | flash | flash-pro | pro. " +
+      "Omit to use the default 'pro' (google) — unchanged from before this field existed."
+  );
 
 export const registry = new OpenAPIRegistry();
 
@@ -431,6 +444,7 @@ export const GenerateRequestSchema = registry.register(
         "When values are string-typed, recognised keys may also populate dedicated dashboard columns: " +
         "leadFirstName, leadLastName, leadTitle, leadCompanyName, leadCompanyIndustry, organizationDomain, clientCompanyName."
       ),
+      model: ModelField,
       // Tracking / linking
       brandIds: z.array(z.string()).optional().describe("Brand UUIDs associated with this generation. Falls back to parsed x-brand-id header (CSV) if omitted."),
       campaignId: z.string().optional(),
@@ -518,6 +532,7 @@ export const GenerateExpertQuotePitchRequestSchema = registry.register(
         "Explicit prompt type to render, overriding feature assignment + platform default. " +
         "Resolution order: templateType ▸ feature assignment for featureSlug ▸ platform default 'expert-quote-pitch'."
       ),
+      model: ModelField,
       brandIds: z.array(z.string()).optional().describe("Brand UUIDs for tracking. Falls back to x-brand-id header."),
       campaignId: z.string().optional(),
       workflowSlug: z.string().optional(),

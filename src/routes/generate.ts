@@ -34,6 +34,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     const {
       type,
       variables,
+      model,
       brandIds: bodyBrandIds,
       campaignId: bodyCampaignId,
       apolloEnrichmentId,
@@ -123,6 +124,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         promptTemplate: storedPrompt.prompt,
         variables,
         campaignContext,
+        model,
       },
       { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug }
     );
@@ -231,7 +233,7 @@ router.post("/generate-expert-quote-pitch", serviceAuth, async (req: Authenticat
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
 
-    const { variables, templateType, brandIds: bodyBrandIds, campaignId: bodyCampaignId, workflowSlug: bodyWorkflowSlug, featureSlug: bodyFeatureSlug } = parsed.data;
+    const { variables, templateType, model, brandIds: bodyBrandIds, campaignId: bodyCampaignId, workflowSlug: bodyWorkflowSlug, featureSlug: bodyFeatureSlug } = parsed.data;
 
     const brandIds = bodyBrandIds?.length ? bodyBrandIds : (req.brandIds ?? []);
     const brandId = brandIds.length > 0 ? brandIds.join(",") : req.brandId;
@@ -276,6 +278,7 @@ router.post("/generate-expert-quote-pitch", serviceAuth, async (req: Authenticat
         variables,
         minChars: PITCH_MIN_CHARS,
         maxChars: PITCH_MAX_CHARS,
+        model,
       },
       identity
     );
