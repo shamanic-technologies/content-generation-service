@@ -51,6 +51,9 @@ export const emailGenerations = pgTable(
     workflowSlug: text("workflow_slug"),
     featureSlug: text("feature_slug"),
 
+    // Audience attribution (x-audience-id) — campaign-chosen priority audience
+    audienceId: text("audience_id"),
+
     // Lead tracking — lead-service correlation ID
     leadId: text("lead_id"),
 
@@ -66,6 +69,7 @@ export const emailGenerations = pgTable(
     index("idx_emailgen_campaign").on(table.campaignId),
     index("idx_emailgen_brand_ids").using("gin", table.brandIds),
     index("idx_emailgen_workflow").on(table.workflowSlug),
+    index("idx_emailgen_audience").on(table.audienceId),
     uniqueIndex("idx_emailgen_idempotency").on(table.orgId, table.idempotencyKey),
     uniqueIndex("idx_emailgen_lead").on(table.campaignId, table.leadId),
   ]

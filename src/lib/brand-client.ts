@@ -5,18 +5,12 @@
  * Results are cached 30 days per (brandId, fieldKey, hash(description)).
  */
 
+import { type Tracking, buildTrackingHeaders } from "./tracking.js";
+
 const BRAND_SERVICE_URL = process.env.BRAND_SERVICE_URL || "http://localhost:3030";
 const BRAND_SERVICE_API_KEY = process.env.BRAND_SERVICE_API_KEY || "";
 
-export interface ServiceIdentity {
-  orgId: string;
-  userId: string;
-  runId?: string;
-  campaignId?: string;
-  brandId?: string;
-  workflowSlug?: string;
-  featureSlug?: string;
-}
+export type ServiceIdentity = Tracking;
 
 export interface ExtractFieldRequest {
   key: string;
@@ -34,18 +28,11 @@ export interface ExtractFieldsResponse {
 }
 
 function buildHeaders(identity: ServiceIdentity): Record<string, string> {
-  const h: Record<string, string> = {
+  return {
     "Content-Type": "application/json",
     "X-Api-Key": BRAND_SERVICE_API_KEY,
-    "x-org-id": identity.orgId,
-    "x-user-id": identity.userId,
+    ...buildTrackingHeaders(identity),
   };
-  if (identity.runId) h["x-run-id"] = identity.runId;
-  if (identity.campaignId) h["x-campaign-id"] = identity.campaignId;
-  if (identity.brandId) h["x-brand-id"] = identity.brandId;
-  if (identity.workflowSlug) h["x-workflow-slug"] = identity.workflowSlug;
-  if (identity.featureSlug) h["x-feature-slug"] = identity.featureSlug;
-  return h;
 }
 
 /**

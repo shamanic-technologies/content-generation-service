@@ -1,3 +1,5 @@
+import { buildTrackingHeaders } from "./tracking.js";
+
 const KEY_SERVICE_URL = process.env.KEY_SERVICE_URL || "http://localhost:3001";
 const KEY_SERVICE_API_KEY = process.env.KEY_SERVICE_API_KEY;
 
@@ -8,6 +10,7 @@ export interface CallerContext {
   brandId?: string;
   workflowSlug?: string;
   featureSlug?: string;
+  audienceId?: string;
 }
 
 export interface DecryptResult {
@@ -20,19 +23,21 @@ function buildHeaders(
   userId: string,
   caller: CallerContext
 ): Record<string, string> {
-  const h: Record<string, string> = {
+  return {
     ...(KEY_SERVICE_API_KEY ? { "X-Api-Key": KEY_SERVICE_API_KEY } : {}),
-    "x-org-id": orgId,
-    "x-user-id": userId,
     "X-Caller-Service": "content-generation",
     "X-Caller-Method": caller.callerMethod,
     "X-Caller-Path": caller.callerPath,
+    ...buildTrackingHeaders({
+      orgId,
+      userId,
+      campaignId: caller.campaignId,
+      brandId: caller.brandId,
+      workflowSlug: caller.workflowSlug,
+      featureSlug: caller.featureSlug,
+      audienceId: caller.audienceId,
+    }),
   };
-  if (caller.campaignId) h["x-campaign-id"] = caller.campaignId;
-  if (caller.brandId) h["x-brand-id"] = caller.brandId;
-  if (caller.workflowSlug) h["x-workflow-slug"] = caller.workflowSlug;
-  if (caller.featureSlug) h["x-feature-slug"] = caller.featureSlug;
-  return h;
 }
 
 /**

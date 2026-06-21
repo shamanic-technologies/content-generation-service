@@ -1,21 +1,15 @@
 import { extractTemplateVariableNames } from "./template-vars.js";
 import { type ChatModel, MODEL_TO_PROVIDER, DEFAULT_MODEL } from "./chat-models.js";
 import { fetchWithRetry } from "./fetch-retry.js";
+import { type Tracking, buildTrackingHeaders } from "./tracking.js";
 
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
 const CHAT_SERVICE_API_KEY = process.env.CHAT_SERVICE_API_KEY || "";
 
 // ─── Template generation ────────────────────────────────────────────────────
 
-export interface ChatServiceIdentity {
-  orgId: string;
-  userId: string;
-  runId: string;
-  campaignId?: string;
-  brandId?: string;
-  workflowSlug?: string;
-  featureSlug?: string;
-}
+// chat-service requires x-run-id; callers always supply runId.
+export type ChatServiceIdentity = Tracking & { runId: string };
 
 export interface GenerateFromTemplateParams {
   promptTemplate: string;
@@ -255,14 +249,8 @@ export async function generateFromTemplate(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Api-Key": CHAT_SERVICE_API_KEY,
-    "x-org-id": identity.orgId,
-    "x-user-id": identity.userId,
-    "x-run-id": identity.runId,
+    ...buildTrackingHeaders(identity),
   };
-  if (identity.campaignId) headers["x-campaign-id"] = identity.campaignId;
-  if (identity.brandId) headers["x-brand-id"] = identity.brandId;
-  if (identity.workflowSlug) headers["x-workflow-slug"] = identity.workflowSlug;
-  if (identity.featureSlug) headers["x-feature-slug"] = identity.featureSlug;
 
   const model = params.model ?? DEFAULT_MODEL;
   const provider = MODEL_TO_PROVIDER[model];
@@ -394,14 +382,8 @@ async function callChatServiceForText(
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Api-Key": CHAT_SERVICE_API_KEY,
-    "x-org-id": identity.orgId,
-    "x-user-id": identity.userId,
-    "x-run-id": identity.runId,
+    ...buildTrackingHeaders(identity),
   };
-  if (identity.campaignId) headers["x-campaign-id"] = identity.campaignId;
-  if (identity.brandId) headers["x-brand-id"] = identity.brandId;
-  if (identity.workflowSlug) headers["x-workflow-slug"] = identity.workflowSlug;
-  if (identity.featureSlug) headers["x-feature-slug"] = identity.featureSlug;
 
   // Free-text pitch: no responseSchema for any provider. Provider derived from alias.
   const response = await fetchWithRetry(
