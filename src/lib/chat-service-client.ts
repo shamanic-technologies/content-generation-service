@@ -1,5 +1,6 @@
 import { extractTemplateVariableNames } from "./template-vars.js";
 import { type ChatModel, MODEL_TO_PROVIDER, DEFAULT_MODEL } from "./chat-models.js";
+import { fetchWithRetry } from "./fetch-retry.js";
 
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
 const CHAT_SERVICE_API_KEY = process.env.CHAT_SERVICE_API_KEY || "";
@@ -269,17 +270,21 @@ export async function generateFromTemplate(
   const responseSchema =
     provider === "anthropic" ? GENERATE_RESPONSE_SCHEMA_STRICT : GENERATE_RESPONSE_SCHEMA;
 
-  const response = await fetch(`${CHAT_SERVICE_URL}/complete`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      message: prompt,
-      systemPrompt: GLOBAL_SYSTEM_PROMPT,
-      responseSchema,
-      provider,
-      model,
-    }),
-  });
+  const response = await fetchWithRetry(
+    `${CHAT_SERVICE_URL}/complete`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        message: prompt,
+        systemPrompt: GLOBAL_SYSTEM_PROMPT,
+        responseSchema,
+        provider,
+        model,
+      }),
+    },
+    { label: "chat-service /complete" }
+  );
 
   if (response.status === 402) {
     const error = await response.json() as { balance_cents: number; required_cents: number };
@@ -399,16 +404,20 @@ async function callChatServiceForText(
   if (identity.featureSlug) headers["x-feature-slug"] = identity.featureSlug;
 
   // Free-text pitch: no responseSchema for any provider. Provider derived from alias.
-  const response = await fetch(`${CHAT_SERVICE_URL}/complete`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      message: prompt,
-      systemPrompt,
-      provider: MODEL_TO_PROVIDER[model],
-      model,
-    }),
-  });
+  const response = await fetchWithRetry(
+    `${CHAT_SERVICE_URL}/complete`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        message: prompt,
+        systemPrompt,
+        provider: MODEL_TO_PROVIDER[model],
+        model,
+      }),
+    },
+    { label: "chat-service /complete" }
+  );
 
   if (response.status === 402) {
     const error = await response.json() as { balance_cents: number; required_cents: number };
