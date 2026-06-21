@@ -98,7 +98,7 @@ function createTestApp() {
   return app;
 }
 
-describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-feature-slug)", () => {
+describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-feature-slug, x-audience-id)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockInsertValues.length = 0;
@@ -123,6 +123,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-featur
         .set("X-Brand-Id", "brand-from-header")
         .set("X-Workflow-Slug", "wf-from-header")
         .set("X-Feature-Slug", "feat-from-header")
+        .set("X-Audience-Id", "audience-from-header")
         .send({
           type: "email",
           variables: { recipientName: "John" },
@@ -136,6 +137,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-featur
           campaignId: "campaign-from-header",
           workflowSlug: "wf-from-header",
           featureSlug: "feat-from-header",
+          audienceId: "audience-from-header",
         })
       );
 
@@ -151,6 +153,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-featur
           brandId: "brand-from-header",
           workflowSlug: "wf-from-header",
           featureSlug: "feat-from-header",
+          audienceId: "audience-from-header",
         })
       );
     });
@@ -165,6 +168,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-featur
         .set("X-Brand-Id", "brand-from-header")
         .set("X-Workflow-Slug", "wf-from-header")
         .set("X-Feature-Slug", "feat-from-header")
+        .set("X-Audience-Id", "audience-from-header")
         .send({
           type: "email",
           variables: { recipientName: "John" },
@@ -172,6 +176,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-featur
           campaignId: "campaign-from-body",
           workflowSlug: "wf-from-body",
           featureSlug: "feat-from-body",
+          audienceId: "audience-from-body",
         })
         .expect(200);
 
@@ -181,6 +186,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-featur
           campaignId: "campaign-from-body",
           workflowSlug: "wf-from-body",
           featureSlug: "feat-from-body",
+          audienceId: "audience-from-body",
         })
       );
     });
@@ -203,6 +209,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-featur
           campaignId: "",
           workflowSlug: null,
           featureSlug: null,
+          audienceId: null,
         })
       );
     });
@@ -217,6 +224,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-featur
         .set("X-Brand-Id", "brand-1")
         .set("X-Workflow-Slug", "wf-1")
         .set("X-Feature-Slug", "feat-1")
+        .set("X-Audience-Id", "aud-1")
         .send({
           type: "email",
           variables: { recipientName: "John" },
@@ -232,6 +240,7 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-featur
           brandId: "brand-1",
           workflowSlug: "wf-1",
           featureSlug: "feat-1",
+          audienceId: "aud-1",
         })
       );
     });

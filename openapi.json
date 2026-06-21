@@ -300,6 +300,10 @@
           "featureSlug": {
             "type": "string",
             "description": "Feature slug for tracking"
+          },
+          "audienceId": {
+            "type": "string",
+            "description": "Audience attribution ID. Falls back to x-audience-id header if omitted."
           }
         },
         "required": [
@@ -399,6 +403,10 @@
           },
           "featureSlug": {
             "type": "string"
+          },
+          "audienceId": {
+            "type": "string",
+            "description": "Audience attribution ID. Falls back to x-audience-id header if omitted."
           }
         },
         "required": [
