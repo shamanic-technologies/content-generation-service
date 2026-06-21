@@ -24,6 +24,7 @@ Microservice that generates personalized content (emails, calendar events, etc.)
 - `src/middleware/auth.ts` — Authentication middleware (X-Clerk-Org-Id header)
 - `src/lib/chat-service-client.ts` — Chat-service client + email template utilities (prompt substitution, JSON parsing)
 - `src/lib/chat-models.ts` — `CHAT_MODELS` alias set + `MODEL_TO_PROVIDER` map + `DEFAULT_MODEL`. Standalone (NOT in chat-service-client.ts) so `schemas.ts` can read the enum at module-eval without the ~13 suites that `vi.mock` chat-service-client.js crashing `z.enum(undefined)`
+- `src/lib/tracking.ts` — Single source for downstream identity + tracking/attribution headers: `Tracking` type, `TRACKING_HEADER_KEYS` allowlist, `extractTracking(req)`, `buildTrackingHeaders(t)`. Every internal client builds its headers through this — see "Tracking / attribution headers" below
 - `src/lib/runs-client.ts` — Client for runs-service (run tracking)
 - `src/lib/key-client.ts` — Client for key-service (used by submagic route)
 - `src/lib/expert-quote-pitch-template.ts` — Source of truth for the `expert-quote-pitch` platform template (body + variables metadata) + `assertExpertQuotePitchVariables` (all-required input guard) + `EXPERT_QUOTE_PITCH_BRAND_FIELDS`
@@ -88,6 +89,20 @@ This repo owns a **logical** bronze → silver → gold layering for the workflo
 | 🥇 Gold | `src/lib/examples-query.ts` (`fetchWorkflowExamples`) | Parameterized cascade (current brand → same-org other brands → any org) computed at read time. "Kept small" = `limit` N. No stored gold. |
 
 **Evolution trigger:** materialize silver (or add a gold table) ONLY if profiling shows the cross-org global tier is slow at scale. Until then the plain view + `idx_emailgen_workflow` index is the floor. Do not add a refresh job / accumulator — that reintroduces state the view avoids.
+
+## Tracking / attribution headers
+
+Identity + attribution headers (`x-run-id`, `x-campaign-id`, `x-brand-id`, `x-workflow-slug`, `x-feature-slug`, `x-audience-id`) flow through ONE allowlist in `src/lib/tracking.ts` — `TRACKING_HEADER_KEYS`. **Never cherry-pick header fields per client.** To add a new attribution dimension:
+1. Add the field to the `Tracking` interface + a `[field, "x-header"]` entry to `TRACKING_HEADER_KEYS`.
+2. Add it to `AuthenticatedRequest` + the inbound parse in `serviceAuth` (auth.ts).
+3. Thread the resolved value (body `||` header) into the identity objects in `generate.ts`.
+4. If it must tag a runs-service cost/run row, that's automatic once forwarded — runs-service reads the header (header > body > parent inheritance). If you persist it locally, add the `email_generations` column + migration.
+
+Every internal client (runs/chat/campaign/brand/key) builds its headers via `buildTrackingHeaders(identity)` — they pick up new dimensions for free.
+
+**EGRESS GUARDRAIL:** `buildTrackingHeaders` output is for INTERNAL services only. NEVER forward tracking headers to a third-party vendor. This service makes no direct vendor calls (LLM via chat-service), so the strip holds by construction — if a direct vendor client is ever added, it MUST build request headers WITHOUT `buildTrackingHeaders`.
+
+`x-audience-id` is the campaign-chosen priority audience; it's optional (absent outside a campaign flow → omit, never throw). Attribution in runs-service is a flat `SUM(cost) GROUP BY COALESCE(runs_costs.audience_id, runs.audience_id)` — no hierarchical rollup, so every cost/run row must carry it. NOTE: the LLM spend is a **chat-service** cost row, not content-gen's; tagging it requires chat-service to read `x-audience-id` inbound (separate repo).
 
 ## Gotchas
 
