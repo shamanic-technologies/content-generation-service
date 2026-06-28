@@ -453,6 +453,7 @@ export const GenerateRequestSchema = registry.register(
       idempotencyKey: z.string().optional(),
       workflowSlug: z.string().optional(),
       featureSlug: z.string().optional().describe("Feature slug for tracking"),
+      audienceId: z.string().optional().describe("Audience attribution ID. Falls back to x-audience-id header if omitted."),
     })
     .openapi("GenerateRequest")
 );
@@ -537,6 +538,7 @@ export const GenerateExpertQuotePitchRequestSchema = registry.register(
       campaignId: z.string().optional(),
       workflowSlug: z.string().optional(),
       featureSlug: z.string().optional(),
+      audienceId: z.string().optional().describe("Audience attribution ID. Falls back to x-audience-id header if omitted."),
     })
     .openapi("GenerateExpertQuotePitchRequest")
 );

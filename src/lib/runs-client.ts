@@ -3,6 +3,8 @@
  * Centralized run tracking and cost management
  */
 
+import { type Tracking, buildTrackingHeaders } from "./tracking.js";
+
 const RUNS_SERVICE_URL = process.env.RUNS_SERVICE_URL || "https://runs.mcpfactory.org";
 const RUNS_SERVICE_API_KEY = process.env.RUNS_SERVICE_API_KEY || "";
 
@@ -54,16 +56,8 @@ export interface RunWithCosts extends Run {
   descendantRuns: DescendantRun[];
 }
 
-/** Identity headers forwarded on every downstream call. */
-export interface IdentityHeaders {
-  orgId: string;
-  userId: string;
-  runId?: string;
-  campaignId?: string;
-  brandId?: string;
-  workflowSlug?: string;
-  featureSlug?: string;
-}
+/** Identity + tracking headers forwarded on every downstream call. */
+export type IdentityHeaders = Tracking;
 
 export interface CreateRunParams {
   serviceName: string;
@@ -133,23 +127,7 @@ async function runsRequest<T>(
   };
 
   if (identity) {
-    headers["x-org-id"] = identity.orgId;
-    headers["x-user-id"] = identity.userId;
-    if (identity.runId) {
-      headers["x-run-id"] = identity.runId;
-    }
-    if (identity.campaignId) {
-      headers["x-campaign-id"] = identity.campaignId;
-    }
-    if (identity.brandId) {
-      headers["x-brand-id"] = identity.brandId;
-    }
-    if (identity.workflowSlug) {
-      headers["x-workflow-slug"] = identity.workflowSlug;
-    }
-    if (identity.featureSlug) {
-      headers["x-feature-slug"] = identity.featureSlug;
-    }
+    Object.assign(headers, buildTrackingHeaders(identity));
   }
 
   let lastError: Error | undefined;

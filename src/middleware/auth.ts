@@ -11,6 +11,8 @@ export interface AuthenticatedRequest extends Request {
   brandIds?: string[];
   workflowSlug?: string;
   featureSlug?: string;
+  /** Audience attribution ID (x-audience-id) — present only inside a campaign flow. */
+  audienceId?: string;
 }
 
 const API_KEY = process.env.CONTENT_GENERATION_SERVICE_API_KEY;
@@ -66,6 +68,7 @@ export async function serviceAuth(
   const brandIdRaw = req.headers["x-brand-id"] as string | undefined;
   const workflowSlug = req.headers["x-workflow-slug"] as string | undefined;
   const featureSlug = req.headers["x-feature-slug"] as string | undefined;
+  const audienceId = req.headers["x-audience-id"] as string | undefined;
   if (campaignId) req.campaignId = campaignId;
   if (brandIdRaw) {
     req.brandId = brandIdRaw;
@@ -73,6 +76,7 @@ export async function serviceAuth(
   }
   if (workflowSlug) req.workflowSlug = workflowSlug;
   if (featureSlug) req.featureSlug = featureSlug;
+  if (audienceId) req.audienceId = audienceId;
 
   next();
 }
