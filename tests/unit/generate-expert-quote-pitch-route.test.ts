@@ -86,7 +86,8 @@ function makeApp() {
   return app;
 }
 
-// A complete brand object — every required sub-field present + non-empty.
+// An example brand object. The contract accepts ANY non-empty JSON for `brands`;
+// this shape is just a representative one.
 function brand(name: string) {
   return {
     brandName: name,
@@ -99,70 +100,78 @@ function brand(name: string) {
 
 const FIXTURE_A = {
   variables: {
+    expert: {
+      name: "Jordan Avery",
+      title: "CEO & Co-founder",
+      bio: "Scaled three engineering orgs from 5 to 200; ex-Stripe.",
+      photoUrl: "https://acme.example/team/jordan.jpg",
+      linkedIn: "https://linkedin.com/in/jordanavery",
+      answerContext: "Recently wrote about the 'second-team' restructuring problem.",
+    },
     brands: [brand("Acme SaaS")],
-    expertName: "Jordan Avery",
-    expertTitle: "CEO & Co-founder",
-    expertBio: "Scaled three engineering orgs from 5 to 200; ex-Stripe.",
-    expertPhotoUrl: "https://acme.example/team/jordan.jpg",
-    expertLinkedIn: "https://linkedin.com/in/jordanavery",
     journalistRequest: {
       question: "What's the most common mistake startups make when their team grows from 5 to 25 engineers?",
       mediaOutlet: "TechCrunch",
       source: "Jane Doe",
       deadline: "Friday at 5pm ET",
     },
-    expertAnswerContext: "Recently wrote about the 'second-team' restructuring problem.",
   },
 };
 
 const FIXTURE_B = {
   variables: {
+    expert: {
+      name: "Sam Okafor",
+      title: "Head of Content",
+      bio: "Built content engines for three fintech scale-ups.",
+      photoUrl: "https://northwind.example/team/sam.jpg",
+      linkedIn: "https://linkedin.com/in/samokafor",
+      answerContext: "Recently published a study on conversion lift from regulatory deep-dives.",
+    },
     brands: [brand("Northwind Agency")],
-    expertName: "Sam Okafor",
-    expertTitle: "Head of Content",
-    expertBio: "Built content engines for three fintech scale-ups.",
-    expertPhotoUrl: "https://northwind.example/team/sam.jpg",
-    expertLinkedIn: "https://linkedin.com/in/samokafor",
     journalistRequest: {
       question: "How should fintechs balance growth content vs. compliance content?",
       mediaOutlet: "Modern Marketer",
       source: "Sam Reporter",
     },
-    expertAnswerContext: "Recently published a study on conversion lift from regulatory deep-dives.",
   },
 };
 
 const FIXTURE_C = {
   variables: {
+    expert: {
+      name: "Riley Chen",
+      title: "Founder",
+      bio: "DTC operator; launched 40+ sub-$50 SKUs.",
+      photoUrl: "https://glowgrow.example/team/riley.jpg",
+      linkedIn: "https://linkedin.com/in/rileychen",
+      answerContext: "Has supplier-side data on minimum order quantities.",
+    },
     brands: [brand("Glow & Grow")],
-    expertName: "Riley Chen",
-    expertTitle: "Founder",
-    expertBio: "DTC operator; launched 40+ sub-$50 SKUs.",
-    expertPhotoUrl: "https://glowgrow.example/team/riley.jpg",
-    expertLinkedIn: "https://linkedin.com/in/rileychen",
     journalistRequest: {
       question: "What's the right way to think about MOQ when launching a new SKU under $50?",
       mediaOutlet: "Retail Dive",
       source: "Pat Editor",
       deadline: "next Tuesday",
     },
-    expertAnswerContext: "Has supplier-side data on minimum order quantities.",
   },
 };
 
 const FIXTURE_MULTIBRAND = {
   variables: {
+    expert: {
+      name: "Jordan Avery",
+      title: "CEO & Co-founder",
+      bio: "Operates two complementary brands under one holding co.",
+      photoUrl: "https://acme.example/team/jordan.jpg",
+      linkedIn: "https://linkedin.com/in/jordanavery",
+      answerContext: "Speaks for both brands as a collective.",
+    },
     brands: [brand("Acme SaaS"), brand("Northwind Agency")],
-    expertName: "Jordan Avery",
-    expertTitle: "CEO & Co-founder",
-    expertBio: "Operates two complementary brands under one holding co.",
-    expertPhotoUrl: "https://acme.example/team/jordan.jpg",
-    expertLinkedIn: "https://linkedin.com/in/jordanavery",
     journalistRequest: {
       question: "Where do early-stage SaaS and B2B agencies converge on content strategy?",
       mediaOutlet: "Modern Marketer",
     },
-    expertAnswerContext: "Speaks for both brands as a collective.",
   },
 };
 
@@ -258,16 +267,17 @@ describe("POST /generate-expert-quote-pitch", () => {
     expect((params.variables.journalistRequest as { deadline: string }).deadline).toBe("next Tuesday");
   });
 
-  it("returns 400 when a required top-level variable is empty (expertBio)", async () => {
+  it("returns 400 when the expert variable is omitted", async () => {
+    const { expert: _omit, ...rest } = FIXTURE_A.variables;
     const res = await request(app)
       .post("/generate-expert-quote-pitch")
       .set("X-Org-Id", "org-1")
       .set("X-User-Id", "user-1")
       .set("X-Run-Id", "run-1")
-      .send({ variables: { ...FIXTURE_A.variables, expertBio: "" } })
+      .send({ variables: rest })
       .expect(400);
 
-    expect(res.body.error).toContain("expertBio");
+    expect(res.body.error).toContain("expert");
     expect(mockGenerateExpertQuotePitch).not.toHaveBeenCalled();
   });
 
@@ -285,18 +295,32 @@ describe("POST /generate-expert-quote-pitch", () => {
     expect(mockGenerateExpertQuotePitch).not.toHaveBeenCalled();
   });
 
-  it("returns 400 naming the missing sub-field when a brand is incomplete", async () => {
-    const { brandHeadquartersLocation: _drop, ...partialBrand } = brand("Acme SaaS");
+  it("returns 400 when journalistRequest is omitted", async () => {
+    const { journalistRequest: _omit, ...rest } = FIXTURE_A.variables;
     const res = await request(app)
       .post("/generate-expert-quote-pitch")
       .set("X-Org-Id", "org-1")
       .set("X-User-Id", "user-1")
       .set("X-Run-Id", "run-1")
-      .send({ variables: { ...FIXTURE_A.variables, brands: [partialBrand] } })
+      .send({ variables: rest })
       .expect(400);
 
-    expect(res.body.error).toContain("brands[0].brandHeadquartersLocation");
+    expect(res.body.error).toContain("journalistRequest");
     expect(mockGenerateExpertQuotePitch).not.toHaveBeenCalled();
+  });
+
+  it("accepts an arbitrary / partial brand JSON — no structural sub-field check", async () => {
+    // Only a bare `{ name }` — none of the old required brand sub-fields. Must pass now.
+    await request(app)
+      .post("/generate-expert-quote-pitch")
+      .set("X-Org-Id", "org-1")
+      .set("X-User-Id", "user-1")
+      .set("X-Run-Id", "run-1")
+      .send({ variables: { ...FIXTURE_A.variables, brands: [{ name: "Acme" }] } })
+      .expect(200);
+
+    const [params] = mockGenerateExpertQuotePitch.mock.calls[0];
+    expect(params.variables.brands).toEqual([{ name: "Acme" }]);
   });
 
   it("returns 400 with length-violation details when generator throws ExpertQuotePitchLengthError", async () => {
@@ -424,20 +448,9 @@ describe("expert-quote-pitch template content", () => {
     }
   });
 
-  it("declares the explicit attribution + brands variable set", () => {
+  it("declares the three generic-JSON variable set", () => {
     const names = EXPERT_QUOTE_PITCH_VARIABLES.map((v) => v.name).sort();
-    expect(names).toEqual(
-      [
-        "brands",
-        "expertAnswerContext",
-        "expertBio",
-        "expertLinkedIn",
-        "expertName",
-        "expertPhotoUrl",
-        "expertTitle",
-        "journalistRequest",
-      ].sort()
-    );
+    expect(names).toEqual(["brands", "expert", "journalistRequest"].sort());
   });
 
   it("documents multibrand input flexibility on the brands variable", () => {
