@@ -190,6 +190,13 @@
       "when": 1779345600000,
       "tag": "0026_emailgen_audience_id",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1779432000000,
+      "tag": "0027_reset_expert_quote_pitch_forks_generic_json",
+      "breakpoints": true
     }
   ]
 }
