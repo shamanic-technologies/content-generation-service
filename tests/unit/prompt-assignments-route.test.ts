@@ -60,8 +60,7 @@ const SOURCE_ROW = {
 };
 
 // The full declared token set for the expert-quote-pitch source template.
-const ALL_TOKENS =
-  "{{brands}} {{expertName}} {{expertTitle}} {{expertBio}} {{expertPhotoUrl}} {{expertLinkedIn}} {{journalistRequest}} {{expertAnswerContext}}";
+const ALL_TOKENS = "{{expert}} {{brands}} {{journalistRequest}}";
 
 // A valid edited prompt that keeps the full declared token set.
 const EDITED_PROMPT = `EDITED expert pitch.\n${ALL_TOKENS}\nReturn ONLY the pitch.`;
@@ -197,9 +196,8 @@ describe("PUT /prompt-assignments", () => {
   });
 
   it("dropping a {{var}} → 400 naming the var, no fork, no assignment", async () => {
-    // drops expertAnswerContext
-    const droppedPrompt =
-      "EDITED {{brands}} {{expertName}} {{expertTitle}} {{expertBio}} {{expertPhotoUrl}} {{expertLinkedIn}} {{journalistRequest}}";
+    // drops journalistRequest
+    const droppedPrompt = "EDITED {{expert}} {{brands}}";
 
     const res = await request(app)
       .put("/prompt-assignments")
@@ -212,7 +210,7 @@ describe("PUT /prompt-assignments", () => {
       })
       .expect(400);
 
-    expect(res.body.error).toContain("expertAnswerContext");
+    expect(res.body.error).toContain("journalistRequest");
     expect(mockReturning).not.toHaveBeenCalled();
     expect(mockOnConflictDoUpdate).not.toHaveBeenCalled();
   });

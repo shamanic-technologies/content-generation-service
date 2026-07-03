@@ -27,7 +27,7 @@ Microservice that generates personalized content (emails, calendar events, etc.)
 - `src/lib/tracking.ts` — Single source for downstream identity + tracking/attribution headers: `Tracking` type, `TRACKING_HEADER_KEYS` allowlist, `extractTracking(req)`, `buildTrackingHeaders(t)`. Every internal client builds its headers through this — see "Tracking / attribution headers" below
 - `src/lib/runs-client.ts` — Client for runs-service (run tracking)
 - `src/lib/key-client.ts` — Client for key-service (used by submagic route)
-- `src/lib/expert-quote-pitch-template.ts` — Source of truth for the `expert-quote-pitch` platform template (body + variables metadata) + `assertExpertQuotePitchVariables` (all-required input guard) + `EXPERT_QUOTE_PITCH_BRAND_FIELDS`
+- `src/lib/expert-quote-pitch-template.ts` — Source of truth for the `expert-quote-pitch` platform template (body + variables metadata) + `assertExpertQuotePitchVariables` (presence-only input guard over the three generic-JSON variables `expert`/`brands`/`journalistRequest`)
 - `src/lib/register-platform-templates.ts` — Boot-time UPSERT reconcile of platform-owned prompt rows; called from `src/index.ts` after migrations
 - `src/lib/prompt-versioning.ts` — `findNextVersionType` + `createPromptVersion` fork helper (shared by `PUT /prompts` and `PUT /prompt-assignments`)
 - `src/lib/prompt-assignment.ts` — `resolveAssignedPromptType(featureSlug)` + `assertPromptVariablesMatch` integrity guard
@@ -52,13 +52,16 @@ To add a new platform template: create `src/lib/<name>-template.ts` exporting `T
 
 The `variables` array is the self-describing contract callers use to construct the request body for `POST /generate` and `POST /generate-expert-quote-pitch`. Keep descriptions precise — external callers discover input shape via `GET /platform-prompts?type=<type>`.
 
-### `expert-quote-pitch` explicit input contract (all-required)
+### `expert-quote-pitch` input contract (three generic-JSON blobs)
 
-The request type stays `variables: Record<string, unknown>` (DIS-52 — no per-field Zod schema; callers keep JSON flexibility). Required-ness is enforced at **runtime** by `assertExpertQuotePitchVariables(variables, declaredVariables)`, called in the route before any LLM spend → **400 fail-loud** if anything is missing/empty. Two layers:
-1. **Every declared variable** (driven by the resolved template's `variables` metadata) must be present + non-empty.
-2. **`brands` is multibrand** — ALWAYS an array of objects, each carrying all `EXPERT_QUOTE_PITCH_BRAND_FIELDS` (`brandName`, `brandUrl`, `brandDescription`, `brandHeadquartersLocation`, `brandLogoUrl`) non-empty. The nested sub-fields can't be seen by the top-level `{{token}}` scan, so they get a structural check. Expert attribution is single (`expertName`/`expertTitle`/`expertBio`/`expertPhotoUrl`/`expertLinkedIn`, names mirror features-service campaign inputs / DIS-136). Request fields: `journalistRequest`, `expertAnswerContext`.
+The request type stays `variables: Record<string, unknown>` (DIS-52 — no per-field Zod schema; callers keep JSON flexibility). Required-ness is enforced at **runtime** by `assertExpertQuotePitchVariables(variables, declaredVariables)`, called in the route before any LLM spend → **400 fail-loud** if anything is missing/empty. The platform template declares **three generic-JSON variables**, each just checked for **presence + non-empty** — NO per-field structural validation:
+1. **`expert`** — freeform JSON for the person whose quote gets published (name/title/bio/photo/linkedin/answer angle+context). The old granular `expertName`/`expertTitle`/`expertBio`/`expertPhotoUrl`/`expertLinkedIn`/`expertAnswerContext` are folded into this one blob.
+2. **`brands`** — freeform JSON for the brand(s) the expert represents. Multibrand default (usually an array), but ANY non-empty shape passes. The old required brand sub-fields (`brandName`/`brandUrl`/…) are gone — a bare `{ name }` is accepted.
+3. **`journalistRequest`** — freeform JSON describing the journalist's request.
 
-**Changing the variable set is a hard break** for callers (journalists-quotes-service DAG + dashboard `/draft` via api-service proxy) AND invalidates every existing org fork (`expert-quote-pitch-v*`, old token set). When the contract changes, ship a data migration that `DELETE`s the stale `feature_prompt_assignment` rows (`prompt_type LIKE 'expert-quote-pitch-v%'`) + the stale fork rows (`prompts.type LIKE 'expert-quote-pitch-v%'`) so the feature falls back to the rebuilt platform default. See `drizzle/0024_reset_expert_quote_pitch_forks.sql`. The api-service proxy is pass-through (body owned by this service) — no gateway change.
+The guard is intentionally NOT severe on the inner shape — the blobs are markdown-coerced straight into the prompt, so the model reads whatever the caller sends. (This deliberately reversed the old all-required-per-sub-field guard, which 400'd pitches on missing attribution-only fields like `brandLogoUrl`.)
+
+**Changing the variable set is a hard break** for callers (journalists-quotes-service / windmill DAG + dashboard `/draft` via api-service proxy) AND invalidates every existing org fork (`expert-quote-pitch-v*`, old token set). When the contract changes, ship a data migration that `DELETE`s the stale `feature_prompt_assignment` rows (`prompt_type LIKE 'expert-quote-pitch-v%'`) + the stale fork rows (`prompts.type LIKE 'expert-quote-pitch-v%'`) so the feature falls back to the rebuilt platform default. See `drizzle/0027_reset_expert_quote_pitch_forks_generic_json.sql` (latest; `0024` was the prior reset). The api-service proxy is pass-through (body owned by this service) — no gateway change.
 
 ## Per-feature prompt assignment
 

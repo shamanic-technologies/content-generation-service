@@ -523,10 +523,10 @@ export const GenerateExpertQuotePitchRequestSchema = registry.register(
     .object({
       variables: z.record(z.string(), z.unknown()).describe(
         "Variable values to substitute into the stored 'expert-quote-pitch' template. ALL of the template's declared " +
-        "variables are REQUIRED and must be non-empty (missing/empty → 400). For the platform template the required set is: " +
-        "`brands` (multibrand — ALWAYS an array of objects; each element MUST include brandName, brandUrl, brandDescription, " +
-        "brandHeadquartersLocation, brandLogoUrl), `expertName`, `expertTitle`, `expertBio`, `expertPhotoUrl`, " +
-        "`expertLinkedIn`, `journalistRequest`, `expertAnswerContext`. Inner JSON shape per variable is caller's choice; " +
+        "variables are REQUIRED and must be non-empty (missing/empty → 400). For the platform template the required set is " +
+        "three generic-JSON blobs: `expert` (the person whose quote gets published — name/title/bio/photo/linkedin/answer " +
+        "context), `brands` (the brand(s) the expert represents — multibrand, usually an array), and `journalistRequest` " +
+        "(the journalist's request). Inner JSON shape per variable is caller's choice; " +
         "the authoritative input list is published via GET /platform-prompts?type=expert-quote-pitch (.variables)."
       ),
       templateType: z.string().optional().describe(
