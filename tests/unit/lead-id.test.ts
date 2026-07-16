@@ -58,6 +58,8 @@ vi.mock("../../src/db/schema.js", () => ({
     orgId: { name: "org_id" },
     idempotencyKey: { name: "idempotency_key" },
     leadId: { name: "lead_id" },
+    brandIds: { name: "brand_ids" },
+    createdAt: { name: "created_at" },
   },
   prompts: { orgId: { name: "org_id" }, type: { name: "type" } },
 }));
@@ -179,6 +181,62 @@ describe("leadId support", () => {
 
       const res = await request(app)
         .get("/generations/by-lead/lead-nonexistent")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
+        .expect(404);
+
+      expect(res.body.error).toBe("Generation not found");
+    });
+
+    it("unscoped read is unchanged — no orderBy passed (byte-compatible)", async () => {
+      mockGenFindFirst.mockResolvedValue({ id: "gen-x", leadId: "lead-abc-123" });
+
+      await request(app)
+        .get("/generations/by-lead/lead-abc-123")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
+        .expect(200);
+
+      const opts = mockGenFindFirst.mock.calls[0][0] as { where?: unknown; orderBy?: unknown };
+      expect(opts.where).toBeDefined();
+      // The unscoped path must not add ordering (returning the same arbitrary row as before).
+      expect(opts.orderBy).toBeUndefined();
+    });
+
+    it("brand-scoped read returns the requested brand's generation (most recent)", async () => {
+      // Person has generations under two brands; the brand-A read must return brand A's.
+      // (The DB is fully mocked, so we assert the scoped query path executes and the
+      // resolved brand-A row is returned — not brand B's.)
+      const brandAGeneration = {
+        id: "gen-brand-a",
+        leadId: "lead-multi-brand",
+        brandIds: ["brand-A"],
+        subject: "Pitching Brand A",
+        sequence: [],
+      };
+      mockGenFindFirst.mockResolvedValue(brandAGeneration);
+
+      const res = await request(app)
+        .get("/generations/by-lead/lead-multi-brand?brandId=brand-A")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
+        .expect(200);
+
+      expect(res.body.generation.id).toBe("gen-brand-a");
+      expect(res.body.generation.brandIds).toEqual(["brand-A"]);
+
+      // Scoped path: a brand filter + newest-first ordering are applied.
+      const opts = mockGenFindFirst.mock.calls[0][0] as { where?: unknown; orderBy?: unknown };
+      expect(opts.where).toBeDefined();
+      expect(opts.orderBy).toBeDefined();
+    });
+
+    it("returns 404 (empty state, not 500) when lead has no generation under the requested brand", async () => {
+      // Person exists under brand B only; scoping to brand A finds nothing.
+      mockGenFindFirst.mockResolvedValue(null);
+
+      const res = await request(app)
+        .get("/generations/by-lead/lead-multi-brand?brandId=brand-A")
         .set("X-Org-Id", "org-internal-123")
         .set("X-User-Id", "user-internal-456")
         .expect(404);

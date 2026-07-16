@@ -436,18 +436,35 @@ router.get("/generations/by-enrichment/:apolloEnrichmentId", serviceAuth, async 
 
 /**
  * GET /generations/by-lead/:leadId - Get generation by lead-service correlation ID
+ *
+ * Optional `?brandId=<uuid>` scopes the read to the brand being viewed. A single
+ * person (lead) contacted by multiple brands in the same org has one generation per
+ * brand; without a brand scope this read is ambiguous and can return the wrong
+ * brand's email. When `brandId` is provided, return that brand's generation for the
+ * lead (most recent if several). When absent, behavior is unchanged (backward-compatible).
  */
 router.get("/generations/by-lead/:leadId", serviceAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { leadId } = req.params;
+    const { brandId } = req.query as { brandId?: string };
 
-    const generation = await db.query.emailGenerations.findFirst({
-      where: (gens, { eq, and }) =>
-        and(
-          eq(gens.leadId, leadId),
-          eq(gens.orgId, req.orgId!)
-        ),
-    });
+    const conditions: SQL[] = [
+      eq(emailGenerations.leadId, leadId),
+      eq(emailGenerations.orgId, req.orgId!),
+    ];
+    if (brandId) conditions.push(arrayContains(emailGenerations.brandIds, [brandId]));
+
+    // Order by newest only in the brand-scoped path (deterministic "most recent"
+    // when a brand has several generations for the lead). Unscoped path stays
+    // byte-unchanged: no orderBy, same single-condition WHERE as before.
+    const generation = brandId
+      ? await db.query.emailGenerations.findFirst({
+          where: and(...conditions),
+          orderBy: (gens, { desc }) => [desc(gens.createdAt)],
+        })
+      : await db.query.emailGenerations.findFirst({
+          where: and(...conditions),
+        });
 
     if (!generation) {
       return res.status(404).json({ error: "Generation not found" });
