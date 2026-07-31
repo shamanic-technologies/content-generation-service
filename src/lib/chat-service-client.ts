@@ -2,6 +2,7 @@ import { extractTemplateVariableNames } from "./template-vars.js";
 import { type ChatModel, MODEL_TO_PROVIDER, DEFAULT_MODEL } from "./chat-models.js";
 import { fetchWithRetry } from "./fetch-retry.js";
 import { type Tracking, buildTrackingHeaders } from "./tracking.js";
+import { unescapeLineBreaks, collapseEscapedLineBreaks } from "./escaped-line-breaks.js";
 
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
 const CHAT_SERVICE_API_KEY = process.env.CHAT_SERVICE_API_KEY || "";
@@ -415,7 +416,9 @@ async function callChatServiceForText(
 }
 
 function cleanPitchText(raw: string): string {
-  let text = raw.trim();
+  // Restore over-escaped line breaks first: fence/quote stripping below matches
+  // on real whitespace, and the pitch is rendered as-is to a human.
+  let text = unescapeLineBreaks(raw).trim();
   // Strip surrounding markdown code fences if present (```...``` or ```text...```).
   text = text.replace(/^```(?:[a-z]+)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
   // Strip surrounding straight or curly quotes if the entire body is wrapped.
@@ -493,7 +496,9 @@ function parseSequenceFromJson(json: {
   sequence: SequenceStep[];
 } {
   const sequence: SequenceStep[] = json.emails.map((email, i) => {
-    const bodyText = email.body.trim();
+    // Over-escaped newlines must become real newlines BEFORE textToHtml, or the
+    // body renders as one paragraph with visible backslash-n for the prospect.
+    const bodyText = unescapeLineBreaks(email.body).trim();
     return {
       step: i + 1,
       bodyHtml: textToHtml(bodyText),
@@ -502,5 +507,5 @@ function parseSequenceFromJson(json: {
     };
   });
 
-  return { subject: json.subject, sequence };
+  return { subject: collapseEscapedLineBreaks(json.subject), sequence };
 }
