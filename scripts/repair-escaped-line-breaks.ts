@@ -87,9 +87,10 @@ async function main(): Promise<void> {
     lastSeen = row.created_at;
 
     if (apply) {
+      // Bound as text + cast: postgres.js `sql.json()` rejects a top-level array.
       await sql`
         UPDATE email_generations
-        SET sequence = ${sql.json(repair.sequence as never)}
+        SET sequence = ${JSON.stringify(repair.sequence)}::jsonb
         WHERE id = ${row.id}
       `;
       written++;
