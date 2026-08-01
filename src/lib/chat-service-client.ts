@@ -3,6 +3,7 @@ import { type ChatModel, MODEL_TO_PROVIDER, DEFAULT_MODEL } from "./chat-models.
 import { fetchWithRetry } from "./fetch-retry.js";
 import { type Tracking, buildTrackingHeaders } from "./tracking.js";
 import { unescapeLineBreaks, collapseEscapedLineBreaks } from "./escaped-line-breaks.js";
+import { textToHtml } from "./text-to-html.js";
 
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
 const CHAT_SERVICE_API_KEY = process.env.CHAT_SERVICE_API_KEY || "";
@@ -479,13 +480,6 @@ export async function generateExpertQuotePitchFromTemplate(
   }
 
   throw new ExpertQuotePitchLengthError(lastCharCount ?? 0, minChars, maxChars, 2, lastPitch);
-}
-
-function textToHtml(text: string): string {
-  return text
-    .split("\n\n")
-    .map((p) => `<p>${p.replace(/\n/g, "<br>")}</p>`)
-    .join("");
 }
 
 function parseSequenceFromJson(json: {
