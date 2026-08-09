@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS "tasks_runs_costs" CASCADE;--> statement-breakpoint
 DROP TABLE IF EXISTS "tasks_runs" CASCADE;--> statement-breakpoint
 DROP TABLE IF EXISTS "tasks" CASCADE;--> statement-breakpoint
-ALTER TABLE "email_generations" DROP COLUMN IF EXISTS "cost_usd";--> statement-breakpoint
+ALTER TABLE IF EXISTS "email_generations" DROP COLUMN IF EXISTS "cost_usd";--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "email_generations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"org_id" uuid NOT NULL,

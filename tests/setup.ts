@@ -9,9 +9,9 @@ beforeAll(async () => {
     const { migrate } = await import("drizzle-orm/postgres-js/migrator");
     const { db, sql } = await import("../src/db/index.js");
 
-    // The CI Neon test branch scales to zero; the FIRST integration file's first connection
-    // hits a resuming compute and postgres.js throws `write CONNECT_TIMEOUT`. Warm the compute
-    // with a retrying SELECT 1 BEFORE migrating, so the cold-start is absorbed here.
+    // Wait for the database to accept connections before migrating. In CI it is a container
+    // that GitHub health-checks with `pg_isready`, which can still race the first client
+    // connect; locally it may be a tunnel that has just come up.
     for (let attempt = 1; ; attempt++) {
       try {
         await sql`select 1`;
@@ -23,8 +23,9 @@ beforeAll(async () => {
     }
 
     // Fail LOUD if migrations don't apply. Swallowing here (the old behaviour) hid a skipped
-    // migration on cold-start, leaving the schema unmigrated so every integration test failed
-    // opaquely with `relation "..." does not exist`.
+    // migration, leaving the schema unmigrated so every integration test failed opaquely with
+    // `relation "..." does not exist`. This is also the only place the journal is replayed from
+    // an EMPTY database — CI's per-run container starts with nothing in it.
     await migrate(db, { migrationsFolder: "./drizzle" });
   }
   console.log("Test suite starting...");

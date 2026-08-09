@@ -9,6 +9,26 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    # The integration suite's database is a container in this runner. It is created when the
+    # job starts and destroyed when the job ends, so every run gets a database nothing else
+    # points at — the isolation the per-run managed-database branch used to provide, without an
+    # external service, an API key, or a delete step that can leave anything behind.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: content_generation_service_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -32,23 +52,11 @@ jobs:
       - name: Run unit tests
         run: pnpm test:unit
 
-      - name: Create Neon branch for integration tests
-        id: neon
-        uses: neondatabase/create-branch-action@v5
-        with:
-          project_id: snowy-darkness-50106044
-          branch_name: ci-${{ github.run_id }}
-          api_key: ${{ secrets.NEON_API_KEY }}
-
+      # The database starts EMPTY. tests/setup.ts replays drizzle/ onto it and fails loud if a
+      # migration does not apply, so this step is also the only place the journal is exercised
+      # from nothing — a statement that only works against an already-populated database fails
+      # here rather than on the boot migrator.
       - name: Run integration tests
         run: pnpm test:integration
         env:
-          CONTENT_GENERATION_SERVICE_DATABASE_URL: ${{ steps.neon.outputs.db_url_with_pooler }}?sslmode=require
-
-      - name: Delete Neon branch
-        if: always()
-        uses: neondatabase/delete-branch-action@v3
-        with:
-          project_id: snowy-darkness-50106044
-          branch: ci-${{ github.run_id }}
-          api_key: ${{ secrets.NEON_API_KEY }}
+          CONTENT_GENERATION_SERVICE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/content_generation_service_test
