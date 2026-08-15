@@ -139,8 +139,10 @@ export function findUnfilledPlaceholders(text: string): string[] {
 // in GLOBAL_SYSTEM_PROMPT.
 //
 // Two variants, picked by the resolved provider:
-//  - GOOGLE: permissive (no `additionalProperties: false`). Gemini ignores that
-//    keyword; this is the historical schema, sent for every google model.
+//  - GOOGLE / VERCEL: permissive (no `additionalProperties: false`). Gemini
+//    ignores that keyword; the Vercel AI Gateway forwards the schema verbatim as
+//    OpenAI `response_format.json_schema` and imposes no such requirement. This
+//    is the historical schema, sent for every model that is not anthropic.
 //  - ANTHROPIC: strict (`additionalProperties: false` on the object AND on
 //    `emails.items`). Anthropic's structured-output API 400s on permissive
 //    schemas, so the strict variant is sent ONLY for anthropic models. The
