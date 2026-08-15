@@ -179,10 +179,12 @@ describe("chat-service client (generateFromTemplate)", () => {
 });
 
 // ─── Model selection (provider derived from the alias) ───────────────────────
-// The 7 chat-service aliases are unique across providers, so the caller picks ONE
+// The 8 chat-service aliases are unique across providers, so the caller picks ONE
 // model and the provider is derived. Anthropic structured-output requires a STRICT
 // response schema (additionalProperties:false); google ignores it, so the strict
 // schema is sent ONLY for anthropic and the google path stays byte-identical.
+// The vercel (AI Gateway) path forwards the schema verbatim to an OpenAI-compatible
+// `response_format`, so it takes the permissive schema like google.
 const STRICT_RESPONSE_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -252,6 +254,27 @@ describe("model selection (generateFromTemplate)", () => {
     expect(body.model).toBe("flash-pro");
     expect(body.responseSchema.additionalProperties).toBeUndefined();
   });
+
+  it("model=deepseek-flash derives the vercel provider and keeps the permissive schema", async () => {
+    mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
+
+    await generateFromTemplate({ ...PARAMS, model: "deepseek-flash" }, IDENTITY);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.provider).toBe("vercel");
+    expect(body.model).toBe("deepseek-flash");
+    expect(body.responseSchema.additionalProperties).toBeUndefined();
+  });
+
+  it("never sends webSearch or imageUrl — the fields the vercel path rejects", async () => {
+    mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
+
+    await generateFromTemplate({ ...PARAMS, model: "deepseek-flash" }, IDENTITY);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.webSearch).toBeUndefined();
+    expect(body.imageUrl).toBeUndefined();
+  });
 });
 
 describe("model selection (generateExpertQuotePitchFromTemplate, free-text)", () => {
@@ -295,6 +318,20 @@ describe("model selection (generateExpertQuotePitchFromTemplate, free-text)", ()
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(body.provider).toBe("anthropic");
     expect(body.model).toBe("haiku");
+    expect(body.responseSchema).toBeUndefined();
+  });
+
+  it("model=deepseek-flash derives the vercel provider (still no responseSchema)", async () => {
+    mockFetch.mockResolvedValueOnce(textResponse(PITCH_BODY));
+
+    await generateExpertQuotePitchFromTemplate(
+      { ...PITCH_PARAMS, model: "deepseek-flash" },
+      IDENTITY
+    );
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.provider).toBe("vercel");
+    expect(body.model).toBe("deepseek-flash");
     expect(body.responseSchema).toBeUndefined();
   });
 });

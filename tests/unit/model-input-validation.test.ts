@@ -3,11 +3,41 @@ import {
   GenerateRequestSchema,
   GenerateExpertQuotePitchRequestSchema,
 } from "../../src/schemas";
+import { CHAT_MODELS, MODEL_TO_PROVIDER } from "../../src/lib/chat-models";
 
-const ALL_MODELS = ["haiku", "sonnet", "opus", "flash-lite", "flash", "flash-pro", "pro"];
+const ALL_MODELS = [
+  "haiku",
+  "sonnet",
+  "opus",
+  "flash-lite",
+  "flash",
+  "flash-pro",
+  "pro",
+  "deepseek-flash",
+];
+
+describe("model alias set", () => {
+  it("is exactly the aliases chat-service accepts, each mapped to its provider", () => {
+    expect([...CHAT_MODELS]).toEqual(ALL_MODELS);
+    expect(MODEL_TO_PROVIDER).toEqual({
+      haiku: "anthropic",
+      sonnet: "anthropic",
+      opus: "anthropic",
+      "flash-lite": "google",
+      flash: "google",
+      "flash-pro": "google",
+      pro: "google",
+      "deepseek-flash": "vercel",
+    });
+  });
+
+  it("routes DeepSeek V4 Flash under the gateway provider slug chat-service expects", () => {
+    expect(MODEL_TO_PROVIDER["deepseek-flash"]).toBe("vercel");
+  });
+});
 
 describe("model input validation — POST /generate", () => {
-  it("accepts every one of the 7 model aliases", () => {
+  it("accepts every one of the 8 model aliases", () => {
     for (const model of ALL_MODELS) {
       const r = GenerateRequestSchema.safeParse({ type: "cold-email", variables: {}, model });
       expect(r.success, `model ${model} should be accepted`).toBe(true);
@@ -26,7 +56,7 @@ describe("model input validation — POST /generate", () => {
 });
 
 describe("model input validation — POST /generate-expert-quote-pitch", () => {
-  it("accepts every one of the 7 model aliases", () => {
+  it("accepts every one of the 8 model aliases", () => {
     for (const model of ALL_MODELS) {
       const r = GenerateExpertQuotePitchRequestSchema.safeParse({ variables: {}, model });
       expect(r.success, `model ${model} should be accepted`).toBe(true);
