@@ -183,8 +183,8 @@ describe("chat-service client (generateFromTemplate)", () => {
 // model and the provider is derived. Anthropic structured-output requires a STRICT
 // response schema (additionalProperties:false); google ignores it, so the strict
 // schema is sent ONLY for anthropic and the google path stays byte-identical.
-// The vercel (AI Gateway) path forwards the schema verbatim to an OpenAI-compatible
-// `response_format`, so it takes the permissive schema like google.
+// DeepSeek is called directly over its OpenAI-compatible API, which imposes no such
+// requirement either, so it takes the permissive schema like google.
 const STRICT_RESPONSE_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -255,29 +255,29 @@ describe("model selection (generateFromTemplate)", () => {
     expect(body.responseSchema.additionalProperties).toBeUndefined();
   });
 
-  it("model=deepseek-flash derives the vercel provider and keeps the permissive schema", async () => {
+  it("model=deepseek-flash derives the deepseek provider and keeps the permissive schema", async () => {
     mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
 
     await generateFromTemplate({ ...PARAMS, model: "deepseek-flash" }, IDENTITY);
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.provider).toBe("vercel");
+    expect(body.provider).toBe("deepseek");
     expect(body.model).toBe("deepseek-flash");
     expect(body.responseSchema.additionalProperties).toBeUndefined();
   });
 
-  it("model=deepseek-pro derives the vercel provider and keeps the permissive schema", async () => {
+  it("model=deepseek-pro derives the deepseek provider and keeps the permissive schema", async () => {
     mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
 
     await generateFromTemplate({ ...PARAMS, model: "deepseek-pro" }, IDENTITY);
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.provider).toBe("vercel");
+    expect(body.provider).toBe("deepseek");
     expect(body.model).toBe("deepseek-pro");
     expect(body.responseSchema.additionalProperties).toBeUndefined();
   });
 
-  it("never sends webSearch or imageUrl — the fields the vercel path rejects", async () => {
+  it("never sends webSearch or imageUrl — the fields the deepseek path rejects", async () => {
     mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
 
     await generateFromTemplate({ ...PARAMS, model: "deepseek-flash" }, IDENTITY);
@@ -332,7 +332,7 @@ describe("model selection (generateExpertQuotePitchFromTemplate, free-text)", ()
     expect(body.responseSchema).toBeUndefined();
   });
 
-  it("model=deepseek-flash derives the vercel provider (still no responseSchema)", async () => {
+  it("model=deepseek-flash derives the deepseek provider (still no responseSchema)", async () => {
     mockFetch.mockResolvedValueOnce(textResponse(PITCH_BODY));
 
     await generateExpertQuotePitchFromTemplate(
@@ -341,18 +341,18 @@ describe("model selection (generateExpertQuotePitchFromTemplate, free-text)", ()
     );
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.provider).toBe("vercel");
+    expect(body.provider).toBe("deepseek");
     expect(body.model).toBe("deepseek-flash");
     expect(body.responseSchema).toBeUndefined();
   });
 
-  it("model=deepseek-pro derives the vercel provider (still no responseSchema)", async () => {
+  it("model=deepseek-pro derives the deepseek provider (still no responseSchema)", async () => {
     mockFetch.mockResolvedValueOnce(textResponse(PITCH_BODY));
 
     await generateExpertQuotePitchFromTemplate({ ...PITCH_PARAMS, model: "deepseek-pro" }, IDENTITY);
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.provider).toBe("vercel");
+    expect(body.provider).toBe("deepseek");
     expect(body.model).toBe("deepseek-pro");
     expect(body.responseSchema).toBeUndefined();
   });

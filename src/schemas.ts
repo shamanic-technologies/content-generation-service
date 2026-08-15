@@ -16,9 +16,9 @@ const ModelField = z
   .describe(
     "LLM model to generate with (version-free alias). Provider is derived automatically: " +
       "anthropic → haiku | sonnet | opus; google → flash-lite | flash | flash-pro | pro; " +
-      "vercel → deepseek-flash (DeepSeek V4 Flash) | deepseek-pro (DeepSeek V4 Pro), both " +
-      "routed through the Vercel AI Gateway. " +
-      "The vercel path is text-only, which this service never exceeds; note that JSON-mode " +
+      "deepseek → deepseek-flash (DeepSeek V4 Flash) | deepseek-pro (DeepSeek V4 Pro), both " +
+      "called directly on DeepSeek's OpenAI-compatible API. " +
+      "The deepseek path is text-only, which this service never exceeds; note that JSON-mode " +
       "enforcement there is best-effort (fails loud rather than degrading). " +
       "Omit to use the default 'pro' (google) — unchanged from before this field existed."
   );
