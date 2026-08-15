@@ -266,6 +266,17 @@ describe("model selection (generateFromTemplate)", () => {
     expect(body.responseSchema.additionalProperties).toBeUndefined();
   });
 
+  it("model=deepseek-pro derives the vercel provider and keeps the permissive schema", async () => {
+    mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
+
+    await generateFromTemplate({ ...PARAMS, model: "deepseek-pro" }, IDENTITY);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.provider).toBe("vercel");
+    expect(body.model).toBe("deepseek-pro");
+    expect(body.responseSchema.additionalProperties).toBeUndefined();
+  });
+
   it("never sends webSearch or imageUrl — the fields the vercel path rejects", async () => {
     mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
 
@@ -332,6 +343,17 @@ describe("model selection (generateExpertQuotePitchFromTemplate, free-text)", ()
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(body.provider).toBe("vercel");
     expect(body.model).toBe("deepseek-flash");
+    expect(body.responseSchema).toBeUndefined();
+  });
+
+  it("model=deepseek-pro derives the vercel provider (still no responseSchema)", async () => {
+    mockFetch.mockResolvedValueOnce(textResponse(PITCH_BODY));
+
+    await generateExpertQuotePitchFromTemplate({ ...PITCH_PARAMS, model: "deepseek-pro" }, IDENTITY);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.provider).toBe("vercel");
+    expect(body.model).toBe("deepseek-pro");
     expect(body.responseSchema).toBeUndefined();
   });
 });
