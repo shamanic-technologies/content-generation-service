@@ -28,14 +28,14 @@ describe("model alias set", () => {
       flash: "google",
       "flash-pro": "google",
       pro: "google",
-      "deepseek-flash": "vercel",
-      "deepseek-pro": "vercel",
+      "deepseek-flash": "deepseek",
+      "deepseek-pro": "deepseek",
     });
   });
 
   it("routes both DeepSeek V4 models under the gateway provider slug chat-service expects", () => {
-    expect(MODEL_TO_PROVIDER["deepseek-flash"]).toBe("vercel");
-    expect(MODEL_TO_PROVIDER["deepseek-pro"]).toBe("vercel");
+    expect(MODEL_TO_PROVIDER["deepseek-flash"]).toBe("deepseek");
+    expect(MODEL_TO_PROVIDER["deepseek-pro"]).toBe("deepseek");
   });
 });
 
