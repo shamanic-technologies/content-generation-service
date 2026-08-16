@@ -31,13 +31,14 @@
 // on output it cannot read, so a malformed sequence is an error, not a half-filled
 // email. The free-text pitch route sends no schema and is unaffected.
 //
-// Vendor ACCOUNT state is not a routing concern: zai and moonshot authenticate but
-// currently carry no balance, so they answer 429 "please recharge", and moonshot's
-// two models have no cost row yet (their vendor prices are not published), so a Kimi
-// call fails at cost declaration even once funded. Both are account/catalog states,
-// handled where they belong (billing / costs-service). There is deliberately NO
-// fallback rerouting an out-of-credit vendor to a funded one — an unfunded vendor
-// fails loud, with the provider slug named in the error.
+// Vendor ACCOUNT state is not a routing concern, and is deliberately not recorded
+// here: a balance and a catalog row both change without touching this file, so a
+// comment naming either is wrong by the next top-up. Whether a vendor is funded
+// belongs to billing, whether its models are priced belongs to costs-service, and
+// the answer to "can this alias serve right now" is a call to chat-service, not a
+// line of source. There is deliberately NO fallback rerouting an out-of-credit
+// vendor to a funded one — an unfunded vendor fails loud, with the provider slug
+// named in the error.
 export const CHAT_MODELS = [
   "haiku",
   "sonnet",
