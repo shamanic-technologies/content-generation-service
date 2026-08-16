@@ -16,10 +16,14 @@ const ModelField = z
   .describe(
     "LLM model to generate with (version-free alias). Provider is derived automatically: " +
       "anthropic → haiku | sonnet | opus; google → flash-lite | flash | flash-pro | pro; " +
-      "deepseek → deepseek-flash (DeepSeek V4 Flash) | deepseek-pro (DeepSeek V4 Pro), both " +
-      "called directly on DeepSeek's OpenAI-compatible API. " +
-      "The deepseek path is text-only, which this service never exceeds; note that JSON-mode " +
-      "enforcement there is best-effort (fails loud rather than degrading). " +
+      "deepseek → deepseek-flash (DeepSeek V4 Flash) | deepseek-pro (DeepSeek V4 Pro); " +
+      "zai → glm-flash (glm-4.7-flashx) | glm-pro (glm-5.2); " +
+      "moonshot → kimi-flash (kimi-k2.6) | kimi-pro (kimi-k3). " +
+      "The six deepseek/zai/moonshot aliases are called directly on each vendor's " +
+      "OpenAI-compatible API. That path is text-only, which this service never exceeds; note " +
+      "that JSON-mode enforcement there is best-effort (fails loud rather than degrading), and " +
+      "a vendor whose account is out of credit answers 429 — surfaced as an error naming the " +
+      "provider, never silently rerouted to another vendor. " +
       "Omit to use the default 'pro' (google) — unchanged from before this field existed."
   );
 
