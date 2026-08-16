@@ -129,7 +129,25 @@ describe("chat-service client (generateFromTemplate)", () => {
       text: () => Promise.resolve("Bad Gateway"),
     });
 
-    await expect(generateFromTemplate(PARAMS, IDENTITY)).rejects.toThrow("chat-service /complete failed: 502");
+    await expect(generateFromTemplate(PARAMS, IDENTITY)).rejects.toThrow(
+      "chat-service /complete failed for provider 'google' model 'pro': 502"
+    );
+  });
+
+  it("names the vendor on a 429 from an unfunded direct-vendor account", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 429,
+      text: () => Promise.resolve("insufficient balance, please recharge"),
+    });
+
+    await expect(
+      generateFromTemplate({ ...PARAMS, model: "glm-pro" }, IDENTITY)
+    ).rejects.toThrow(
+      "chat-service /complete failed for provider 'zai' model 'glm-pro': 429 - insufficient balance, please recharge"
+    );
+    // Fails loud — no retry, no reroute to a funded vendor.
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
   it("returns token counts and model from chat-service", async () => {
@@ -277,15 +295,38 @@ describe("model selection (generateFromTemplate)", () => {
     expect(body.responseSchema.additionalProperties).toBeUndefined();
   });
 
-  it("never sends webSearch or imageUrl — the fields the deepseek path rejects", async () => {
-    mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
+  it.each([
+    ["glm-flash", "zai"],
+    ["glm-pro", "zai"],
+    ["kimi-flash", "moonshot"],
+    ["kimi-pro", "moonshot"],
+  ] as const)(
+    "model=%s derives the %s provider and keeps the permissive schema",
+    async (model, provider) => {
+      mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
 
-    await generateFromTemplate({ ...PARAMS, model: "deepseek-flash" }, IDENTITY);
+      await generateFromTemplate({ ...PARAMS, model }, IDENTITY);
 
-    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.webSearch).toBeUndefined();
-    expect(body.imageUrl).toBeUndefined();
-  });
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.provider).toBe(provider);
+      expect(body.model).toBe(model);
+      expect(body.responseSchema.additionalProperties).toBeUndefined();
+    }
+  );
+
+  it.each(["deepseek-flash", "glm-pro", "kimi-pro"] as const)(
+    "never sends webSearch or imageUrl on %s — the fields the direct-vendor path rejects",
+    async (model) => {
+      mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
+
+      await generateFromTemplate({ ...PARAMS, model }, IDENTITY);
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.webSearch).toBeUndefined();
+      expect(body.imageUrl).toBeUndefined();
+    }
+  );
+
 });
 
 describe("model selection (generateExpertQuotePitchFromTemplate, free-text)", () => {
@@ -355,5 +396,36 @@ describe("model selection (generateExpertQuotePitchFromTemplate, free-text)", ()
     expect(body.provider).toBe("deepseek");
     expect(body.model).toBe("deepseek-pro");
     expect(body.responseSchema).toBeUndefined();
+  });
+
+  it.each([
+    ["glm-flash", "zai"],
+    ["glm-pro", "zai"],
+    ["kimi-flash", "moonshot"],
+    ["kimi-pro", "moonshot"],
+  ] as const)("model=%s derives the %s provider (still no responseSchema)", async (model, provider) => {
+    mockFetch.mockResolvedValueOnce(textResponse(PITCH_BODY));
+
+    await generateExpertQuotePitchFromTemplate({ ...PITCH_PARAMS, model }, IDENTITY);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.provider).toBe(provider);
+    expect(body.model).toBe(model);
+    expect(body.responseSchema).toBeUndefined();
+  });
+
+  it("names the vendor on a 429 from an unfunded direct-vendor account", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 429,
+      text: () => Promise.resolve("insufficient balance, please recharge"),
+    });
+
+    await expect(
+      generateExpertQuotePitchFromTemplate({ ...PITCH_PARAMS, model: "kimi-pro" }, IDENTITY)
+    ).rejects.toThrow(
+      "chat-service /complete failed for provider 'moonshot' model 'kimi-pro': 429 - insufficient balance, please recharge"
+    );
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });

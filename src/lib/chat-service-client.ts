@@ -1,5 +1,10 @@
 import { extractTemplateVariableNames } from "./template-vars.js";
-import { type ChatModel, MODEL_TO_PROVIDER, DEFAULT_MODEL } from "./chat-models.js";
+import {
+  type ChatModel,
+  type ChatProvider,
+  MODEL_TO_PROVIDER,
+  DEFAULT_MODEL,
+} from "./chat-models.js";
 import { fetchWithRetry } from "./fetch-retry.js";
 import { type Tracking, buildTrackingHeaders } from "./tracking.js";
 import { unescapeLineBreaks, collapseEscapedLineBreaks } from "./escaped-line-breaks.js";
@@ -139,10 +144,10 @@ export function findUnfilledPlaceholders(text: string): string[] {
 // in GLOBAL_SYSTEM_PROMPT.
 //
 // Two variants, picked by the resolved provider:
-//  - GOOGLE / DEEPSEEK: permissive (no `additionalProperties: false`). Gemini
-//    ignores that keyword; DeepSeek's OpenAI-compatible API imposes no such
-//    requirement either. This is the historical schema, sent for every model that
-//    is not anthropic.
+//  - GOOGLE / DEEPSEEK / ZAI / MOONSHOT: permissive (no `additionalProperties:
+//    false`). Gemini ignores that keyword; the direct vendors' OpenAI-compatible
+//    APIs impose no such requirement either. This is the historical schema, sent
+//    for every model that is not anthropic.
 //  - ANTHROPIC: strict (`additionalProperties: false` on the object AND on
 //    `emails.items`). Anthropic's structured-output API 400s on permissive
 //    schemas, so the strict variant is sent ONLY for anthropic models. The
@@ -221,6 +226,24 @@ export class InsufficientCreditsError extends Error {
   }
 }
 
+// ─── Chat-service error message ─────────────────────────────────────────────
+//
+// A failing /complete call names the provider and model it was routed to. Without
+// them, a vendor-side failure reads as a generic chat-service outage: the direct-vendor
+// providers (deepseek / zai / moonshot) each resolve their own credential and their own
+// account balance, so an out-of-credit vendor answers 429 "please recharge" while the
+// others keep working. Naming the provider makes that an account problem someone can
+// act on rather than an anonymous failure. Nothing is retried or rerouted — an unfunded
+// vendor fails loud.
+function chatCompleteErrorMessage(
+  status: number,
+  provider: ChatProvider,
+  model: ChatModel,
+  errorText: string
+): string {
+  return `chat-service /complete failed for provider '${provider}' model '${model}': ${status} - ${errorText}`;
+}
+
 // ─── Chat-service response type ─────────────────────────────────────────────
 
 interface ChatCompleteResponse {
@@ -285,7 +308,7 @@ export async function generateFromTemplate(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`chat-service /complete failed: ${response.status} - ${errorText}`);
+    throw new Error(chatCompleteErrorMessage(response.status, provider, model, errorText));
   }
 
   const data = await response.json() as ChatCompleteResponse;
@@ -390,6 +413,7 @@ async function callChatServiceForText(
   };
 
   // Free-text pitch: no responseSchema for any provider. Provider derived from alias.
+  const provider = MODEL_TO_PROVIDER[model];
   const response = await fetchWithRetry(
     `${CHAT_SERVICE_URL}/complete`,
     {
@@ -398,7 +422,7 @@ async function callChatServiceForText(
       body: JSON.stringify({
         message: prompt,
         systemPrompt,
-        provider: MODEL_TO_PROVIDER[model],
+        provider,
         model,
       }),
     },
@@ -412,7 +436,7 @@ async function callChatServiceForText(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`chat-service /complete failed: ${response.status} - ${errorText}`);
+    throw new Error(chatCompleteErrorMessage(response.status, provider, model, errorText));
   }
 
   return await response.json() as ChatTextResponse;

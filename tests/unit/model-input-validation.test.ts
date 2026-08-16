@@ -15,6 +15,10 @@ const ALL_MODELS = [
   "pro",
   "deepseek-flash",
   "deepseek-pro",
+  "glm-flash",
+  "glm-pro",
+  "kimi-flash",
+  "kimi-pro",
 ];
 
 describe("model alias set", () => {
@@ -30,17 +34,35 @@ describe("model alias set", () => {
       pro: "google",
       "deepseek-flash": "deepseek",
       "deepseek-pro": "deepseek",
+      "glm-flash": "zai",
+      "glm-pro": "zai",
+      "kimi-flash": "moonshot",
+      "kimi-pro": "moonshot",
     });
   });
 
-  it("routes both DeepSeek V4 models under the gateway provider slug chat-service expects", () => {
+  it("routes each direct-vendor alias to the provider slug chat-service expects", () => {
     expect(MODEL_TO_PROVIDER["deepseek-flash"]).toBe("deepseek");
     expect(MODEL_TO_PROVIDER["deepseek-pro"]).toBe("deepseek");
+    expect(MODEL_TO_PROVIDER["glm-flash"]).toBe("zai");
+    expect(MODEL_TO_PROVIDER["glm-pro"]).toBe("zai");
+    expect(MODEL_TO_PROVIDER["kimi-flash"]).toBe("moonshot");
+    expect(MODEL_TO_PROVIDER["kimi-pro"]).toBe("moonshot");
+  });
+
+  it("keeps the seven pre-existing aliases on their original providers", () => {
+    expect(MODEL_TO_PROVIDER.haiku).toBe("anthropic");
+    expect(MODEL_TO_PROVIDER.sonnet).toBe("anthropic");
+    expect(MODEL_TO_PROVIDER.opus).toBe("anthropic");
+    expect(MODEL_TO_PROVIDER["flash-lite"]).toBe("google");
+    expect(MODEL_TO_PROVIDER.flash).toBe("google");
+    expect(MODEL_TO_PROVIDER["flash-pro"]).toBe("google");
+    expect(MODEL_TO_PROVIDER.pro).toBe("google");
   });
 });
 
 describe("model input validation — POST /generate", () => {
-  it("accepts every one of the 9 model aliases", () => {
+  it("accepts every one of the 13 model aliases", () => {
     for (const model of ALL_MODELS) {
       const r = GenerateRequestSchema.safeParse({ type: "cold-email", variables: {}, model });
       expect(r.success, `model ${model} should be accepted`).toBe(true);
@@ -69,7 +91,7 @@ describe("model input validation — POST /generate", () => {
 });
 
 describe("model input validation — POST /generate-expert-quote-pitch", () => {
-  it("accepts every one of the 9 model aliases", () => {
+  it("accepts every one of the 13 model aliases", () => {
     for (const model of ALL_MODELS) {
       const r = GenerateExpertQuotePitchRequestSchema.safeParse({ variables: {}, model });
       expect(r.success, `model ${model} should be accepted`).toBe(true);
