@@ -39,6 +39,30 @@ function buildApp() {
   return app;
 }
 
+/** Minimal stand-in for a fetch Response whose body is read as a bounded stream. */
+function videoResponse(byteLength: number, contentLength?: number) {
+  let sent = false;
+  return {
+    ok: true,
+    headers: {
+      get: (name: string) =>
+        name.toLowerCase() === "content-length" && contentLength !== undefined
+          ? String(contentLength)
+          : null,
+    },
+    body: {
+      getReader: () => ({
+        read: async () => {
+          if (sent) return { done: true, value: undefined };
+          sent = true;
+          return { done: false, value: new Uint8Array(byteLength) };
+        },
+        cancel: vi.fn(),
+      }),
+    },
+  };
+}
+
 const validBody = {
   videoUrl: "https://example.com/video.mp4",
   name: "Sophie",
@@ -51,10 +75,7 @@ const validBody = {
 describe("POST /compose", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockFetch.mockResolvedValue({
-      ok: true,
-      arrayBuffer: () => Promise.resolve(new ArrayBuffer(100)),
-    });
+    mockFetch.mockResolvedValue(videoResponse(100));
   });
 
   it("returns 400 when required fields are missing", async () => {
@@ -199,6 +220,38 @@ describe("POST /compose", () => {
       .expect(400);
 
     expect(res.body.error).toBeDefined();
+  });
+
+  it("refuses a source video that declares a size over the limit", async () => {
+    const { MAX_SOURCE_VIDEO_BYTES } = await import("../../src/routes/compose.js");
+    mockFetch.mockResolvedValue(videoResponse(10, MAX_SOURCE_VIDEO_BYTES + 1));
+
+    const app = buildApp();
+    const res = await request(app)
+      .post("/compose")
+      .set("X-Api-Key", VALID_KEY)
+      .send(validBody)
+      .expect(413);
+
+    expect(res.body.error).toMatch(/exceeds/i);
+    expect(res.body.maxBytes).toBe(MAX_SOURCE_VIDEO_BYTES);
+    // Refused before any composition work is done.
+    expect(composeSplitScreen).not.toHaveBeenCalled();
+  });
+
+  it("refuses a source video that crosses the limit mid-stream", async () => {
+    const { MAX_SOURCE_VIDEO_BYTES } = await import("../../src/routes/compose.js");
+    mockFetch.mockResolvedValue(videoResponse(MAX_SOURCE_VIDEO_BYTES + 1));
+
+    const app = buildApp();
+    const res = await request(app)
+      .post("/compose")
+      .set("X-Api-Key", VALID_KEY)
+      .send(validBody)
+      .expect(413);
+
+    expect(res.body.maxBytes).toBe(MAX_SOURCE_VIDEO_BYTES);
+    expect(composeSplitScreen).not.toHaveBeenCalled();
   });
 
   it("requires API key", async () => {

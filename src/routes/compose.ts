@@ -3,8 +3,16 @@ import { z } from "zod";
 import { put } from "@vercel/blob";
 import { generateQuoteImage } from "../lib/quote-image.js";
 import { composeSplitScreen } from "../lib/ffmpeg-compose.js";
+import { readCappedBody, PayloadTooLargeError } from "../lib/capped-body.js";
 
 const router = Router();
+
+/**
+ * Ceiling on the source video held in memory. The download, the composed output
+ * and the blob upload are all buffered whole, so an arbitrarily large `videoUrl`
+ * was an unbounded allocation on a ~2 GB heap.
+ */
+export const MAX_SOURCE_VIDEO_BYTES = 150 * 1024 * 1024;
 
 export const ComposeRequestSchema = z.object({
   videoUrl: z.string().url(),
@@ -32,7 +40,20 @@ router.post("/compose", async (req: Request, res: Response) => {
     if (!videoResponse.ok) {
       return res.status(400).json({ error: `Failed to download video: ${videoResponse.status}` });
     }
-    const videoBuffer = Buffer.from(await videoResponse.arrayBuffer());
+    let videoBuffer: Buffer;
+    try {
+      videoBuffer = await readCappedBody(videoResponse, MAX_SOURCE_VIDEO_BYTES);
+    } catch (err) {
+      if (err instanceof PayloadTooLargeError) {
+        console.error(`[compose] Source video over the ${MAX_SOURCE_VIDEO_BYTES} byte limit: ${err.message}`);
+        return res.status(413).json({
+          error: `Source video exceeds the ${MAX_SOURCE_VIDEO_BYTES} byte limit`,
+          maxBytes: MAX_SOURCE_VIDEO_BYTES,
+        });
+      }
+      throw err;
+    }
+    console.log(`[compose] Downloaded source video: ${videoBuffer.byteLength} bytes`);
 
     // Detect extension from URL
     const urlPath = new URL(videoUrl).pathname;
