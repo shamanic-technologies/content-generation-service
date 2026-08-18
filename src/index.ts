@@ -8,6 +8,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { db } from "./db/index.js";
 import { registerPlatformTemplates } from "./lib/register-platform-templates.js";
 import { apiKeyAuth } from "./middleware/auth.js";
+import { requestLog } from "./middleware/request-log.js";
 import healthRoutes from "./routes/health.js";
 import generateRoutes from "./routes/generate.js";
 import statsRoutes from "./routes/stats.js";
@@ -24,9 +25,19 @@ const openapiPath = join(__dirname, "..", "openapi.json");
 const app = express();
 const PORT = process.env.PORT || 3005;
 
+/**
+ * Inbound JSON ceiling. This is express's own default made explicit, so the
+ * bound is visible next to the routes it protects rather than inherited.
+ * Crossing it is a readable 413, not a parse failure surfaced as a 500.
+ */
+const JSON_BODY_LIMIT = "100kb";
+
 // Middleware
 app.use(cors());
-app.use(express.json());
+// Logged before body parsing and before auth so the in-flight request is named
+// even when it never reaches a handler (oversized body, bad key, unknown path).
+app.use(requestLog);
+app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
 // Public routes (no API key required — used by Railway healthcheck)
 app.use(healthRoutes);
@@ -62,6 +73,17 @@ Sentry.setupExpressErrorHandler(app);
 
 // Fallback error handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  // body-parser rejects an oversized body with this type. Surface it as the 413
+  // it is so the caller reads a real limit instead of an opaque 500.
+  if ((err as { type?: string }).type === "entity.too.large") {
+    console.error(
+      `[content-generation-service] Request body over the ${JSON_BODY_LIMIT} limit: ${req.method} ${req.path}`
+    );
+    return res.status(413).json({
+      error: `Request body exceeds the ${JSON_BODY_LIMIT} limit`,
+      limit: JSON_BODY_LIMIT,
+    });
+  }
   console.error("Unhandled error:", err);
   res.status(500).json({ error: "Internal server error" });
 });
