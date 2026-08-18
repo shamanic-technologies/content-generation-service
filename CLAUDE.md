@@ -114,6 +114,27 @@ Every internal client (runs/chat/campaign/brand/key) builds its headers via `bui
 
 `x-audience-id` is the campaign-chosen priority audience; it's optional (absent outside a campaign flow → omit, never throw). Attribution in runs-service is a flat `SUM(cost) GROUP BY COALESCE(runs_costs.audience_id, runs.audience_id)` — no hierarchical rollup, so every cost/run row must carry it. NOTE: the LLM spend is a **chat-service** cost row, not content-gen's; tagging it requires chat-service to read `x-audience-id` inbound (separate repo).
 
+## Response-size bounds (the OOM class)
+
+A generation row carries the full prompt, the raw model response and the whole sequence — **~52 KB per row in production**, and one brand holds >10,000 of them (~542 MB of row text; several times that once it is JS objects plus one JSON string from `res.json`). Against the container's ~2.09 GB V8 default ceiling, any read that materializes a whole brand's or campaign's history is a `FATAL ERROR: Reached heap limit`, which Docker answers with a restart — so the caller sees a dropped connection, every in-flight generation on the cold-email path dies, and nothing in the logs names the request that did it (issue #183: 6 crashes in 24h, 4 inside 90 seconds).
+
+- **`GET /generations` is bounded at `MAX_GENERATIONS_PER_RESPONSE` (2000) rows** (`src/routes/generate.ts`). With an explicit `limit` (1..2000) + `offset` it pages; without one it reads `MAX+1` and **refuses an oversized set with 413** naming the ceiling. Never trim to the cap and return anyway — a partial list that looks whole is the failure this bound exists to prevent. `api-service` already forwards `limit`/`offset` on `GET /v1/emails`; `GET /v1/campaigns/:id/emails` does not yet and will 413 on a campaign over 2000 generations (api-service#841).
+- **Never count by reading rows back.** `count(*)` in SQL, not `findMany(...).length` — `POST /stats` did the latter and grew with the org's whole history for no gain.
+- **Never buffer a remote body whole.** `Buffer.from(await response.arrayBuffer())` is unbounded; use `readCappedBody(response, maxBytes)` (`src/lib/capped-body.ts`), which checks the declared `content-length`, streams against a hard ceiling, cancels the download on breach, and throws `PayloadTooLargeError` → 413. `POST /compose` caps its source video at `MAX_SOURCE_VIDEO_BYTES` (150 MiB); the composed output and the blob upload are still buffered whole, so that ceiling is what keeps the three of them inside the heap.
+- **Inbound JSON is capped at `JSON_BODY_LIMIT` (100kb)** in `src/index.ts` — express's own default, made explicit and surfaced as a readable 413 (`entity.too.large` branch in the fallback error handler) instead of an opaque 500.
+- **Do not answer this class by raising `--max-old-space-size`.** That moves the crash; it does not remove it. `NODE_OPTIONS` on the container is `--dns-result-order=ipv4first` and the ceiling is the V8 default — a raise is fine *alongside* a real bound, never instead of one.
+
+## Request logging
+
+`src/middleware/request-log.ts` is mounted **before body parsing and before auth**, so every request is named even when it never reaches a handler (oversized body, bad key, unknown path). A fatal OOM gives no chance to log on the way out, so the line that identifies the culprit is written when the request **starts** — after a heap-limit crash, the last `[req] ->` line before the fatal is the request that took the process down.
+
+```
+[req] -> POST /generate inBytes=8214 org=<uuid> run=<uuid>
+[req] <- POST /generate 200 ms=4120 inBytes=8214 outBytes=19233 org=<uuid> run=<uuid>
+```
+
+Method, path, byte counts and the identity/attribution headers already used for tracking. **Never the body, never query values, never generated content** — the sizes are the diagnostic, the payload is not.
+
 ## Gotchas
 
 - **pnpm only** — the tracked lockfile is `pnpm-lock.yaml`. Never commit a stray `package-lock.json`; delete it before committing.

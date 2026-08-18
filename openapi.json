@@ -2039,6 +2039,7 @@
           "Content Generation"
         ],
         "summary": "List generations with filters",
+        "description": "A generation row carries the full prompt and raw model response, so a whole brand's history is far too large to return at once. Pass `limit` (max 2000) and `offset` to page. Without `limit`, a result set over 2000 rows is refused with 413 rather than trimmed, so a partial list can never be mistaken for the whole one.",
         "parameters": [
           {
             "schema": {
@@ -2062,6 +2063,26 @@
             },
             "required": false,
             "name": "brandId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Page size, 1..2000. Omit to read the whole result set (refused with 413 above 2000 rows)."
+            },
+            "required": false,
+            "description": "Page size, 1..2000. Omit to read the whole result set (refused with 413 above 2000 rows).",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Rows to skip, newest first. Defaults to 0."
+            },
+            "required": false,
+            "description": "Rows to skip, newest first. Defaults to 0.",
+            "name": "offset",
             "in": "query"
           },
           {
@@ -2135,7 +2156,17 @@
             }
           },
           "400": {
-            "description": "At least one filter required",
+            "description": "At least one filter required, or limit/offset out of range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Result set exceeds 2000 generations — page it with limit and offset",
             "content": {
               "application/json": {
                 "schema": {

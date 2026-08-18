@@ -693,12 +693,18 @@ registry.registerPath({
   path: "/generations",
   tags: ["Content Generation"],
   summary: "List generations with filters",
+  description:
+    "A generation row carries the full prompt and raw model response, so a whole brand's history is far too " +
+    "large to return at once. Pass `limit` (max 2000) and `offset` to page. Without `limit`, a result set over " +
+    "2000 rows is refused with 413 rather than trimmed, so a partial list can never be mistaken for the whole one.",
   request: {
     headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional().describe("Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')"), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
     query: z.object({
       runId: z.string().optional(),
       campaignId: z.string().optional(),
       brandId: z.string().optional(),
+      limit: z.string().optional().describe("Page size, 1..2000. Omit to read the whole result set (refused with 413 above 2000 rows)."),
+      offset: z.string().optional().describe("Rows to skip, newest first. Defaults to 0."),
     }),
   },
   responses: {
@@ -709,7 +715,11 @@ registry.registerPath({
       },
     },
     400: {
-      description: "At least one filter required",
+      description: "At least one filter required, or limit/offset out of range",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    413: {
+      description: "Result set exceeds 2000 generations — page it with limit and offset",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },

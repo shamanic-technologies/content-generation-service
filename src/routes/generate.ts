@@ -323,8 +323,33 @@ router.post("/generate-expert-quote-pitch", serviceAuth, async (req: Authenticat
 });
 
 /**
+ * Hard ceiling on how many generation rows one GET /generations response may carry.
+ *
+ * A generation row carries the full prompt, the raw model response and the whole
+ * sequence — production averages ~52 KB per row, and a single brand holds >10,000
+ * of them (~542 MB of row text, several times that once it is JS objects plus one
+ * JSON string). That read had no bound at all and is what exhausted the V8 heap.
+ * 2,000 rows is ~100 MB of row text, which every observed campaign and brand read
+ * that completed successfully stays under.
+ */
+export const MAX_GENERATIONS_PER_RESPONSE = 2000;
+
+/** Parse a non-negative integer query param. `undefined` when absent, `null` when malformed. */
+function parseCount(raw: string | undefined): number | null | undefined {
+  if (raw === undefined || raw === "") return undefined;
+  if (!/^\d+$/.test(raw)) return null;
+  const n = Number(raw);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
+/**
  * GET /generations - List generations with filters
- * Query params: runId, campaignId, brandId (at least one required)
+ * Query params: runId, campaignId, brandId (at least one required), limit, offset
+ *
+ * Bounded: an explicit `limit` (1..MAX_GENERATIONS_PER_RESPONSE) pages the result.
+ * Without one, a result set larger than the ceiling is refused with 413 naming the
+ * ceiling — never trimmed silently, so a caller can never mistake a partial list
+ * for the whole one.
  */
 router.get("/generations", serviceAuth, async (req: AuthenticatedRequest, res) => {
   try {
@@ -338,15 +363,48 @@ router.get("/generations", serviceAuth, async (req: AuthenticatedRequest, res) =
       return res.status(400).json({ error: "At least one filter required: runId, campaignId, or brandId" });
     }
 
+    const limit = parseCount(req.query.limit as string | undefined);
+    const offset = parseCount(req.query.offset as string | undefined);
+
+    if (limit === null || (limit !== undefined && (limit < 1 || limit > MAX_GENERATIONS_PER_RESPONSE))) {
+      return res.status(400).json({
+        error: `limit must be an integer between 1 and ${MAX_GENERATIONS_PER_RESPONSE}`,
+      });
+    }
+    if (offset === null) {
+      return res.status(400).json({ error: "offset must be a non-negative integer" });
+    }
+
     const conditions: SQL[] = [eq(emailGenerations.orgId, req.orgId!)];
     if (runId) conditions.push(eq(emailGenerations.runId, runId));
     if (campaignId) conditions.push(eq(emailGenerations.campaignId, campaignId));
     if (brandId) conditions.push(arrayContains(emailGenerations.brandIds, [brandId]));
 
+    // Without an explicit limit, read one row past the ceiling: its presence is the
+    // signal that the unpaginated result set does not fit, and the read itself stays
+    // bounded either way.
+    const paginated = limit !== undefined;
+    const fetchLimit = paginated ? limit : MAX_GENERATIONS_PER_RESPONSE + 1;
+
     const generations = await db.query.emailGenerations.findMany({
       where: and(...conditions),
       orderBy: (gens, { desc }) => [desc(gens.createdAt)],
+      limit: fetchLimit,
+      offset: offset ?? 0,
     });
+
+    if (!paginated && generations.length > MAX_GENERATIONS_PER_RESPONSE) {
+      console.error(
+        `[content-generation-service] GET /generations refused: over ${MAX_GENERATIONS_PER_RESPONSE} rows ` +
+          `(org=${req.orgId}, runId=${runId ?? "-"}, campaignId=${campaignId ?? "-"}, brandId=${brandId ?? "-"})`
+      );
+      return res.status(413).json({
+        error:
+          `This filter matches more than ${MAX_GENERATIONS_PER_RESPONSE} generations, which is too large to return ` +
+          `in one response. Narrow the filter, or page through it with limit (max ${MAX_GENERATIONS_PER_RESPONSE}) and offset.`,
+        maxGenerations: MAX_GENERATIONS_PER_RESPONSE,
+      });
+    }
 
     res.json({ generations });
   } catch (error) {
@@ -637,15 +695,16 @@ router.post("/stats", serviceAuth, async (req: AuthenticatedRequest, res) => {
     if (brandId) conditions.push(arrayContains(emailGenerations.brandIds, [brandId]));
     if (campaignId) conditions.push(eq(emailGenerations.campaignId, campaignId));
 
-    // Count email generations
-    const generations = await db.query.emailGenerations.findMany({
-      where: and(...conditions),
-      columns: { id: true },
-    });
+    // Count in SQL. Reading every matching row back only to take its length grew
+    // the response-side memory with the org's whole history for no gain.
+    const results = await db
+      .select({ emailsGenerated: sql<number>`count(*)::int` })
+      .from(emailGenerations)
+      .where(and(...conditions));
 
     res.json({
       stats: {
-        emailsGenerated: generations.length,
+        emailsGenerated: results[0]?.emailsGenerated ?? 0,
       },
     });
   } catch (error) {
