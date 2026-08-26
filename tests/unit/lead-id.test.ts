@@ -58,6 +58,7 @@ vi.mock("../../src/db/schema.js", () => ({
     orgId: { name: "org_id" },
     idempotencyKey: { name: "idempotency_key" },
     leadId: { name: "lead_id" },
+    campaignId: { name: "campaign_id" },
     brandIds: { name: "brand_ids" },
     createdAt: { name: "created_at" },
   },
