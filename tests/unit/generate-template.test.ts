@@ -141,6 +141,9 @@ describe("POST /generate (template-based)", () => {
           senderInfo: "Name: MyBrand\nURL: https://mybrand.com",
         },
         campaignContext: null,
+        // No leadId on this request, so no language is resolved and the system
+        // prompt stays byte-identical to what it was before that field existed.
+        language: null,
       },
       expect.objectContaining({
         orgId: "org-internal-123",
