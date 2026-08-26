@@ -22,6 +22,40 @@ import { traceEvent } from "../lib/trace-event.js";
 const router = Router();
 
 /**
+ * The `/generate` response body. Shared by the fresh-generation path and by both
+ * paths that answer with a stored generation (idempotency key, existing lead email),
+ * so a caller cannot tell them apart and needs no branching.
+ *
+ * `tokensInput`/`tokensOutput` on a stored generation are the ORIGINAL completion's
+ * counts, not new spend — billing truth lives in chat-service's cost rows.
+ */
+function toGenerationResponse(generation: {
+  id: string;
+  subject: string | null;
+  sequence: unknown;
+  tokensInput: number | null;
+  tokensOutput: number | null;
+}) {
+  return {
+    id: generation.id,
+    subject: generation.subject ?? "",
+    sequence: generation.sequence ?? [],
+    tokensInput: generation.tokensInput ?? 0,
+    tokensOutput: generation.tokensOutput ?? 0,
+  };
+}
+
+/**
+ * True for the Postgres unique-violation raised by `idx_emailgen_lead`
+ * (UNIQUE on campaign_id, lead_id). Deliberately narrow: any other error —
+ * including a unique violation on a different index — is rethrown.
+ */
+function isLeadDuplicateError(err: unknown): boolean {
+  const e = err as { code?: unknown; constraint_name?: unknown };
+  return e?.code === "23505" && e?.constraint_name === "idx_emailgen_lead";
+}
+
+/**
  * POST /generate — Generate content using a stored prompt template + variables
  */
 router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => {
@@ -67,13 +101,33 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
 
       if (existing) {
         traceEvent(req.runId!, { service: "content-generation-service", event: "idempotency-hit", detail: `Returning cached generation id=${existing.id} for key=${idempotencyKey}` }, req.headers).catch(() => {});
-        return res.json({
-          id: existing.id,
-          subject: existing.subject ?? "",
-          sequence: existing.sequence ?? [],
-          tokensInput: existing.tokensInput ?? 0,
-          tokensOutput: existing.tokensOutput ?? 0,
-        });
+        return res.json(toGenerationResponse(existing));
+      }
+    }
+
+    // The campaign a lead's generation is stored under. `campaignId` is nullable on
+    // the wire but the column is NOT NULL, so the insert below normalizes it to "";
+    // the lead lookup must use the same value or it would miss its own rows.
+    const leadCampaignId = campaignId ?? "";
+
+    // Retry recovery: a lead that already has a generation for this campaign gets that
+    // email back instead of a second, billed completion. `idx_emailgen_lead` is UNIQUE on
+    // (campaign_id, lead_id) — one email per person per campaign — so the retry could only
+    // ever have produced a duplicate-key throw here, AFTER the completion was paid for.
+    // Returning the stored email is what the retry actually needs: these leads were never
+    // contacted, so nothing about the email is stale to its recipient. See issue #186.
+    if (leadId) {
+      const existingForLead = await db.query.emailGenerations.findFirst({
+        where: and(
+          eq(emailGenerations.orgId, req.orgId!),
+          eq(emailGenerations.campaignId, leadCampaignId),
+          eq(emailGenerations.leadId, leadId)
+        ),
+      });
+
+      if (existingForLead) {
+        traceEvent(req.runId!, { service: "content-generation-service", event: "lead-generation-hit", detail: `Returning existing generation id=${existingForLead.id} for leadId=${leadId}, campaignId=${leadCampaignId || "none"} — no completion billed` }, req.headers).catch(() => {});
+        return res.json(toGenerationResponse(existingForLead));
       }
     }
 
@@ -138,38 +192,59 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       typeof v === "string" && v.length > 0 ? v : null;
 
     // Store in database
-    const [generation] = await db
-      .insert(emailGenerations)
-      .values({
-        orgId: req.orgId!,
-        runId: req.runId!,
-        apolloEnrichmentId: apolloEnrichmentId ?? null,
-        promptType: type,
-        brandIds: brandIds,
-        campaignId: campaignId ?? "",
-        variablesRaw: variables,
-        // Populate dedicated lead/client columns from variables
-        leadFirstName: str(variables.leadFirstName),
-        leadLastName: str(variables.leadLastName),
-        leadTitle: str(variables.leadTitle),
-        leadCompany: str(variables.leadCompanyName),
-        leadIndustry: str(variables.leadCompanyIndustry),
-        leadOrganizationDomain: str(variables.organizationDomain),
-        clientCompanyName: str(variables.clientCompanyName),
-        subject: result.subject,
-        sequence: result.sequence,
-        model: result.model,
-        tokensInput: result.tokensInput,
-        tokensOutput: result.tokensOutput,
-        promptRaw: result.promptRaw,
-        responseRaw: result.responseRaw,
-        workflowSlug: workflowSlug ?? null,
-        featureSlug: featureSlug ?? null,
-        audienceId: audienceId ?? null,
-        leadId: leadId ?? null,
-        idempotencyKey: idempotencyKey ?? null,
-      })
-      .returning();
+    const insertValues = {
+      orgId: req.orgId!,
+      runId: req.runId!,
+      apolloEnrichmentId: apolloEnrichmentId ?? null,
+      promptType: type,
+      brandIds: brandIds,
+      campaignId: leadCampaignId,
+      variablesRaw: variables,
+      // Populate dedicated lead/client columns from variables
+      leadFirstName: str(variables.leadFirstName),
+      leadLastName: str(variables.leadLastName),
+      leadTitle: str(variables.leadTitle),
+      leadCompany: str(variables.leadCompanyName),
+      leadIndustry: str(variables.leadCompanyIndustry),
+      leadOrganizationDomain: str(variables.organizationDomain),
+      clientCompanyName: str(variables.clientCompanyName),
+      subject: result.subject,
+      sequence: result.sequence,
+      model: result.model,
+      tokensInput: result.tokensInput,
+      tokensOutput: result.tokensOutput,
+      promptRaw: result.promptRaw,
+      responseRaw: result.responseRaw,
+      workflowSlug: workflowSlug ?? null,
+      featureSlug: featureSlug ?? null,
+      audienceId: audienceId ?? null,
+      leadId: leadId ?? null,
+      idempotencyKey: idempotencyKey ?? null,
+    };
+
+    let generation;
+    try {
+      [generation] = await db.insert(emailGenerations).values(insertValues).returning();
+    } catch (err) {
+      // A concurrent retry of the same lead won the insert between our lookup above and
+      // this write. The unique index is the invariant we want — one email per person per
+      // campaign — so the winner's email is the correct answer, and the caller still gets
+      // an email to push instead of a failed run. This completion is wasted; the lookup
+      // above is what keeps that rare rather than routine. Anything else rethrows.
+      if (!leadId || !isLeadDuplicateError(err)) throw err;
+
+      const winner = await db.query.emailGenerations.findFirst({
+        where: and(
+          eq(emailGenerations.orgId, req.orgId!),
+          eq(emailGenerations.campaignId, leadCampaignId),
+          eq(emailGenerations.leadId, leadId)
+        ),
+      });
+      if (!winner) throw err;
+
+      traceEvent(req.runId!, { service: "content-generation-service", event: "lead-generation-race", detail: `Concurrent generation won for leadId=${leadId}, campaignId=${leadCampaignId || "none"} — returning id=${winner.id}`, level: "warn" }, req.headers).catch(() => {});
+      return res.json(toGenerationResponse(winner));
+    }
 
     // Track run in runs-service (cost tracking is handled by chat-service)
     try {
