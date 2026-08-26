@@ -23,6 +23,12 @@ export interface GenerateFromTemplateParams {
   variables: Record<string, unknown>;
   campaignContext?: Record<string, unknown> | null;
   model?: ChatModel;
+  /**
+   * Language to write the email in, resolved from the recipient. `null` or
+   * absent means no directive is emitted and the system prompt stays
+   * byte-identical to what it was before this field existed.
+   */
+  language?: string | null;
 }
 
 export interface SequenceStep {
@@ -212,6 +218,30 @@ const GLOBAL_SYSTEM_PROMPT = [
   "Return ONLY the JSON object, no additional text or markdown.",
 ].join("\n");
 
+/**
+ * The language directive appended to the system prompt when the recipient's
+ * language is known and is not English.
+ *
+ * It lives in the SYSTEM prompt rather than in the prompt templates on purpose:
+ * the templates are hand-tuned per org and exist in dozens of versions
+ * (cold-email-v9 … v38, blind-discovery-email-v26, …), so a rule placed here
+ * reaches every one of them without editing a single stored body.
+ *
+ * The templates themselves are written in English. That is the language of the
+ * INSTRUCTIONS, not of the output — this directive says so explicitly, because
+ * a model handed English instructions plus English example copy will otherwise
+ * default to answering in English.
+ */
+export function buildLanguageDirective(language: string): string {
+  return [
+    "",
+    "Language:",
+    `- Write the ENTIRE email in ${language} — subject line and every step of the sequence. The recipient does not read English.`,
+    "- The instructions and any examples above are written in English purely because that is the language of this prompt. They are NOT a model for the language of your output.",
+    `- Keep proper nouns (people, companies, products) as they are given. Everything you write yourself must be natural, idiomatic ${language} as used in business correspondence — not a literal translation of an English sentence.`,
+  ].join("\n");
+}
+
 // ─── Insufficient credits error ─────────────────────────────────────────────
 
 export class InsufficientCreditsError extends Error {
@@ -279,6 +309,11 @@ export async function generateFromTemplate(
     ...buildTrackingHeaders(identity),
   };
 
+  // Absent language → the system prompt is byte-identical to before this existed.
+  const systemPrompt = params.language
+    ? `${GLOBAL_SYSTEM_PROMPT}\n${buildLanguageDirective(params.language)}`
+    : GLOBAL_SYSTEM_PROMPT;
+
   const model = params.model ?? DEFAULT_MODEL;
   const provider = MODEL_TO_PROVIDER[model];
   // Anthropic structured-output requires the strict schema; google ignores it.
@@ -292,7 +327,7 @@ export async function generateFromTemplate(
       headers,
       body: JSON.stringify({
         message: prompt,
-        systemPrompt: GLOBAL_SYSTEM_PROMPT,
+        systemPrompt,
         responseSchema,
         provider,
         model,

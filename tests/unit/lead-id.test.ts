@@ -69,6 +69,10 @@ vi.mock("../../src/lib/campaign-client.js", () => ({
   getCampaignFeatureInputs: vi.fn().mockResolvedValue(null),
 }));
 
+vi.mock("../../src/lib/lead-client.js", () => ({
+  getLeadLanguages: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock("../../src/lib/brand-client.js", () => ({
   extractBrandFields: vi.fn().mockResolvedValue(new Map()),
 }));
