@@ -10,7 +10,7 @@ import { createRun, updateRun } from "../lib/runs-client.js";
 import { getCampaignFeatureInputs } from "../lib/campaign-client.js";
 import { extractBrandFields, resolveBrandNames } from "../lib/brand-client.js";
 import { fetchWorkflowExamples, toExampleEmail } from "../lib/examples-query.js";
-import { getLeadLanguages } from "../lib/lead-client.js";
+import { getLeadBusinessLanguages } from "../lib/lead-client.js";
 import { resolveLeadLanguage } from "../lib/lead-language.js";
 import { GenerateRequestSchema, GenerateExpertQuotePitchRequestSchema, StatsRequestSchema, StatsQuerySchema } from "../schemas.js";
 import {
@@ -175,14 +175,15 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     }
 
     // Write the email in the recipient's language rather than always in English.
-    // The languages come from lead-service, ordered most-plausible-first; the
+    // `businessLanguages` comes from lead-service (ISO 639-1, produced by
+    // human-service), ordered most-plausible-first; the
     // selection rule is English-preferring, so a directive is emitted only for
     // someone who reads no English at all (see `resolveLeadLanguage`). No lead,
     // no answer, or an unusable list all mean "no directive" — identical to the
     // behaviour that shipped before this existed.
     let language: string | null = null;
     if (leadId) {
-      const languages = await getLeadLanguages(leadId, serviceIdentity);
+      const languages = await getLeadBusinessLanguages(leadId, serviceIdentity);
       language = resolveLeadLanguage(languages);
       if (language) {
         traceEvent(req.runId!, { service: "content-generation-service", event: "lead-language-resolved", detail: `Writing in ${language} for leadId=${leadId}` }, req.headers).catch(() => {});

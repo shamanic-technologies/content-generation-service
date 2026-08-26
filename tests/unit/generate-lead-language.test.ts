@@ -63,9 +63,9 @@ vi.mock("../../src/lib/brand-client.js", () => ({
   extractBrandFields: vi.fn().mockResolvedValue(new Map()),
 }));
 
-const mockGetLeadLanguages = vi.fn();
+const mockGetBusinessLanguages = vi.fn();
 vi.mock("../../src/lib/lead-client.js", () => ({
-  getLeadLanguages: (...a: unknown[]) => mockGetLeadLanguages(...a),
+  getLeadBusinessLanguages: (...a: unknown[]) => mockGetBusinessLanguages(...a),
 }));
 
 const mockGenerateFromTemplate = vi.fn();
@@ -112,19 +112,19 @@ describe("POST /generate — writing in the lead's language", () => {
   });
 
   it("passes the leading language when the lead reads no English", async () => {
-    mockGetLeadLanguages.mockResolvedValue(["German"]);
+    mockGetBusinessLanguages.mockResolvedValue(["de"]);
     await request(app).post("/generate").send(body).expect(200);
     expect(mockGenerateFromTemplate.mock.calls[0][0].language).toBe("German");
   });
 
   it("passes no language when English is anywhere in the list", async () => {
-    mockGetLeadLanguages.mockResolvedValue(["German", "English"]);
+    mockGetBusinessLanguages.mockResolvedValue(["de", "en"]);
     await request(app).post("/generate").send(body).expect(200);
     expect(mockGenerateFromTemplate.mock.calls[0][0].language).toBeNull();
   });
 
   it("passes no language when the lead reports none", async () => {
-    mockGetLeadLanguages.mockResolvedValue(null);
+    mockGetBusinessLanguages.mockResolvedValue(null);
     await request(app).post("/generate").send(body).expect(200);
     expect(mockGenerateFromTemplate.mock.calls[0][0].language).toBeNull();
   });
@@ -132,14 +132,14 @@ describe("POST /generate — writing in the lead's language", () => {
   it("does not call lead-service at all when the request carries no leadId", async () => {
     const { leadId: _drop, ...noLead } = body;
     await request(app).post("/generate").send(noLead).expect(200);
-    expect(mockGetLeadLanguages).not.toHaveBeenCalled();
+    expect(mockGetBusinessLanguages).not.toHaveBeenCalled();
     expect(mockGenerateFromTemplate.mock.calls[0][0].language).toBeNull();
   });
 
   it("forwards identity + attribution to lead-service", async () => {
-    mockGetLeadLanguages.mockResolvedValue(["Italian"]);
+    mockGetBusinessLanguages.mockResolvedValue(["it"]);
     await request(app).post("/generate").send(body).expect(200);
-    const [leadId, identity] = mockGetLeadLanguages.mock.calls[0];
+    const [leadId, identity] = mockGetBusinessLanguages.mock.calls[0];
     expect(leadId).toBe("lead-1");
     expect(identity).toMatchObject({ orgId: "org-1", userId: "user-1", runId: "run-1", campaignId: "camp-1" });
   });
@@ -155,7 +155,7 @@ describe("POST /generate — writing in the lead's language", () => {
       tokensOutput: 20,
     });
     await request(app).post("/generate").send(body).expect(200);
-    expect(mockGetLeadLanguages).not.toHaveBeenCalled();
+    expect(mockGetBusinessLanguages).not.toHaveBeenCalled();
     expect(mockGenerateFromTemplate).not.toHaveBeenCalled();
   });
 });

@@ -2,8 +2,9 @@
  * HTTP client for lead-service.
  *
  * Reads the one thing this service needs from a lead that the generation request
- * does not carry: the languages the recipient does business in. Everything else
- * about the lead already arrives in `variables` from the workflow DAG.
+ * does not carry: `businessLanguages`, the ISO 639-1 codes for the languages the
+ * recipient does business in, ordered most-plausible-first. Everything else about
+ * the lead already arrives in `variables` from the workflow DAG.
  *
  * Reading it here — by `leadId`, which every generation carries — rather than
  * threading it through the DAG is deliberate: 908 workflows across 570 dynasties
@@ -21,8 +22,9 @@ const LEAD_SERVICE_API_KEY = process.env.LEAD_SERVICE_API_KEY || "";
 export type LeadServiceIdentity = Tracking;
 
 /**
- * The languages lead-service reports for a lead, ordered most-plausible-first,
- * or `null` when the lead is unreadable or reports none.
+ * The business languages lead-service reports for a lead — ISO 639-1 codes,
+ * ordered most-plausible-first — or `null` when the lead is unreadable, predates
+ * the field, or reports none.
  *
  * A failure here NEVER fails the generation. The email is the product; its
  * language is an enrichment on top, and losing the enrichment degrades to
@@ -31,7 +33,7 @@ export type LeadServiceIdentity = Tracking;
  * written or billed at this point. This mirrors how `/generate` already treats a
  * brand-service field extraction that cannot be resolved.
  */
-export async function getLeadLanguages(
+export async function getLeadBusinessLanguages(
   leadId: string,
   identity: LeadServiceIdentity
 ): Promise<string[] | null> {
@@ -75,19 +77,19 @@ export async function getLeadLanguages(
     return null;
   }
 
-  const languages = readLanguages(body);
+  const languages = readBusinessLanguages(body);
   return languages.length > 0 ? languages : null;
 }
 
 /**
- * Pull the ordered language list out of the lead-service payload.
+ * Pull the ordered `businessLanguages` list out of the lead-service payload.
  *
  * `GET /orgs/leads/{id}` wraps the canonical lead as `{ leadDetail: { lead } }`.
  * Both that nesting and the bare lead are accepted so a shape change on the
  * wrapper does not silently drop the field; anything else yields an empty list,
  * which the caller reads as "no directive".
  */
-function readLanguages(body: unknown): string[] {
+function readBusinessLanguages(body: unknown): string[] {
   const record = (v: unknown): Record<string, unknown> | null =>
     v !== null && typeof v === "object" ? (v as Record<string, unknown>) : null;
 
@@ -95,7 +97,7 @@ function readLanguages(body: unknown): string[] {
   const lead =
     record(record(root?.leadDetail)?.lead) ?? record(root?.lead) ?? root;
 
-  const languages = lead?.languages;
+  const languages = lead?.businessLanguages;
   if (!Array.isArray(languages)) return [];
   return languages.filter(
     (l): l is string => typeof l === "string" && l.trim().length > 0
