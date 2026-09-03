@@ -841,6 +841,10 @@ registry.registerPath({
   request: {
     headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional().describe("Comma-separated brand UUIDs (e.g. 'uuid1,uuid2')"), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
     params: z.object({ leadId: z.string() }),
+    query: z.object({
+      brandId: z.string().optional().describe("Scope the read to one brand — a lead contacted by several brands of one org has one generation per brand"),
+      campaignId: z.string().optional().describe("Scope the read to one campaign — a lead contacted by several campaigns of one brand has one generation per campaign, and this returns that campaign's. Omit it and no campaign is inferred. The campaign a returned generation belongs to is always on the row as campaignId."),
+    }),
   },
   responses: {
     200: {

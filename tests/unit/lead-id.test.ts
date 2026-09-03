@@ -236,6 +236,73 @@ describe("leadId support", () => {
       expect(opts.orderBy).toBeDefined();
     });
 
+    it("campaign-scoped read returns THAT campaign's generation", async () => {
+      // Person contacted by two campaigns of one brand: asking for campaign-1 must not
+      // answer with campaign-2's email.
+      const campaign1Generation = {
+        id: "gen-campaign-1",
+        leadId: "lead-multi-campaign",
+        campaignId: "campaign-1",
+        brandIds: ["brand-A"],
+        subject: "First campaign",
+        sequence: [],
+      };
+      mockGenFindFirst.mockResolvedValue(campaign1Generation);
+
+      const res = await request(app)
+        .get("/generations/by-lead/lead-multi-campaign?campaignId=campaign-1")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
+        .expect(200);
+
+      expect(res.body.generation.id).toBe("gen-campaign-1");
+      // The caller can read which campaign it got straight off the returned row.
+      expect(res.body.generation.campaignId).toBe("campaign-1");
+
+      const opts = mockGenFindFirst.mock.calls[0][0] as { where?: unknown; orderBy?: unknown };
+      expect(opts.orderBy).toBeDefined();
+      expect(JSON.stringify(opts.where)).toContain("campaign_id");
+    });
+
+    it("no campaign is inferred when none is asked for", async () => {
+      mockGenFindFirst.mockResolvedValue({ id: "gen-x", leadId: "lead-abc-123" });
+
+      await request(app)
+        .get("/generations/by-lead/lead-abc-123")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
+        .expect(200);
+
+      const opts = mockGenFindFirst.mock.calls[0][0] as { where?: unknown };
+      expect(JSON.stringify(opts.where)).not.toContain("campaign_id");
+    });
+
+    it("brand and campaign scopes combine", async () => {
+      mockGenFindFirst.mockResolvedValue({ id: "gen-both", leadId: "lead-multi-campaign" });
+
+      await request(app)
+        .get("/generations/by-lead/lead-multi-campaign?brandId=brand-A&campaignId=campaign-2")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
+        .expect(200);
+
+      const where = JSON.stringify(mockGenFindFirst.mock.calls[0][0].where);
+      expect(where).toContain("campaign_id");
+      expect(where).toContain("brand_ids");
+    });
+
+    it("returns 404 (empty state, not 500) when that campaign never wrote to the lead", async () => {
+      mockGenFindFirst.mockResolvedValue(null);
+
+      const res = await request(app)
+        .get("/generations/by-lead/lead-multi-campaign?campaignId=campaign-never")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
+        .expect(404);
+
+      expect(res.body.error).toBe("Generation not found");
+    });
+
     it("returns 404 (empty state, not 500) when lead has no generation under the requested brand", async () => {
       // Person exists under brand B only; scoping to brand A finds nothing.
       mockGenFindFirst.mockResolvedValue(null);
