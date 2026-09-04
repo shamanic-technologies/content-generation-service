@@ -4,7 +4,7 @@ FROM node:20-slim AS builder
 WORKDIR /app
 
 # Install pnpm
-RUN npm install -g pnpm
+RUN npm install -g pnpm@9
 
 # Copy package files
 COPY package.json pnpm-lock.yaml* ./
@@ -25,7 +25,7 @@ WORKDIR /app
 
 # Install pnpm and ffmpeg
 RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
-RUN npm install -g pnpm
+RUN npm install -g pnpm@9
 
 # Copy package files
 COPY package.json pnpm-lock.yaml* ./
