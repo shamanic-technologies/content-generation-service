@@ -20,6 +20,7 @@ import {
   getFeatureDynastyMap,
 } from "../lib/dynasty-client.js";
 import { traceEvent } from "../lib/trace-event.js";
+import { findGenerationForLead } from "../lib/lead-generation-query.js";
 
 const router = Router();
 
@@ -594,29 +595,29 @@ router.get("/generations/by-enrichment/:apolloEnrichmentId", serviceAuth, async 
  * brand; without a brand scope this read is ambiguous and can return the wrong
  * brand's email. When `brandId` is provided, return that brand's generation for the
  * lead (most recent if several). When absent, behavior is unchanged (backward-compatible).
+ *
+ * Optional `?campaignId=<id>` scopes the read to ONE campaign. A person contacted by
+ * several campaigns of the SAME brand has one generation per campaign (the unique
+ * `idx_emailgen_lead` on `(campaign_id, lead_id)` guarantees exactly one), so the brand
+ * scope alone is still ambiguous for them — 3,193 leads in production hold generations
+ * under two or more campaigns. With `campaignId` the read is exact: it is the one email
+ * that campaign sent this person, or 404 if that campaign never wrote to them. The
+ * campaign a returned generation belongs to is already on the row (`campaignId`), which
+ * this route returns whole — so an unscoped or brand-scoped caller can read which
+ * campaign it got without asking a second question. No campaign is ever inferred: absent
+ * the parameter, nothing about campaign scoping changes.
  */
 router.get("/generations/by-lead/:leadId", serviceAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { leadId } = req.params;
-    const { brandId } = req.query as { brandId?: string };
+    const { brandId, campaignId } = req.query as { brandId?: string; campaignId?: string };
 
-    const conditions: SQL[] = [
-      eq(emailGenerations.leadId, leadId),
-      eq(emailGenerations.orgId, req.orgId!),
-    ];
-    if (brandId) conditions.push(arrayContains(emailGenerations.brandIds, [brandId]));
-
-    // Order by newest only in the brand-scoped path (deterministic "most recent"
-    // when a brand has several generations for the lead). Unscoped path stays
-    // byte-unchanged: no orderBy, same single-condition WHERE as before.
-    const generation = brandId
-      ? await db.query.emailGenerations.findFirst({
-          where: and(...conditions),
-          orderBy: (gens, { desc }) => [desc(gens.createdAt)],
-        })
-      : await db.query.emailGenerations.findFirst({
-          where: and(...conditions),
-        });
+    const generation = await findGenerationForLead({
+      orgId: req.orgId!,
+      leadId,
+      brandId,
+      campaignId,
+    });
 
     if (!generation) {
       return res.status(404).json({ error: "Generation not found" });

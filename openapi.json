@@ -2380,6 +2380,26 @@
           },
           {
             "schema": {
+              "type": "string",
+              "description": "Scope the read to one brand — a lead contacted by several brands of one org has one generation per brand"
+            },
+            "required": false,
+            "description": "Scope the read to one brand — a lead contacted by several brands of one org has one generation per brand",
+            "name": "brandId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Scope the read to one campaign — a lead contacted by several campaigns of one brand has one generation per campaign, and this returns that campaign's. Omit it and no campaign is inferred. The campaign a returned generation belongs to is always on the row as campaignId."
+            },
+            "required": false,
+            "description": "Scope the read to one campaign — a lead contacted by several campaigns of one brand has one generation per campaign, and this returns that campaign's. Omit it and no campaign is inferred. The campaign a returned generation belongs to is always on the row as campaignId.",
+            "name": "campaignId",
+            "in": "query"
+          },
+          {
+            "schema": {
               "type": "string"
             },
             "required": true,
