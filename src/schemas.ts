@@ -652,9 +652,24 @@ const EmailGenerationSchema = registry.register(
 
       // Generated email sequence
       subject: z.string().nullable(),
-      bodyHtml: z.string().nullable(),
-      bodyText: z.string().nullable(),
-      sequence: z.unknown().nullable(),
+      bodyHtml: z
+        .string()
+        .nullable()
+        .describe(
+          "The email body as HTML. Resolved at read time: rows written since sequences shipped store their copy in `sequence`, and this serves it. null only when the generation carries no copy at all (`bodySource: \"none\"`)."
+        ),
+      bodyText: z
+        .string()
+        .nullable()
+        .describe(
+          "The email body as plain text — the words actually written to this person. Resolved at read time from `sequence` when the legacy top-level column is empty. null only when the generation carries no copy at all."
+        ),
+      bodySource: z
+        .enum(["column", "sequence", "none"])
+        .describe(
+          "Where bodyText/bodyHtml came from: `column` (legacy stored columns), `sequence` (first step of the stored sequence), or `none` — the generation genuinely has no readable copy. Lets a consumer tell missing copy apart from copy it can read."
+        ),
+      sequence: z.unknown().nullable().describe("The full planned cadence, every step, unchanged."),
 
       // Model info
       model: z.string(),
@@ -734,8 +749,11 @@ const ExampleEmailSchema = registry.register(
     .object({
       id: z.string().uuid(),
       subject: z.string().nullable(),
-      bodyHtml: z.string().nullable(),
-      bodyText: z.string().nullable(),
+      bodyHtml: z.string().nullable().describe("Example body as HTML, resolved from the sequence when the legacy column is empty."),
+      bodyText: z.string().nullable().describe("Example body as plain text, resolved from the sequence when the legacy column is empty."),
+      bodySource: z
+        .enum(["column", "sequence", "none"])
+        .describe("Where bodyText/bodyHtml came from: `column`, `sequence`, or `none` (no readable copy)."),
       sequence: z.unknown().describe("Per-step email sequence array (same shape as GET /generations)."),
       leadFirstName: z.string().nullable(),
       leadLastName: z.string().nullable(),

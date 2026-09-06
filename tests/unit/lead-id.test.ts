@@ -315,5 +315,54 @@ describe("leadId support", () => {
 
       expect(res.body.error).toBe("Generation not found");
     });
+
+    it("serves the copy that was actually written, not an empty body", async () => {
+      // Production shape since Feb 2026: top-level body columns NULL, copy in sequence[0].
+      const email = "Hey Nicky,\n\nSaw the new onboarding ship.\n\nKevin";
+      mockGenFindFirst.mockResolvedValue({
+        id: "gen-real",
+        leadId: "lead-abc-123",
+        campaignId: "campaign-1",
+        subject: "Quick question",
+        bodyText: null,
+        bodyHtml: null,
+        sequence: [
+          { step: 1, bodyText: email, bodyHtml: "<p>step one</p>", daysSinceLastStep: 0 },
+          { step: 2, bodyText: "Follow-up", bodyHtml: "<p>Follow-up</p>", daysSinceLastStep: 3 },
+        ],
+      });
+
+      const res = await request(app)
+        .get("/generations/by-lead/lead-abc-123?campaignId=campaign-1")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
+        .expect(200);
+
+      expect(res.body.generation.bodyText).toBe(email);
+      expect(res.body.generation.bodyHtml).toBe("<p>step one</p>");
+      expect(res.body.generation.bodySource).toBe("sequence");
+      // The planned cadence is still forwarded whole.
+      expect(res.body.generation.sequence).toHaveLength(2);
+    });
+
+    it("marks a generation with no copy as `none` rather than empty copy", async () => {
+      mockGenFindFirst.mockResolvedValue({
+        id: "gen-empty",
+        leadId: "lead-abc-123",
+        subject: "Subject only",
+        bodyText: null,
+        bodyHtml: null,
+        sequence: [],
+      });
+
+      const res = await request(app)
+        .get("/generations/by-lead/lead-abc-123")
+        .set("X-Org-Id", "org-internal-123")
+        .set("X-User-Id", "user-internal-456")
+        .expect(200);
+
+      expect(res.body.generation.bodySource).toBe("none");
+      expect(res.body.generation.bodyText ?? null).toBeNull();
+    });
   });
 });

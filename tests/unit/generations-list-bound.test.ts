@@ -104,13 +104,32 @@ describe("GET /generations — bounded result set", () => {
     );
   });
 
-  it("returns a small result set unchanged", async () => {
+  it("returns a small result set unchanged, each row carrying its resolved body", async () => {
     mockFindMany.mockResolvedValue([row(1), row(2)]);
 
     const res = await request(app).get("/generations?campaignId=camp-1").set(AUTH_HEADERS);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ generations: [row(1), row(2)] });
+    // Rows keep every field they had; the body is resolved on top (these fixtures carry
+    // no copy at all, which is reported as `none` rather than as an empty string).
+    expect(res.body).toEqual({
+      generations: [
+        { ...row(1), bodyText: null, bodyHtml: null, bodySource: "none" },
+        { ...row(2), bodyText: null, bodyHtml: null, bodySource: "none" },
+      ],
+    });
+  });
+
+  it("resolves a listed row's body out of its sequence", async () => {
+    mockFindMany.mockResolvedValue([
+      { ...row(1), bodyText: null, bodyHtml: null, sequence: [{ step: 1, bodyText: "Hey Nicky,", bodyHtml: "<p>Hey Nicky,</p>" }] },
+    ]);
+
+    const res = await request(app).get("/generations?campaignId=camp-1").set(AUTH_HEADERS);
+
+    expect(res.status).toBe(200);
+    expect(res.body.generations[0].bodyText).toBe("Hey Nicky,");
+    expect(res.body.generations[0].bodySource).toBe("sequence");
   });
 
   it("refuses an oversized result set with 413 instead of returning a partial list", async () => {
