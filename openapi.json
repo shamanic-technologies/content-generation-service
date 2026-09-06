@@ -559,14 +559,26 @@
           },
           "bodyHtml": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "The email body as HTML. Resolved at read time: rows written since sequences shipped store their copy in `sequence`, and this serves it. null only when the generation carries no copy at all (`bodySource: \"none\"`)."
           },
           "bodyText": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "The email body as plain text — the words actually written to this person. Resolved at read time from `sequence` when the legacy top-level column is empty. null only when the generation carries no copy at all."
+          },
+          "bodySource": {
+            "type": "string",
+            "enum": [
+              "column",
+              "sequence",
+              "none"
+            ],
+            "description": "Where bodyText/bodyHtml came from: `column` (legacy stored columns), `sequence` (first step of the stored sequence), or `none` — the generation genuinely has no readable copy. Lets a consumer tell missing copy apart from copy it can read."
           },
           "sequence": {
-            "nullable": true
+            "nullable": true,
+            "description": "The full planned cadence, every step, unchanged."
           },
           "model": {
             "type": "string"
@@ -626,6 +638,7 @@
           "subject",
           "bodyHtml",
           "bodyText",
+          "bodySource",
           "model",
           "tokensInput",
           "tokensOutput",
@@ -664,11 +677,22 @@
           },
           "bodyHtml": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Example body as HTML, resolved from the sequence when the legacy column is empty."
           },
           "bodyText": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Example body as plain text, resolved from the sequence when the legacy column is empty."
+          },
+          "bodySource": {
+            "type": "string",
+            "enum": [
+              "column",
+              "sequence",
+              "none"
+            ],
+            "description": "Where bodyText/bodyHtml came from: `column`, `sequence`, or `none` (no readable copy)."
           },
           "sequence": {
             "nullable": true,
@@ -721,6 +745,7 @@
           "subject",
           "bodyHtml",
           "bodyText",
+          "bodySource",
           "leadFirstName",
           "leadLastName",
           "leadCompany",

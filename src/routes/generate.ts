@@ -21,6 +21,7 @@ import {
 } from "../lib/dynasty-client.js";
 import { traceEvent } from "../lib/trace-event.js";
 import { findGenerationForLead } from "../lib/lead-generation-query.js";
+import { withResolvedBody } from "../lib/generation-body.js";
 
 const router = Router();
 
@@ -501,7 +502,9 @@ router.get("/generations", serviceAuth, async (req: AuthenticatedRequest, res) =
       });
     }
 
-    res.json({ generations });
+    // Serve the copy that was actually written: the top-level body columns have been empty
+    // since sequences shipped, so each row resolves its body (see src/lib/generation-body.ts).
+    res.json({ generations: generations.map(withResolvedBody) });
   } catch (error) {
     console.error("List generations error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -580,7 +583,7 @@ router.get("/generations/by-enrichment/:apolloEnrichmentId", serviceAuth, async 
       return res.status(404).json({ error: "Generation not found" });
     }
 
-    res.json({ generation });
+    res.json({ generation: withResolvedBody(generation) });
   } catch (error) {
     console.error("Get generation error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -623,7 +626,7 @@ router.get("/generations/by-lead/:leadId", serviceAuth, async (req: Authenticate
       return res.status(404).json({ error: "Generation not found" });
     }
 
-    res.json({ generation });
+    res.json({ generation: withResolvedBody(generation) });
   } catch (error) {
     console.error("Get generation by leadId error:", error);
     res.status(500).json({ error: "Internal server error" });

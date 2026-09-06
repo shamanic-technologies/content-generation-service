@@ -9,6 +9,7 @@
 import { and, eq, desc, not, arrayContains, notInArray, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailExamplesSilver } from "../db/schema.js";
+import { resolveGenerationBody, type GenerationBodySource } from "./generation-body.js";
 
 export type ExampleScope = "brand" | "org" | "global";
 
@@ -46,6 +47,7 @@ export interface ExampleEmail {
   createdAt: string;
   scope: ExampleScope;
   brandName: string | null;
+  bodySource: GenerationBodySource;
 }
 
 // Built lazily inside fetchTier (NOT at module eval) so importing this module stays safe
@@ -144,11 +146,14 @@ export function toExampleEmail(row: ExampleRow, brandNames: Map<string, string>)
   const sourceBrandId = row.brandIds[0];
   const brandName =
     row.scope === "brand" || !sourceBrandId ? null : brandNames.get(sourceBrandId) ?? null;
+  // Same retired-column problem as the by-lead read: an example written after February 2026
+  // carries its copy only in `sequence`, so resolve it rather than serving empty bodies.
+  const body = resolveGenerationBody(row);
   return {
     id: row.id,
     subject: row.subject,
-    bodyHtml: row.bodyHtml,
-    bodyText: row.bodyText,
+    bodyHtml: body.bodyHtml,
+    bodyText: body.bodyText,
     sequence: row.sequence ?? [],
     leadFirstName: row.leadFirstName,
     leadLastName: row.leadLastName,
@@ -159,5 +164,6 @@ export function toExampleEmail(row: ExampleRow, brandNames: Map<string, string>)
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     scope: row.scope,
     brandName,
+    bodySource: body.bodySource,
   };
 }

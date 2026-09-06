@@ -51,14 +51,32 @@ describe("toExampleEmail", () => {
     expect(out.createdAt).toBe("2026-01-01T00:00:00.000Z");
   });
 
-  it("nullable lead/content fields pass through unchanged", () => {
+  it("nullable lead fields pass through unchanged", () => {
+    const out = toExampleEmail(row({ scope: "org", subject: null, leadFirstName: null }), names);
+    expect(out.subject).toBeNull();
+    expect(out.leadFirstName).toBeNull();
+  });
+
+  it("empty body columns resolve from the sequence (every example written since Feb 2026)", () => {
+    const out = toExampleEmail(row({ scope: "org", bodyHtml: null, bodyText: null }), names);
+    expect(out.bodyText).toBe("hi");
+    expect(out.bodyHtml).toBe("<p>hi</p>");
+    expect(out.bodySource).toBe("sequence");
+  });
+
+  it("an example with no copy anywhere is marked `none`, not empty copy", () => {
     const out = toExampleEmail(
-      row({ scope: "org", subject: null, bodyHtml: null, bodyText: null, leadFirstName: null }),
+      row({ scope: "org", bodyHtml: null, bodyText: null, sequence: [] }),
       names
     );
-    expect(out.subject).toBeNull();
-    expect(out.bodyHtml).toBeNull();
     expect(out.bodyText).toBeNull();
-    expect(out.leadFirstName).toBeNull();
+    expect(out.bodyHtml).toBeNull();
+    expect(out.bodySource).toBe("none");
+  });
+
+  it("populated body columns win and are reported as `column`", () => {
+    const out = toExampleEmail(row({ scope: "org" }), names);
+    expect(out.bodyText).toBe("hi");
+    expect(out.bodySource).toBe("column");
   });
 });
