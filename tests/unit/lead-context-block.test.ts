@@ -58,6 +58,8 @@ describe("lead context catalog", () => {
       "leadCompanyCity",
       "leadCompanyState",
       "leadCompanyCountry",
+      "leadSubdepartments",
+      "leadCompanyLatestFundingRoundDate",
     ]) {
       expect(names.has(expected)).toBe(true);
     }
@@ -104,6 +106,32 @@ describe("buildLeadContextBlock", () => {
     expect(out).toContain("Organization:");
     expect(out).toContain("- founded year: 2014");
     expect(out).toContain("- industries: software, logistics");
+  });
+
+  it("renders sub-departments and the latest funding round date when supplied", () => {
+    const out = block({
+      leadDepartments: ["information_technology"],
+      leadSubdepartments: ["devops", "information_technology"],
+      leadCompanyFundingStage: "series_a",
+      leadCompanyLatestFundingRoundDate: "2024-06-01",
+    });
+
+    expect(out).toContain("- departments: information_technology");
+    expect(out).toContain("- sub-departments: devops, information_technology");
+    expect(out).toContain("- funding stage: series_a");
+    expect(out).toContain("- latest funding round date: 2024-06-01");
+  });
+
+  it("renders nothing for the two newest variables when they are absent or empty", () => {
+    const out = block({
+      leadDepartments: ["information_technology"],
+      leadSubdepartments: [],
+      leadCompanyLatestFundingRoundDate: null,
+    });
+
+    expect(out).toContain("- departments: information_technology");
+    expect(out).not.toContain("sub-departments");
+    expect(out).not.toContain("latest funding round date");
   });
 
   it("never repeats a fact the template body already consumes", () => {

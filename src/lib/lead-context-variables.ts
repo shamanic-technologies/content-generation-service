@@ -38,6 +38,7 @@ const PERSON_VARIABLES: PromptContextVariable[] = [
   { name: "leadHeadline", label: "headline", description: "The recipient's own one-line description of what they do, usually from LinkedIn." },
   { name: "leadSeniority", label: "seniority", description: "Seniority level of the recipient's role, e.g. 'founder', 'c_suite', 'vp', 'manager', 'entry'." },
   { name: "leadDepartments", label: "departments", description: "Departments the recipient belongs to. String or array of strings, e.g. ['engineering', 'information_technology']." },
+  { name: "leadSubdepartments", label: "sub-departments", description: "Finer-grained departments the recipient belongs to, below `leadDepartments`. String or array of strings, e.g. ['devops', 'information_technology']." },
   { name: "leadFunctions", label: "functions", description: "Job functions the recipient covers. String or array of strings, e.g. ['sales', 'business_development']." },
   { name: "leadCity", label: "city", description: "City the recipient works from." },
   { name: "leadState", label: "state or region", description: "State, province, or region the recipient works from." },
@@ -67,6 +68,7 @@ const ORGANIZATION_VARIABLES: PromptContextVariable[] = [
   { name: "leadCompanyFoundedYear", label: "founded year", description: "Year the organization was founded." },
   { name: "leadCompanyAnnualRevenue", label: "annual revenue", description: "Annual revenue of the organization, as served by lead-service. May be a number or a formatted range." },
   { name: "leadCompanyFundingStage", label: "funding stage", description: "Latest funding stage, e.g. 'seed', 'series_a'." },
+  { name: "leadCompanyLatestFundingRoundDate", label: "latest funding round date", description: "Date of the organization's most recent funding round, as served by lead-service. Usually an ISO date ('2024-06-01'), sometimes free text." },
   { name: "leadCompanyTotalFunding", label: "total funding raised", description: "Total capital raised by the organization." },
   {
     name: "leadCompanyFundingEvents",
