@@ -1,0 +1,53 @@
+# Fails when this service's accepted-model vocabulary no longer matches the one
+# chat-service serves. chat-service owns that vocabulary; src/lib/chat-models.ts
+# restates it because schemas.ts needs the list at module-eval time, and the restated
+# list had no way of learning it had fallen behind.
+#
+# Its own workflow rather than a step in ci.yml for two reasons: the check needs no
+# database (ci.yml stands up a postgres service container for the integration suite),
+# and it runs on a SCHEDULE — drift is created by a merge in chat-service, so waiting
+# for the next pull request here would keep the gap silent for as long as nobody
+# happened to touch this repo.
+name: Model drift
+
+on:
+  push:
+    branches: [main, staging]
+  pull_request:
+    branches: [main, staging]
+  schedule:
+    # 07:00 UTC daily. A model chat-service ships is then unusable for at most a day
+    # before this says so, instead of until someone notices.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+jobs:
+  model-drift:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      # On a pull request an unreachable chat-service exits 0 with a loud warning: a
+      # transport error says nothing about the vocabulary, and reddening someone's
+      # unrelated build over a network blip would get the whole check disabled. The
+      # scheduled run has no other purpose, so it uses --strict and a run that could
+      # not tell is marked red there instead.
+      - name: Check model vocabulary against chat-service
+        run: >-
+          pnpm check:model-drift
+          ${{ github.event_name == 'schedule' && '--strict' || '' }}
