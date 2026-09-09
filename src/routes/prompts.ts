@@ -5,6 +5,7 @@ import { prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { CreatePromptRequestSchema, VersionPromptRequestSchema } from "../schemas.js";
 import { createPromptVersion } from "../lib/prompt-versioning.js";
+import { LEAD_CONTEXT_VARIABLES_PUBLISHED } from "../lib/lead-context-variables.js";
 
 const router = Router();
 
@@ -18,6 +19,10 @@ function formatPromptResponse(row: typeof prompts.$inferSelect) {
     type: row.type,
     prompt: row.prompt,
     variables: row.variables,
+    // Optional lead + organization inputs every template accepts, whether or not
+    // its body declares a {{token}} for them. Published here so a caller builds
+    // its variable mapping from the live contract rather than from a document.
+    contextVariables: LEAD_CONTEXT_VARIABLES_PUBLISHED,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

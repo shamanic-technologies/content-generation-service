@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
+import { LEAD_CONTEXT_VARIABLES_PUBLISHED } from "../../src/lib/lead-context-variables";
 
 // Mock auth middleware
 vi.mock("../../src/middleware/auth.js", () => ({
@@ -72,6 +73,44 @@ describe("GET /platform-prompts", () => {
     expect(res.body.type).toBe("cold-email");
     expect(res.body.prompt).toContain("{{leadFirstName}}");
     expect(res.body).not.toHaveProperty("orgId");
+  });
+
+  it("publishes the lead + organization context variables every template accepts", async () => {
+    mockFindFirst.mockResolvedValue({
+      id: "prompt-1",
+      orgId: null,
+      type: "cold-email-v39",
+      prompt: "Write a cold email to {{leadFirstName}}",
+      variables: [{ name: "leadFirstName", description: "Lead first name" }],
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+
+    const res = await request(app)
+      .get("/platform-prompts?type=cold-email-v39")
+      .expect(200);
+
+    // The template's own declared set is untouched: forks still match it exactly.
+    expect(res.body.variables).toEqual([
+      { name: "leadFirstName", description: "Lead first name" },
+    ]);
+
+    const contextNames = res.body.contextVariables.map((v: { name: string }) => v.name);
+    expect(contextNames).toEqual(
+      LEAD_CONTEXT_VARIABLES_PUBLISHED.map((v) => v.name)
+    );
+    for (const expected of [
+      "leadSeniority",
+      "leadEmploymentHistory",
+      "leadCompanyFundingEvents",
+      "leadCompanyCountry",
+    ]) {
+      expect(contextNames).toContain(expected);
+    }
+    for (const v of res.body.contextVariables) {
+      expect(typeof v.description).toBe("string");
+      expect(v.description.length).toBeGreaterThan(0);
+    }
   });
 });
 

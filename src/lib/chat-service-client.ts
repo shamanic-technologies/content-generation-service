@@ -1,4 +1,5 @@
 import { extractTemplateVariableNames } from "./template-vars.js";
+import { buildLeadContextBlock } from "./lead-context-block.js";
 import {
   type ChatModel,
   type ChatProvider,
@@ -296,6 +297,18 @@ export async function generateFromTemplate(
   identity: ChatServiceIdentity
 ): Promise<GenerateResult> {
   let prompt = substituteVariables(params.promptTemplate, params.variables);
+
+  // Lead + organization facts the caller supplied that this template body never
+  // asked for. Empty when the caller sent none of them, in which case the prompt
+  // is byte-identical to what it was before this block existed.
+  const leadContext = buildLeadContextBlock(
+    params.promptTemplate,
+    params.variables,
+    coerceToString
+  );
+  if (leadContext) {
+    prompt = `${leadContext}\n\n${prompt}`;
+  }
 
   // Inject campaign featureInputs as additional context
   if (params.campaignContext && Object.keys(params.campaignContext).length > 0) {
