@@ -162,7 +162,15 @@ const PromptResponseSchema = registry.register(
       id: z.string(),
       type: z.string(),
       prompt: z.string(),
-      variables: z.array(PromptVariableSchema),
+      variables: z.array(PromptVariableSchema).describe(
+        "Inputs this template body declares via {{token}}. Unchanged contract: forks must match this set exactly."
+      ),
+      contextVariables: z.array(PromptVariableSchema).describe(
+        "Optional lead and organization inputs EVERY template accepts, whether or not its body declares a {{token}} for them. " +
+        "Send any subset on POST /generate: values not consumed by a {{token}} are rendered into a 'Recipient context' block ahead of the template. " +
+        "Sending none of them leaves the prompt byte-identical to what it was before this field existed. " +
+        "The same list is returned for every prompt type."
+      ),
       createdAt: z.string(),
       updatedAt: z.string(),
     })
@@ -448,7 +456,8 @@ export const GenerateRequestSchema = registry.register(
         "Any JSON values allowed — strings, arrays, or objects. Caller decides the shape per variable. " +
         "Objects and arrays are rendered as readable markdown into the prompt; the LLM reads whatever's provided. " +
         "Multibrand is the default in this platform, so brand-related variables typically receive arrays or objects, not scalars. " +
-        "Per-template input expectations are published via GET /platform-prompts?type=<type> (.variables: Array<{ name, description }>). " +
+        "Per-template input expectations are published via GET /platform-prompts?type=<type> (.variables: Array<{ name, description }>), " +
+        "alongside .contextVariables: optional lead and organization inputs every template accepts (person, employment history, organization industries, funding, location, and more). " +
         "When values are string-typed, recognised keys may also populate dedicated dashboard columns: " +
         "leadFirstName, leadLastName, leadTitle, leadCompanyName, leadCompanyIndustry, organizationDomain, clientCompanyName."
       ),
