@@ -7,10 +7,10 @@
 // module is never mocked, so the alias set is always real. (Same defer-the-access
 // philosophy as the schema/auth mock gotcha in CLAUDE.md.)
 
-// Version-free model aliases. The 13 are unique across providers, so the provider is
+// Version-free model aliases. The 15 are unique across providers, so the provider is
 // derived from the alias — callers pick ONE model, never a provider/model pair.
 //
-// Six of them are served by chat-service's DIRECT-VENDOR path (v0.51.0 removed the
+// Seven of them are served by chat-service's DIRECT-VENDOR path (v0.51.0 removed the
 // Vercel AI Gateway, which resold these models well above the vendors' list prices;
 // the slug `vercel` no longer exists in `/complete`, so a request carrying it is
 // rejected with 400 before it reaches a model). One shared OpenAI-compatible adapter
@@ -19,8 +19,15 @@
 //   - `deepseek-flash` (DeepSeek V4 Flash) / `deepseek-pro` (DeepSeek V4 Pro) → `deepseek`
 //   - `glm-flash` (glm-4.7-flashx) / `glm-pro` (glm-5.2)                      → `zai`
 //   - `kimi-flash` (kimi-k2.6) / `kimi-pro` (kimi-k3)                         → `moonshot`
-// Every alias and slug above is chat-service's own spelling, read off its DEPLOYED
-// `/complete` schema — never invented here.
+//   - `gpt-pro` (GPT-6 Astra)                                                 → `openai`
+// The two frontier aliases added last are `fable` (Claude Fable 5.1, the tier above
+// opus) on the NATIVE `anthropic` client, and `gpt-pro` on the direct-vendor path
+// under the `openai` slug. Every alias and slug above is chat-service's own spelling,
+// read off its DEPLOYED `/complete` schema — never invented here.
+//
+// `fable` rejects `temperature` with a 400 (Anthropic removed the sampling
+// parameters on its always-thinking models). Neither generation path here sends
+// `temperature`, so nothing had to change for it.
 //
 // That direct-vendor path is TEXT-IN / TEXT-OUT only — chat-service 400s on
 // `webSearch` / `imageUrl`. Neither of this service's two generation paths sends
@@ -53,10 +60,18 @@ export const CHAT_MODELS = [
   "glm-pro",
   "kimi-flash",
   "kimi-pro",
+  "fable",
+  "gpt-pro",
 ] as const;
 export type ChatModel = (typeof CHAT_MODELS)[number];
 
-export type ChatProvider = "anthropic" | "google" | "deepseek" | "zai" | "moonshot";
+export type ChatProvider =
+  | "anthropic"
+  | "google"
+  | "deepseek"
+  | "zai"
+  | "moonshot"
+  | "openai";
 
 export const MODEL_TO_PROVIDER: Record<ChatModel, ChatProvider> = {
   haiku: "anthropic",
@@ -72,6 +87,8 @@ export const MODEL_TO_PROVIDER: Record<ChatModel, ChatProvider> = {
   "glm-pro": "zai",
   "kimi-flash": "moonshot",
   "kimi-pro": "moonshot",
+  fable: "anthropic",
+  "gpt-pro": "openai",
 };
 
 // Default when the caller omits `model` — preserves the historical google/pro path.

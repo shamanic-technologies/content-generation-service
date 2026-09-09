@@ -151,14 +151,15 @@ export function findUnfilledPlaceholders(text: string): string[] {
 // in GLOBAL_SYSTEM_PROMPT.
 //
 // Two variants, picked by the resolved provider:
-//  - GOOGLE / DEEPSEEK / ZAI / MOONSHOT: permissive (no `additionalProperties:
-//    false`). Gemini ignores that keyword; the direct vendors' OpenAI-compatible
-//    APIs impose no such requirement either. This is the historical schema, sent
-//    for every model that is not anthropic.
+//  - GOOGLE / DEEPSEEK / ZAI / MOONSHOT / OPENAI: permissive (no
+//    `additionalProperties: false`). Gemini ignores that keyword; the direct
+//    vendors' OpenAI-compatible APIs impose no such requirement either. This is
+//    the historical schema, sent for every model that is not anthropic.
 //  - ANTHROPIC: strict (`additionalProperties: false` on the object AND on
 //    `emails.items`). Anthropic's structured-output API 400s on permissive
-//    schemas, so the strict variant is sent ONLY for anthropic models. The
-//    google path stays byte-identical to before `model` existed.
+//    schemas, so the strict variant is sent ONLY for anthropic models — which
+//    now includes `fable`. The google path stays byte-identical to before
+//    `model` existed.
 const GENERATE_RESPONSE_SCHEMA = {
   type: "object",
   properties: {
