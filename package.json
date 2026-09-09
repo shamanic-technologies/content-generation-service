@@ -7,6 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc && pnpm generate:openapi",
     "generate:openapi": "tsx scripts/generate-openapi.ts",
+    "check:model-drift": "tsx scripts/check-model-drift.ts",
     "start": "node --import ./dist/instrument.js dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
