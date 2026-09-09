@@ -19,6 +19,8 @@ const ALL_MODELS = [
   "glm-pro",
   "kimi-flash",
   "kimi-pro",
+  "fable",
+  "gpt-pro",
 ];
 
 describe("model alias set", () => {
@@ -38,6 +40,8 @@ describe("model alias set", () => {
       "glm-pro": "zai",
       "kimi-flash": "moonshot",
       "kimi-pro": "moonshot",
+      fable: "anthropic",
+      "gpt-pro": "openai",
     });
   });
 
@@ -48,6 +52,11 @@ describe("model alias set", () => {
     expect(MODEL_TO_PROVIDER["glm-pro"]).toBe("zai");
     expect(MODEL_TO_PROVIDER["kimi-flash"]).toBe("moonshot");
     expect(MODEL_TO_PROVIDER["kimi-pro"]).toBe("moonshot");
+    expect(MODEL_TO_PROVIDER["gpt-pro"]).toBe("openai");
+  });
+
+  it("routes fable to the native anthropic client", () => {
+    expect(MODEL_TO_PROVIDER.fable).toBe("anthropic");
   });
 
   it("keeps the seven pre-existing aliases on their original providers", () => {
@@ -62,7 +71,7 @@ describe("model alias set", () => {
 });
 
 describe("model input validation — POST /generate", () => {
-  it("accepts every one of the 13 model aliases", () => {
+  it("accepts every one of the 15 model aliases", () => {
     for (const model of ALL_MODELS) {
       const r = GenerateRequestSchema.safeParse({ type: "cold-email", variables: {}, model });
       expect(r.success, `model ${model} should be accepted`).toBe(true);
@@ -91,7 +100,7 @@ describe("model input validation — POST /generate", () => {
 });
 
 describe("model input validation — POST /generate-expert-quote-pitch", () => {
-  it("accepts every one of the 13 model aliases", () => {
+  it("accepts every one of the 15 model aliases", () => {
     for (const model of ALL_MODELS) {
       const r = GenerateExpertQuotePitchRequestSchema.safeParse({ variables: {}, model });
       expect(r.success, `model ${model} should be accepted`).toBe(true);

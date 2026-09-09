@@ -300,6 +300,7 @@ describe("model selection (generateFromTemplate)", () => {
     ["glm-pro", "zai"],
     ["kimi-flash", "moonshot"],
     ["kimi-pro", "moonshot"],
+    ["gpt-pro", "openai"],
   ] as const)(
     "model=%s derives the %s provider and keeps the permissive schema",
     async (model, provider) => {
@@ -314,7 +315,27 @@ describe("model selection (generateFromTemplate)", () => {
     }
   );
 
-  it.each(["deepseek-flash", "glm-pro", "kimi-pro"] as const)(
+  it("model=fable derives the anthropic provider and sends the strict schema", async () => {
+    mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
+
+    await generateFromTemplate({ ...PARAMS, model: "fable" }, IDENTITY);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.provider).toBe("anthropic");
+    expect(body.model).toBe("fable");
+    expect(body.responseSchema).toEqual(STRICT_RESPONSE_SCHEMA);
+  });
+
+  it("never sends temperature — the field fable rejects with a 400", async () => {
+    mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
+
+    await generateFromTemplate({ ...PARAMS, model: "fable" }, IDENTITY);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.temperature).toBeUndefined();
+  });
+
+  it.each(["deepseek-flash", "glm-pro", "kimi-pro", "gpt-pro"] as const)(
     "never sends webSearch or imageUrl on %s — the fields the direct-vendor path rejects",
     async (model) => {
       mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
@@ -403,6 +424,7 @@ describe("model selection (generateExpertQuotePitchFromTemplate, free-text)", ()
     ["glm-pro", "zai"],
     ["kimi-flash", "moonshot"],
     ["kimi-pro", "moonshot"],
+    ["gpt-pro", "openai"],
   ] as const)("model=%s derives the %s provider (still no responseSchema)", async (model, provider) => {
     mockFetch.mockResolvedValueOnce(textResponse(PITCH_BODY));
 
