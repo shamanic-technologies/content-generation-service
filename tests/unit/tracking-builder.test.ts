@@ -17,6 +17,7 @@ describe("buildTrackingHeaders", () => {
       workflowSlug: "wf-1",
       featureSlug: "feat-1",
       audienceId: "aud-1",
+      offerId: "offer-1",
     });
     expect(h).toEqual({
       "x-org-id": "org-1",
@@ -27,6 +28,7 @@ describe("buildTrackingHeaders", () => {
       "x-workflow-slug": "wf-1",
       "x-feature-slug": "feat-1",
       "x-audience-id": "aud-1",
+      "x-offer-id": "offer-1",
     });
   });
 
@@ -38,6 +40,7 @@ describe("buildTrackingHeaders", () => {
       campaignId: "camp-1",
     });
     expect(h["x-audience-id"]).toBeUndefined();
+    expect(h["x-offer-id"]).toBeUndefined();
     expect(h).toEqual({
       "x-org-id": "org-1",
       "x-user-id": "user-1",
