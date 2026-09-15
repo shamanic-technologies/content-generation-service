@@ -24,6 +24,13 @@ export interface Tracking {
   featureSlug?: string;
   /** Audience attribution ID (human-service org-scoped saved filter-set, audience.id). */
   audienceId?: string;
+  /**
+   * The campaign's offer id (brand-service offer), threaded by workflow-service
+   * from the campaign start-run response. brand-service refuses brand-scoped
+   * reads for a brand selling several offers (409 SEVERAL_OFFERS) until one is
+   * named, so extract-fields must carry it when the run has one.
+   */
+  offerId?: string;
 }
 
 /** Optional tracking field → downstream header name. Add new dimensions here only. */
@@ -34,6 +41,7 @@ const TRACKING_HEADER_KEYS: ReadonlyArray<readonly [keyof Tracking, string]> = [
   ["workflowSlug", "x-workflow-slug"],
   ["featureSlug", "x-feature-slug"],
   ["audienceId", "x-audience-id"],
+  ["offerId", "x-offer-id"],
 ];
 
 /**
@@ -50,6 +58,7 @@ export function extractTracking(req: AuthenticatedRequest): Tracking {
     workflowSlug: req.workflowSlug,
     featureSlug: req.featureSlug,
     audienceId: req.audienceId,
+    offerId: req.offerId,
   };
 }
 
