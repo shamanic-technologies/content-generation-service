@@ -244,5 +244,44 @@ describe("tracking headers (x-campaign-id, x-brand-id, x-workflow-slug, x-featur
         })
       );
     });
+
+    it("threads x-offer-id into the identity (header and body, body wins)", async () => {
+      await request(app)
+        .post("/generate")
+        .set("X-Org-Id", "org-123")
+        .set("X-User-Id", "user-456")
+        .set("X-Run-Id", "run-789")
+        .set("X-Campaign-Id", "camp-1")
+        .set("X-Brand-Id", "brand-1")
+        .set("X-Offer-Id", "offer-from-header")
+        .send({
+          type: "email",
+          variables: { recipientName: "John" },
+        })
+        .expect(200);
+
+      expect(mockCreateRun).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ offerId: "offer-from-header" })
+      );
+
+      await request(app)
+        .post("/generate")
+        .set("X-Org-Id", "org-123")
+        .set("X-User-Id", "user-456")
+        .set("X-Run-Id", "run-789")
+        .set("X-Brand-Id", "brand-1")
+        .send({
+          type: "email",
+          variables: { recipientName: "John" },
+          offerId: "offer-from-body",
+        })
+        .expect(200);
+
+      expect(mockCreateRun).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ offerId: "offer-from-body" })
+      );
+    });
   });
 });

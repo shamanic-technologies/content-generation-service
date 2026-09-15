@@ -46,12 +46,21 @@ export async function extractBrandFields(
 ): Promise<Map<string, string>> {
   if (fields.length === 0) return new Map();
 
+  const body: Record<string, unknown> = { fields };
+  // An offer is only answerable for ONE brand: brand-service 400s an offerId
+  // sent with several brands, and guessing a proposition per brand is not ours
+  // to do. Multi-brand requests stay brand-scoped (byte-identical to today).
+  const isSingleBrand = !!identity.brandId && !identity.brandId.includes(",");
+  if (identity.offerId && isSingleBrand) {
+    body.offerId = identity.offerId;
+  }
+
   const response = await fetch(
     `${BRAND_SERVICE_URL}/orgs/brands/extract-fields`,
     {
       method: "POST",
       headers: buildHeaders(identity),
-      body: JSON.stringify({ fields }),
+      body: JSON.stringify(body),
     }
   );
 

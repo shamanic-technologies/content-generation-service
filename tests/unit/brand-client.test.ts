@@ -123,4 +123,59 @@ describe("brand-client", () => {
     const [, opts] = fetchMock.mock.calls[0];
     expect(opts.headers["x-brand-id"]).toBe("brand-1,brand-2,brand-3");
   });
+
+  it("includes offerId in the body when identity carries one and a single brand is named", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => brandResponse({}),
+    });
+
+    await extractBrandFields(
+      [{ key: "industry", description: "Industry" }],
+      { ...identity, offerId: "offer-1" }
+    );
+
+    const [, opts] = fetchMock.mock.calls[0];
+    expect(JSON.parse(opts.body)).toEqual({
+      fields: [{ key: "industry", description: "Industry" }],
+      offerId: "offer-1",
+    });
+    expect(opts.headers["x-offer-id"]).toBe("offer-1");
+  });
+
+  it("keeps multi-brand requests brand-scoped: offerId stays out of the body even when present", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => brandResponse({}),
+    });
+
+    const multiBrandIdentity = { orgId: "org-1", userId: "user-1", runId: "run-1", brandId: "brand-1,brand-2", offerId: "offer-1" };
+    await extractBrandFields(
+      [{ key: "industry", description: "Industry" }],
+      multiBrandIdentity
+    );
+
+    const [, opts] = fetchMock.mock.calls[0];
+    expect(JSON.parse(opts.body)).toEqual({
+      fields: [{ key: "industry", description: "Industry" }],
+    });
+  });
+
+  it("sends a body of exactly { fields } when no offerId is present (byte-identical to pre-offer requests)", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => brandResponse({}),
+    });
+
+    await extractBrandFields(
+      [{ key: "industry", description: "Industry" }],
+      identity
+    );
+
+    const [, opts] = fetchMock.mock.calls[0];
+    expect(JSON.parse(opts.body)).toEqual({
+      fields: [{ key: "industry", description: "Industry" }],
+    });
+    expect(opts.headers["x-offer-id"]).toBeUndefined();
+  });
 });

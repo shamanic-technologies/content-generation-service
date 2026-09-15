@@ -321,6 +321,10 @@
           "audienceId": {
             "type": "string",
             "description": "Audience attribution ID. Falls back to x-audience-id header if omitted."
+          },
+          "offerId": {
+            "type": "string",
+            "description": "The campaign's offer id. Forwarded to brand-service on the extract-fields request, which refuses brand-scoped reads for a brand selling several offers until one is named. Falls back to x-offer-id header if omitted."
           }
         },
         "required": [
@@ -432,6 +436,10 @@
           "audienceId": {
             "type": "string",
             "description": "Audience attribution ID. Falls back to x-audience-id header if omitted."
+          },
+          "offerId": {
+            "type": "string",
+            "description": "The campaign's offer id. Falls back to x-offer-id header if omitted."
           }
         },
         "required": [
