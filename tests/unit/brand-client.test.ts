@@ -140,7 +140,9 @@ describe("brand-client", () => {
       fields: [{ key: "industry", description: "Industry" }],
       offerId: "offer-1",
     });
-    expect(opts.headers["x-offer-id"]).toBe("offer-1");
+    // Body only: brand-service reads the offer from the request body, and an offer
+    // header would bypass the single-brand guard on a multi-brand request.
+    expect(opts.headers["x-offer-id"]).toBeUndefined();
   });
 
   it("keeps multi-brand requests brand-scoped: offerId stays out of the body even when present", async () => {
@@ -159,6 +161,9 @@ describe("brand-client", () => {
     expect(JSON.parse(opts.body)).toEqual({
       fields: [{ key: "industry", description: "Industry" }],
     });
+    // The offer must not leak via a header either — that would reach brand-service
+    // with several brands and earn a 400.
+    expect(opts.headers["x-offer-id"]).toBeUndefined();
   });
 
   it("sends a body of exactly { fields } when no offerId is present (byte-identical to pre-offer requests)", async () => {

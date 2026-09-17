@@ -471,7 +471,7 @@ export const GenerateRequestSchema = registry.register(
       workflowSlug: z.string().optional(),
       featureSlug: z.string().optional().describe("Feature slug for tracking"),
       audienceId: z.string().optional().describe("Audience attribution ID. Falls back to x-audience-id header if omitted."),
-      offerId: z.string().optional().describe("The campaign's offer id. Forwarded to brand-service on the extract-fields request, which refuses brand-scoped reads for a brand selling several offers until one is named. Falls back to x-offer-id header if omitted."),
+      offerId: z.string().optional().describe("The campaign's offer id. Forwarded to brand-service on the extract-fields request, which refuses brand-scoped reads for a brand selling several offers until one is named. Body only — there is no header fallback. Sent only when a single brand is named; ignored for a multi-brand request, which brand-service rejects with an offer."),
     })
     .openapi("GenerateRequest")
 );
@@ -557,7 +557,6 @@ export const GenerateExpertQuotePitchRequestSchema = registry.register(
       workflowSlug: z.string().optional(),
       featureSlug: z.string().optional(),
       audienceId: z.string().optional().describe("Audience attribution ID. Falls back to x-audience-id header if omitted."),
-      offerId: z.string().optional().describe("The campaign's offer id. Falls back to x-offer-id header if omitted."),
     })
     .openapi("GenerateExpertQuotePitchRequest")
 );
