@@ -93,8 +93,9 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     const featureSlug = bodyFeatureSlug || req.featureSlug;
     const audienceId = bodyAudienceId || req.audienceId;
     // The campaign's offer — brand-service refuses a brand-scoped extract-fields
-    // request for a brand selling several offers until one is named.
-    const offerId = bodyOfferId || req.offerId;
+    // request for a brand selling several offers until one is named. Body only:
+    // workflow-service threads it into the request BODY of this callee, never a header.
+    const offerId = bodyOfferId;
 
     traceEvent(req.runId!, { service: "content-generation-service", event: "generate-start", detail: `type=${type}, brandIds=${brandIds.join(",")}, campaignId=${campaignId ?? "none"}, idempotencyKey=${idempotencyKey ?? "none"}` }, req.headers).catch(() => {});
 
@@ -336,7 +337,7 @@ router.post("/generate-expert-quote-pitch", serviceAuth, async (req: Authenticat
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
 
-    const { variables, templateType, model, brandIds: bodyBrandIds, campaignId: bodyCampaignId, workflowSlug: bodyWorkflowSlug, featureSlug: bodyFeatureSlug, audienceId: bodyAudienceId, offerId: bodyOfferId } = parsed.data;
+    const { variables, templateType, model, brandIds: bodyBrandIds, campaignId: bodyCampaignId, workflowSlug: bodyWorkflowSlug, featureSlug: bodyFeatureSlug, audienceId: bodyAudienceId } = parsed.data;
 
     const brandIds = bodyBrandIds?.length ? bodyBrandIds : (req.brandIds ?? []);
     const brandId = brandIds.length > 0 ? brandIds.join(",") : req.brandId;
@@ -344,7 +345,6 @@ router.post("/generate-expert-quote-pitch", serviceAuth, async (req: Authenticat
     const workflowSlug = bodyWorkflowSlug || req.workflowSlug;
     const featureSlug = bodyFeatureSlug || req.featureSlug;
     const audienceId = bodyAudienceId || req.audienceId;
-    const offerId = bodyOfferId || req.offerId;
 
     // Resolution order: explicit templateType ▸ feature assignment ▸ platform default.
     const resolvedType = templateType ?? (await resolveAssignedPromptType(featureSlug));
@@ -375,7 +375,7 @@ router.post("/generate-expert-quote-pitch", serviceAuth, async (req: Authenticat
       throw validationError;
     }
 
-    const identity = { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug, audienceId, offerId };
+    const identity = { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug, audienceId };
 
     const result = await generateExpertQuotePitchFromTemplate(
       {
