@@ -26,9 +26,17 @@ export interface Tracking {
   audienceId?: string;
   /**
    * The campaign's offer id (brand-service offer), threaded by workflow-service
-   * from the campaign start-run response. brand-service refuses brand-scoped
-   * reads for a brand selling several offers (409 SEVERAL_OFFERS) until one is
-   * named, so extract-fields must carry it when the run has one.
+   * into the /generate request BODY from the campaign start-run response.
+   * brand-service refuses brand-scoped reads for a brand selling several offers
+   * (409 SEVERAL_OFFERS) until one is named, so extract-fields must carry it
+   * when the run has one.
+   *
+   * NOT a tracking header: it is deliberately absent from TRACKING_HEADER_KEYS.
+   * brand-service reads the offer from the extract-fields request BODY, and an
+   * offer is only answerable for ONE brand — brand-client applies that
+   * single-brand guard when building the body. Emitting it as a header would
+   * bypass the guard on a multi-brand request and spread a wire format no
+   * producer in the fleet actually sends.
    */
   offerId?: string;
 }
@@ -41,7 +49,6 @@ const TRACKING_HEADER_KEYS: ReadonlyArray<readonly [keyof Tracking, string]> = [
   ["workflowSlug", "x-workflow-slug"],
   ["featureSlug", "x-feature-slug"],
   ["audienceId", "x-audience-id"],
-  ["offerId", "x-offer-id"],
 ];
 
 /**
@@ -58,7 +65,6 @@ export function extractTracking(req: AuthenticatedRequest): Tracking {
     workflowSlug: req.workflowSlug,
     featureSlug: req.featureSlug,
     audienceId: req.audienceId,
-    offerId: req.offerId,
   };
 }
 
