@@ -10,6 +10,7 @@ import { fetchWithRetry } from "./fetch-retry.js";
 import { type Tracking, buildTrackingHeaders } from "./tracking.js";
 import { unescapeLineBreaks, collapseEscapedLineBreaks } from "./escaped-line-breaks.js";
 import { textToHtml } from "./text-to-html.js";
+import { withSequenceDelays } from "./sequence-delays.js";
 
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
 const CHAT_SERVICE_API_KEY = process.env.CHAT_SERVICE_API_KEY || "";
@@ -280,7 +281,7 @@ function chatCompleteErrorMessage(
 
 interface ChatCompleteResponse {
   content: string;
-  json: { subject: string; emails: Array<{ body: string; daysSinceLastStep: number }> };
+  json: { subject: string; emails: Array<{ body: string; daysSinceLastStep?: unknown }> };
   tokensInput: number;
   tokensOutput: number;
   model: string;
@@ -559,12 +560,15 @@ export async function generateExpertQuotePitchFromTemplate(
 
 function parseSequenceFromJson(json: {
   subject: string;
-  emails: Array<{ body: string; daysSinceLastStep: number }>;
+  emails: Array<{ body: string; daysSinceLastStep?: unknown }>;
 }): {
   subject: string;
   sequence: SequenceStep[];
 } {
-  const sequence: SequenceStep[] = json.emails.map((email, i) => {
+  // The model's delays are checked before anything is stored: step 1 without one
+  // is 0, any later step without one fails loud (see sequence-delays.ts).
+  const emails = withSequenceDelays(json.emails);
+  const sequence: SequenceStep[] = emails.map((email, i) => {
     // Over-escaped newlines must become real newlines BEFORE textToHtml, or the
     // body renders as one paragraph with visible backslash-n for the prospect.
     const bodyText = unescapeLineBreaks(email.body).trim();
