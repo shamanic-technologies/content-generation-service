@@ -22,6 +22,7 @@ import {
 import { traceEvent } from "../lib/trace-event.js";
 import { findGenerationForLead } from "../lib/lead-generation-query.js";
 import { withResolvedBody } from "../lib/generation-body.js";
+import { withSequenceDelays, IncompleteSequenceError } from "../lib/sequence-delays.js";
 
 const router = Router();
 
@@ -43,7 +44,12 @@ function toGenerationResponse(generation: {
   return {
     id: generation.id,
     subject: generation.subject ?? "",
-    sequence: generation.sequence ?? [],
+    // Stored rows predate the generation-time check (glm/deepseek dropped step 1's
+    // delay), and the lead-retry path re-serves them — so the same rule applies here.
+    sequence: withSequenceDelays(
+      (generation.sequence ?? []) as Array<{ daysSinceLastStep?: unknown }>,
+      generation.id
+    ),
     tokensInput: generation.tokensInput ?? 0,
     tokensOutput: generation.tokensOutput ?? 0,
   };
@@ -313,6 +319,13 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         balance_cents: error.balance_cents,
         required_cents: error.required_cents,
       });
+    }
+    if (error instanceof IncompleteSequenceError) {
+      console.error("Generate error:", error.message);
+      if (req.runId) {
+        traceEvent(req.runId, { service: "content-generation-service", event: "incomplete-sequence", detail: error.message, level: "error" }, req.headers).catch(() => {});
+      }
+      return res.status(502).json({ error: error.message, steps: error.steps });
     }
     console.error("Generate error:", error);
     if (req.runId) {

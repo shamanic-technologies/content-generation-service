@@ -153,6 +153,51 @@ describe("POST /generate — a lead that already has a generation", () => {
     app.use(generateRoutes);
   });
 
+  it("serves a stored sequence whose model dropped step 1's delay with daysSinceLastStep: 0", async () => {
+    // Prod generation 5a4c09b6 (glm-5.3-flash, 2026-09-09): stored [_, 3, 7], re-served
+    // on every lead retry and rejected 41 times by email-gateway /orgs/send.
+    mockGenFindFirst.mockResolvedValue({
+      ...storedGeneration,
+      sequence: [
+        { step: 1, bodyHtml: "<p>a</p>", bodyText: "a" },
+        { step: 2, bodyHtml: "<p>b</p>", bodyText: "b", daysSinceLastStep: 3 },
+        { step: 3, bodyHtml: "<p>c</p>", bodyText: "c", daysSinceLastStep: 7 },
+      ],
+    });
+
+    const res = await request(app)
+      .post("/generate")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
+      .send({ ...validBody, leadId: LEAD_ID, campaignId: CAMPAIGN_ID })
+      .expect(200);
+
+    expect(res.body.sequence.map((s: { daysSinceLastStep: number }) => s.daysSinceLastStep)).toEqual([0, 3, 7]);
+    expect(mockGenerateFromTemplate).not.toHaveBeenCalled();
+  });
+
+  it("fails loud (502) on a stored sequence with no follow-up delays instead of serving it", async () => {
+    // Prod generation ad0a53c1: no delay on any step — not sendable.
+    mockGenFindFirst.mockResolvedValue({
+      ...storedGeneration,
+      sequence: [
+        { step: 1, bodyText: "a" },
+        { step: 2, bodyText: "b" },
+      ],
+    });
+
+    const res = await request(app)
+      .post("/generate")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
+      .send({ ...validBody, leadId: LEAD_ID, campaignId: CAMPAIGN_ID })
+      .expect(502);
+
+    expect(res.body.error).toContain(storedGeneration.id);
+    expect(res.body.steps).toEqual([2]);
+    expect(mockGenerateFromTemplate).not.toHaveBeenCalled();
+  });
+
   it("returns the stored email and bills no completion", async () => {
     mockGenFindFirst.mockResolvedValue(storedGeneration);
 
