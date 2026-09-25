@@ -173,6 +173,15 @@ Every cold email went out in English, including to the ~10% of leads who are not
 - Trace events distinguish the paths: `lead-generation-hit` (lookup, nothing billed) vs `lead-generation-race` (warn, one completion discarded). Neither creates a runs-service run, same as `idempotency-hit`.
 - Known gap, rare and non-fatal: lead-service's `repointed_from_lead_id` repair can move a person's `lead_id` after their generation was written. The lookup then misses, a second email is generated and stored under the new id — one extra paid email, not a failed run.
 
+## Every served step carries a delay (`src/lib/sequence-delays.ts`)
+
+email-gateway `POST /orgs/send` requires a numeric `daysSinceLastStep` on every step and 400s the whole send otherwise. glm and deepseek answers (Aug 25 to Sep 15 2026) dropped it, mostly on step 1, and 13 rows were stored that way. The lead-retry path re-served two of them 41 times each (82 failed sends, 2026-09-21 to 09-25).
+
+- `withSequenceDelays` is the one rule, applied at generation (inside `parseSequenceFromJson`, before the insert, so no bad row is ever stored) and in `toGenerationResponse` (every stored answer: lead retry, idempotency, race).
+- Step 1 without a delay is `0`. Nothing precedes the first email, so that is the definition, not a guess.
+- A later step without a finite non-negative delay throws `IncompleteSequenceError` → `/generate` answers **502** naming the generation and steps. That wait is the model's choice and cannot be derived, so it is never filled.
+- Do not "fix" the gateway's requirement or default follow-up delays here.
+
 ## Serving the copy that was written (`bodySource`)
 
 `POST /generate` never writes `body_text` / `body_html`; it writes `sequence`. Every row created since February 2026 therefore has NULL body columns and a populated sequence, and every read that returned the row whole handed consumers a subject with no words. lead-service reads the top-level `bodyText` to assemble a person's history, so the dashboard's "Email we wrote" row rendered empty for every lead contacted since February — silent for seven months because an empty string reads the same as "no copy exists".
