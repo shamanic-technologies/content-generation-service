@@ -1238,11 +1238,12 @@ registry.registerPath({
   method: "post",
   path: "/internal/transfer-brand",
   tags: ["Internal"],
-  summary: "Transfer solo-brand rows from one org to another",
+  summary: "Transfer a brand's rows from one org to another",
   description:
-    "Finds all rows where org_id = sourceOrgId and brand_ids contains exactly one element equal to sourceBrandId, " +
-    "then updates org_id to targetOrgId. When targetBrandId is provided, also rewrites brand_ids to the target brand. " +
-    "Skips co-branding rows (multiple brand IDs). Idempotent.",
+    "Moves, in one transaction, every email_generations row of the brand from sourceOrgId to targetOrgId: " +
+    "solo-brand rows (brand_ids = [sourceBrandId]) and rows with no brand tag that belong to a campaign of the brand. " +
+    "When targetBrandId is provided, rewrites brand_ids to it (only on rows in targetOrgId). " +
+    "Co-branded rows (several brand ids) are left in place. Idempotent: a re-run reports 0.",
   request: {
     body: {
       required: true,
