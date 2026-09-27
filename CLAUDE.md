@@ -20,6 +20,7 @@ Microservice that generates personalized content (emails, calendar events, etc.)
 - `src/schemas.ts` — Zod schemas + OpenAPI registry (source of truth for validation + OpenAPI)
 - `src/routes/generate.ts` — POST /generate endpoint (email generation via chat-service)
 - `src/routes/stats.ts` — POST /stats and POST /stats/by-model endpoints
+- `src/routes/transfer-brand.ts` + `src/lib/transfer-brand.ts` — POST /internal/transfer-brand (fleet contract, see "Brand transfer" below)
 - `src/routes/health.ts` — GET /health endpoint
 - `src/middleware/auth.ts` — Authentication middleware (X-Clerk-Org-Id header)
 - `src/lib/chat-service-client.ts` — Chat-service client + email template utilities (prompt substitution, JSON parsing)
@@ -223,6 +224,14 @@ Method, path, byte counts and the identity/attribution headers already used for 
 - **Integration tests run only in CI, against a `postgres:16` service container created for that run and destroyed with it — the database starts EMPTY.** (It used to be a Neon branch forked from production; Neon is gone.) Three consequences: (1) **`tests/setup.ts` replays the whole `drizzle/` journal from nothing, fail-loud.** A migration statement that only works against an already-populated database now aborts the replay — that is how `0000`'s bare `ALTER TABLE "email_generations" DROP COLUMN`, sitting BEFORE its own `CREATE TABLE`, was finally caught. `tests/unit/migration-empty-db-replay.test.ts` pins the class without a database: every statement naming a relation must guard itself (`ALTER TABLE IF EXISTS`) or name one an earlier migration creates. (2) **A new migration must be replayable from empty**, not just applicable to prod — write `IF EXISTS` / `IF NOT EXISTS` guards, and put a data backfill after the DDL it depends on. (3) **A failing integration test on the staging→main merge commit makes the deploy SKIP** (it gates on the merge commit's check-suite) — the deploy shows `in_progress`→`inactive`, never `success`.
 - **Two `drizzle/*.sql` files are NOT in `meta/_journal.json` and have never been run by the migrator**: `0001_fix_emailgen_indexes.sql` (superseded — `0000` already creates those indexes non-unique, confirmed against prod) and `0012_rename_delaydays_to_daysssincelaststep.sql` (a one-shot data backfill applied by hand). A file in `drizzle/` is inert unless the journal lists it; the journal is the source of truth, not the directory.
 - **`pnpm db:generate` prompts on pre-existing drift** — the deprecated `content_generations` table is out of sync with the meta snapshots, so drizzle-kit asks create-vs-rename for unrelated columns. For a simple new table, hand-author `drizzle/<n>_*.sql` (`CREATE TABLE IF NOT EXISTS`) + a matching `drizzle/meta/_journal.json` entry (`when` > the previous entry's). The runtime migrator only checks the journal `when`, not snapshots.
+
+## Brand transfer (`POST /internal/transfer-brand`)
+
+Fleet contract driven by brand-service: move every row of one brand from `sourceOrgId` to `targetOrgId`, rewrite the brand id to `targetBrandId` when given, idempotent. Only `email_generations` is brand-tied here; the audit of every table lives in the `src/lib/transfer-brand.ts` docstring and must be redone whenever a table gains an org, brand or campaign column.
+
+- Moves solo-brand rows (`brand_ids = [brand]`) AND untagged rows (`brand_ids` empty) whose `campaign_id` is one of the brand's campaigns. Co-branded rows stay: moving one would take the other brand's history.
+- The brand-id rewrite is scoped to `org_id = targetOrgId`. A brand id can be claimed by several orgs (Doc Dinners is), so an unscoped rewrite touches rows that are not being transferred.
+- One transaction. A re-run reports 0. Money is not ours: costs live in runs-service/chat-service.
 
 ## A lead's email, per campaign
 
