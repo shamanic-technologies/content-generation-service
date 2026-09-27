@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 
-const mockExecute = vi.hoisted(() => vi.fn());
+const mockTransfer = vi.hoisted(() => vi.fn());
 
-vi.mock("../../src/db/index.js", () => ({
-  db: { execute: mockExecute },
+vi.mock("../../src/lib/transfer-brand.js", () => ({
+  transferBrand: mockTransfer,
 }));
 
 const { default: transferBrandRoutes } = await import("../../src/routes/transfer-brand.js");
@@ -72,47 +72,20 @@ describe("POST /internal/transfer-brand", () => {
     expect(res.body.error).toBeDefined();
   });
 
-  it("returns updated count when rows are transferred (no targetBrandId)", async () => {
-    mockExecute.mockResolvedValueOnce([{ "1": 1 }, { "1": 1 }, { "1": 1 }, { "1": 1 }, { "1": 1 }]);
+  it("passes the parsed body to transferBrand and returns its report", async () => {
+    const report = { updatedTables: [{ tableName: "email_generations", count: 5 }] };
+    mockTransfer.mockResolvedValueOnce(report);
     const app = buildApp();
-    const res = await request(app)
-      .post("/internal/transfer-brand")
-      .send({ sourceBrandId: SOURCE_BRAND, sourceOrgId: SOURCE_ORG, targetOrgId: TARGET_ORG })
-      .expect(200);
+    const body = { sourceBrandId: SOURCE_BRAND, sourceOrgId: SOURCE_ORG, targetOrgId: TARGET_ORG, targetBrandId: TARGET_BRAND };
+    const res = await request(app).post("/internal/transfer-brand").send(body).expect(200);
 
-    expect(res.body).toEqual({
-      updatedTables: [{ tableName: "email_generations", count: 5 }],
-    });
-    expect(mockExecute).toHaveBeenCalledOnce();
+    expect(res.body).toEqual(report);
+    expect(mockTransfer).toHaveBeenCalledWith(body);
   });
 
-  it("returns combined count when rows are transferred with targetBrandId (conflict rewrite)", async () => {
-    // Step 1: org reassignment returns 3 rows
-    mockExecute.mockResolvedValueOnce([{ "1": 1 }, { "1": 1 }, { "1": 1 }]);
-    // Step 2: brand rewrite returns 3 rows
-    mockExecute.mockResolvedValueOnce([{ "1": 1 }, { "1": 1 }, { "1": 1 }]);
+  it("does not call transferBrand on an invalid body", async () => {
     const app = buildApp();
-    const res = await request(app)
-      .post("/internal/transfer-brand")
-      .send({ sourceBrandId: SOURCE_BRAND, sourceOrgId: SOURCE_ORG, targetOrgId: TARGET_ORG, targetBrandId: TARGET_BRAND })
-      .expect(200);
-
-    expect(res.body).toEqual({
-      updatedTables: [{ tableName: "email_generations", count: 6 }],
-    });
-    expect(mockExecute).toHaveBeenCalledTimes(2);
-  });
-
-  it("returns count 0 when no rows match (idempotent re-run)", async () => {
-    mockExecute.mockResolvedValueOnce([]);
-    const app = buildApp();
-    const res = await request(app)
-      .post("/internal/transfer-brand")
-      .send({ sourceBrandId: SOURCE_BRAND, sourceOrgId: SOURCE_ORG, targetOrgId: TARGET_ORG })
-      .expect(200);
-
-    expect(res.body).toEqual({
-      updatedTables: [{ tableName: "email_generations", count: 0 }],
-    });
+    await request(app).post("/internal/transfer-brand").send({ sourceOrgId: SOURCE_ORG }).expect(400);
+    expect(mockTransfer).not.toHaveBeenCalled();
   });
 });
