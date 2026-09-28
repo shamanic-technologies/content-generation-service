@@ -100,6 +100,41 @@ export const emailExamplesSilver = pgView("email_examples_silver", {
   clientCompanyName: text("client_company_name"),
 }).existing();
 
+// Signed-out preview emails — ONE cold email written for a brand and a sample
+// recipient, shown before an account exists. Deliberately NOT email_generations:
+// that table is the sending pipeline's bronze log (counted by /stats, read by the
+// examples silver view, keyed on campaign+lead), and a preview must be nothing a
+// campaign could send or count. One row per (org, brand, recipient_key) so asking
+// again for the same brand and recipient returns the stored email, never a second
+// billed completion. recipient_key = sha256 of the normalized inputs that shape the
+// email (see src/lib/preview-email.ts).
+export const emailPreviews = pgTable(
+  "email_previews",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    brandId: text("brand_id").notNull(),
+    brandName: text("brand_name").notNull(),
+    runId: text("run_id").notNull(),
+    recipientKey: text("recipient_key").notNull(),
+    recipient: jsonb("recipient").notNull(),
+    promptType: text("prompt_type").notNull(),
+    subject: text("subject").notNull(),
+    bodyText: text("body_text").notNull(),
+    bodyHtml: text("body_html").notNull(),
+    sequence: jsonb("sequence").notNull(),
+    model: text("model").notNull(),
+    tokensInput: integer("tokens_input"),
+    tokensOutput: integer("tokens_output"),
+    promptRaw: text("prompt_raw"),
+    responseRaw: jsonb("response_raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_email_previews_recipient").on(table.orgId, table.brandId, table.recipientKey),
+  ]
+);
+
 // Prompt templates — type is the unique identifier (like an ID).
 // orgId is optional traceability: records who created the prompt, but does NOT scope visibility.
 // All prompts are globally accessible regardless of orgId.

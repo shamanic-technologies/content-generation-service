@@ -87,6 +87,38 @@ export async function extractBrandFields(
   return result;
 }
 
+/** A brand-service extract-fields refusal, carried with its status so the caller can answer in kind. */
+export class BrandIntelError extends Error {
+  constructor(public status: number, public body: string) {
+    super(`brand-service extract-fields failed: ${status} - ${body}`);
+  }
+}
+
+/**
+ * The brand-service extract-fields response, whole — the shape the live cold-email
+ * workflows pass to /generate as `brandExtractedFields`. Unlike `extractBrandFields`
+ * this does NOT degrade: a preview written without its brand intel would not be the
+ * product's writing, so any refusal throws `BrandIntelError`.
+ */
+export async function fetchBrandIntel(
+  fields: ReadonlyArray<ExtractFieldRequest>,
+  identity: ServiceIdentity
+): Promise<ExtractFieldsResponse> {
+  const body: Record<string, unknown> = { fields };
+  if (identity.offerId) body.offerId = identity.offerId;
+
+  const response = await fetch(`${BRAND_SERVICE_URL}/orgs/brands/extract-fields`, {
+    method: "POST",
+    headers: buildHeaders(identity),
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new BrandIntelError(response.status, await response.text());
+  }
+  return (await response.json()) as ExtractFieldsResponse;
+}
+
 /**
  * Batch-resolve brand display names by id via brand-service GET /internal/brands.
  * API-key only (no org/user identity) so it works across orgs (the global cascade tier).

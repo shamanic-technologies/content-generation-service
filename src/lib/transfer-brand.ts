@@ -27,6 +27,11 @@ export interface TransferBrandResult {
  *   campaign column, so nothing ties a prompt to a brand.
  * - `feature_prompt_assignment` — feature-global, no org column.
  * - `content_generations` — deprecated, no brand or campaign column (0 rows in prod).
+ * - `email_previews` (2026-09-28) — carries org + brand, deliberately NOT moved: a preview is
+ *   the signed-out onboarding's demo email, never sent, never counted, read only by
+ *   POST /preview-email for re-spend avoidance under the org that paid for it. It is not
+ *   the brand's sending history, and leaving it costs the new org at most one re-written
+ *   preview.
  *
  * Money is not touched: cost truth lives in runs-service / chat-service, not here.
  *
