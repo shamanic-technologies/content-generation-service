@@ -628,6 +628,99 @@ registry.registerPath({
 });
 
 // ---------------------------------------------------------------------------
+// POST /preview-email — ONE cold email for a brand + a sample recipient, no campaign/lead
+// ---------------------------------------------------------------------------
+const PreviewRecipientSchema = z
+  .object({
+    firstName: z.string().trim().min(1),
+    lastName: z.string().trim().min(1),
+    title: z.string().trim().min(1).describe("The recipient's job title."),
+    companyName: z.string().trim().min(1),
+    companyDomain: z.string().trim().min(1).optional().describe("The recipient's company website or domain."),
+    headline: z.string().trim().min(1).optional().describe("The recipient's own one-line professional headline."),
+    companyIndustry: z.string().trim().min(1).optional(),
+    companyDescription: z.string().trim().min(1).optional(),
+  })
+  .openapi("PreviewRecipient");
+
+export const PreviewEmailRequestSchema = registry.register(
+  "PreviewEmailRequest",
+  z
+    .object({
+      brandId: z.string().uuid().describe("A brand of the calling org. Its site must already be readable by brand-service."),
+      recipient: PreviewRecipientSchema,
+      audience: z.string().trim().min(1).optional().describe("The audience / segment the sample recipient was found in, in plain English. Given to the model as context."),
+      offerId: z.string().uuid().optional().describe("Which offer of the brand to pitch. Required by brand-service only when the brand sells several offers."),
+      model: ModelField,
+    })
+    .openapi("PreviewEmailRequest")
+);
+
+const PreviewEmailResponseSchema = registry.register(
+  "PreviewEmailResponse",
+  z
+    .object({
+      id: z.string().uuid().describe("Stored preview id."),
+      brandId: z.string(),
+      brandName: z.string(),
+      recipient: PreviewRecipientSchema,
+      subject: z.string(),
+      bodyText: z.string().describe("The first email of the sequence the product would send, as plain text."),
+      bodyHtml: z.string(),
+      model: z.string().describe("Resolved model id that wrote the email."),
+      cached: z.boolean().describe("true when this brand + recipient was already written and the stored email is returned (nothing billed)."),
+      createdAt: z.string(),
+    })
+    .openapi("PreviewEmailResponse")
+);
+
+registry.registerPath({
+  method: "post",
+  path: "/preview-email",
+  tags: ["Content Generation"],
+  summary: "Write ONE cold email for a brand and a sample recipient, before any campaign exists",
+  description:
+    "Writes the email exactly the way live campaigns do: the same stored platform cold-email template, the same brand " +
+    "intel request to brand-service, the same chat-service completion and default model. The LLM spend is declared and " +
+    "authorized against the calling org by chat-service; an org that cannot afford it gets 402. Creates no campaign, no lead " +
+    "and no email_generations row, so nothing here can be sent or counted. The same brand + recipient (+ audience, offer, model) " +
+    "returns the stored email instead of a second billed completion.",
+  request: {
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
+    body: {
+      required: true,
+      content: { "application/json": { schema: PreviewEmailRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: "The written email",
+      content: { "application/json": { schema: PreviewEmailResponseSchema } },
+    },
+    400: {
+      description: "Invalid request, or brand-service refused the brand (e.g. it has no readable site)",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    402: {
+      description: "The calling org cannot afford the completion",
+      content: { "application/json": { schema: InsufficientCreditsResponseSchema } },
+    },
+    404: {
+      description: "Brand not found for this org, or the offer is not one of the brand's",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: "The brand sells several offers; name one with offerId",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    502: {
+      description: "brand-service or the model failed",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Shared EmailGeneration schema (mirrors Drizzle emailGenerations table)
 // ---------------------------------------------------------------------------
 const EmailGenerationSchema = registry.register(

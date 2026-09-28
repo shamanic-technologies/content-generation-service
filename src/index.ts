@@ -17,6 +17,7 @@ import promptAssignmentRoutes from "./routes/prompt-assignments.js";
 import composeRoutes from "./routes/compose.js";
 import submagicRoutes from "./routes/submagic.js";
 import transferBrandRoutes from "./routes/transfer-brand.js";
+import previewEmailRoutes from "./routes/preview-email.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -62,6 +63,7 @@ app.use(promptAssignmentRoutes);
 app.use(composeRoutes);
 app.use(submagicRoutes);
 app.use(transferBrandRoutes);
+app.use(previewEmailRoutes);
 
 // 404 handler
 app.use((req, res) => {

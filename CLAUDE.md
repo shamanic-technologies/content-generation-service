@@ -225,6 +225,17 @@ Method, path, byte counts and the identity/attribution headers already used for 
 - **Two `drizzle/*.sql` files are NOT in `meta/_journal.json` and have never been run by the migrator**: `0001_fix_emailgen_indexes.sql` (superseded — `0000` already creates those indexes non-unique, confirmed against prod) and `0012_rename_delaydays_to_daysssincelaststep.sql` (a one-shot data backfill applied by hand). A file in `drizzle/` is inert unless the journal lists it; the journal is the source of truth, not the directory.
 - **`pnpm db:generate` prompts on pre-existing drift** — the deprecated `content_generations` table is out of sync with the meta snapshots, so drizzle-kit asks create-vs-rename for unrelated columns. For a simple new table, hand-author `drizzle/<n>_*.sql` (`CREATE TABLE IF NOT EXISTS`) + a matching `drizzle/meta/_journal.json` entry (`when` > the previous entry's). The runtime migrator only checks the journal `when`, not snapshots.
 
+## Signed-out preview email (`POST /preview-email`)
+
+ONE cold email for a brand of the calling org + a sample recipient (name, title, company, optional domain/headline/industry/description, optional `audience` and `offerId`), for the signed-out onboarding's last screen. Source: `src/routes/preview-email.ts` + leaf `src/lib/preview-email.ts`.
+
+- **It is the product's real writing, not an imitation.** Same stored platform template (`PREVIEW_PROMPT_TYPE` = `cold-email-v39`, the most-rendered platform cold email), same brand-service extract-fields request as the live cold-email DAG (`BRAND_INTEL_FIELDS`, keys AND descriptions copied verbatim so brand-service serves its 30-day cache), passed whole as `brandExtractedFields`, same `generateFromTemplate` + `GLOBAL_SYSTEM_PROMPT`, same default model. The answer is step 1 of the sequence.
+- **Billing is chat-service's**, under the caller's `x-org-id`, exactly like `/generate`; a 402 from it is answered 402. No local cost declaration.
+- **Nothing sendable**: no campaign, no lead, no `email_generations` row (that table is the sending log counted by `/stats` and read by the examples view). Rows live in `email_previews`, read only by this route.
+- **Re-spend avoidance**: unique `(org_id, brand_id, recipient_key)`, `recipient_key` = sha256 of every normalized input that shapes the email. A repeat is answered from storage BEFORE any downstream call (`cached: true`); a concurrent duplicate catches `23505` on `idx_email_previews_recipient`.
+- **Brand-service verdicts pass through** (400/404/409, 402), anything else from it is 502. Brand intel never degrades here, unlike `/generate`'s fail-soft `extractBrandFields`.
+- No per-sentence "why": asking the same completion for it would change the writing prompt, and a second call would double the spend.
+
 ## Brand transfer (`POST /internal/transfer-brand`)
 
 Fleet contract driven by brand-service: move every row of one brand from `sourceOrgId` to `targetOrgId`, rewrite the brand id to `targetBrandId` when given, idempotent. Only `email_generations` is brand-tied here; the audit of every table lives in the `src/lib/transfer-brand.ts` docstring and must be redone whenever a table gains an org, brand or campaign column.
