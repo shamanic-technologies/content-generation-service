@@ -656,6 +656,27 @@ export const PreviewEmailRequestSchema = registry.register(
     .openapi("PreviewEmailRequest")
 );
 
+const PreviewHighlightSchema = z
+  .object({
+    text: z.string().describe("A sentence or clause of bodyText, verbatim."),
+    start: z.number().int().describe("Offset of text in bodyText (JS string index): bodyText.slice(start, end) === text."),
+    end: z.number().int(),
+    kind: z
+      .enum(["prospect", "brand", "audience", "instruction"])
+      .describe(
+        "Where the reason comes from. prospect: a fact about the recipient or their company (the data sent in `recipient`). " +
+          "brand: a fact about the sender's company, read from its website by brand-service. audience: the segment sent in `audience`. " +
+          "instruction: a writing rule of the email template (greeting, diagnostic question, call to action), not a fact."
+      ),
+    source: z
+      .string()
+      .describe("The exact input: `recipient.<field>`, `audience`, `brand.name`, `brand.<extracted field key>` (e.g. brand.customerPainPoints), or `instruction`."),
+    sourceLabel: z.string().describe("Plain-English name of that input."),
+    sourceValue: z.string().nullable().describe("The input's actual value as the model received it. null for instruction."),
+    reason: z.string().describe("Why this text is there, in one sentence, as reported by the model that wrote the email."),
+  })
+  .openapi("PreviewHighlight");
+
 const PreviewEmailResponseSchema = registry.register(
   "PreviewEmailResponse",
   z
@@ -668,6 +689,15 @@ const PreviewEmailResponseSchema = registry.register(
       bodyText: z.string().describe("The first email of the sequence the product would send, as plain text."),
       bodyHtml: z.string(),
       model: z.string().describe("Resolved model id that wrote the email."),
+      highlights: z
+        .array(PreviewHighlightSchema)
+        .nullable()
+        .describe(
+          "Why each sentence of bodyText exists and which input it rests on, in body order, non-overlapping. Reported by the SAME " +
+            "completion that wrote the email (no second call), then checked here: every text is verbatim in bodyText and every source " +
+            "is an input actually sent; anything failing a check is dropped, so a sentence may carry no highlight. null only for a " +
+            "preview stored before highlights existed."
+        ),
       cached: z.boolean().describe("true when this brand + recipient was already written and the stored email is returned (nothing billed)."),
       createdAt: z.string(),
     })

@@ -4,7 +4,7 @@ import { buildPreviewVariables, buildPreviewContext, previewRecipientKey } from 
 const R = { firstName: "Jane", lastName: "Doe", title: "VP Sales", companyName: "Acme" };
 
 describe("previewRecipientKey", () => {
-  const base = { recipient: R, promptType: "cold-email-v39", model: "pro" };
+  const base = { recipient: R, promptType: "cold-email-v39", model: "pro", annotationVersion: "highlights-v1" };
 
   it("treats casing and stray whitespace as the same recipient", () => {
     const a = previewRecipientKey(base);
@@ -18,6 +18,8 @@ describe("previewRecipientKey", () => {
     expect(previewRecipientKey({ ...base, audience: "SaaS" })).not.toBe(a);
     expect(previewRecipientKey({ ...base, model: "flash" })).not.toBe(a);
     expect(previewRecipientKey({ ...base, offerId: "o" })).not.toBe(a);
+    // A preview stored under an older annotation contract is rewritten, not served.
+    expect(previewRecipientKey({ ...base, annotationVersion: "highlights-v2" })).not.toBe(a);
   });
 });
 
