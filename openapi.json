@@ -499,6 +499,152 @@
           "attempts"
         ]
       },
+      "PreviewEmailRequest": {
+        "type": "object",
+        "properties": {
+          "brandId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A brand of the calling org. Its site must already be readable by brand-service."
+          },
+          "recipient": {
+            "$ref": "#/components/schemas/PreviewRecipient"
+          },
+          "audience": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The audience / segment the sample recipient was found in, in plain English. Given to the model as context."
+          },
+          "offerId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Which offer of the brand to pitch. Required by brand-service only when the brand sells several offers."
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "haiku",
+              "sonnet",
+              "opus",
+              "flash-lite",
+              "flash",
+              "flash-pro",
+              "pro",
+              "deepseek-flash",
+              "deepseek-pro",
+              "glm-flash",
+              "glm-pro",
+              "kimi-flash",
+              "kimi-pro",
+              "fable",
+              "gpt-pro"
+            ],
+            "description": "LLM model to generate with (version-free alias). Provider is derived automatically: anthropic → haiku | sonnet | opus; google → flash-lite | flash | flash-pro | pro; deepseek → deepseek-flash (DeepSeek V4 Flash) | deepseek-pro (DeepSeek V4 Pro); zai → glm-flash (glm-4.7-flashx) | glm-pro (glm-5.2); moonshot → kimi-flash (kimi-k2.6) | kimi-pro (kimi-k3). The six deepseek/zai/moonshot aliases are called directly on each vendor's OpenAI-compatible API. That path is text-only, which this service never exceeds; note that JSON-mode enforcement there is best-effort (fails loud rather than degrading), and a vendor whose account is out of credit answers 429 — surfaced as an error naming the provider, never silently rerouted to another vendor. Omit to use the default 'pro' (google) — unchanged from before this field existed."
+          }
+        },
+        "required": [
+          "brandId",
+          "recipient"
+        ]
+      },
+      "PreviewRecipient": {
+        "type": "object",
+        "properties": {
+          "firstName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lastName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The recipient's job title."
+          },
+          "companyName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "companyDomain": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The recipient's company website or domain."
+          },
+          "headline": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The recipient's own one-line professional headline."
+          },
+          "companyIndustry": {
+            "type": "string",
+            "minLength": 1
+          },
+          "companyDescription": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "firstName",
+          "lastName",
+          "title",
+          "companyName"
+        ]
+      },
+      "PreviewEmailResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stored preview id."
+          },
+          "brandId": {
+            "type": "string"
+          },
+          "brandName": {
+            "type": "string"
+          },
+          "recipient": {
+            "$ref": "#/components/schemas/PreviewRecipient"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "bodyText": {
+            "type": "string",
+            "description": "The first email of the sequence the product would send, as plain text."
+          },
+          "bodyHtml": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string",
+            "description": "Resolved model id that wrote the email."
+          },
+          "cached": {
+            "type": "boolean",
+            "description": "true when this brand + recipient was already written and the stored email is returned (nothing billed)."
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "brandId",
+          "brandName",
+          "recipient",
+          "subject",
+          "bodyText",
+          "bodyHtml",
+          "model",
+          "cached",
+          "createdAt"
+        ]
+      },
       "EmailGeneration": {
         "type": "object",
         "properties": {
@@ -2064,6 +2210,113 @@
           },
           "404": {
             "description": "expert-quote-pitch template not registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/preview-email": {
+      "post": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "Write ONE cold email for a brand and a sample recipient, before any campaign exists",
+        "description": "Writes the email exactly the way live campaigns do: the same stored platform cold-email template, the same brand intel request to brand-service, the same chat-service completion and default model. The LLM spend is declared and authorized against the calling org by chat-service; an org that cannot afford it gets 402. Creates no campaign, no lead and no email_generations row, so nothing here can be sent or counted. The same brand + recipient (+ audience, offer, model) returns the stored email instead of a second billed completion.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewEmailRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The written email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewEmailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, or brand-service refused the brand (e.g. it has no readable site)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "The calling org cannot afford the completion",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsufficientCreditsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Brand not found for this org, or the offer is not one of the brand's",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The brand sells several offers; name one with offerId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "brand-service or the model failed",
             "content": {
               "application/json": {
                 "schema": {

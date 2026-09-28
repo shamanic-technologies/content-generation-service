@@ -197,6 +197,13 @@
       "when": 1779432000000,
       "tag": "0027_reset_expert_quote_pitch_forks_generic_json",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1779518400000,
+      "tag": "0028_email_previews",
+      "breakpoints": true
     }
   ]
 }
