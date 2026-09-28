@@ -134,6 +134,10 @@ beforeEach(() => {
     model: "gemini-3.1-pro-preview",
     promptRaw: "p",
     responseRaw: {},
+    highlights: [
+      { text: "Hello.", source: "recipient.title", reason: "She runs sales." },
+      { text: "Invented.", source: "recipient.title", reason: "not in the body" },
+    ],
   });
   mockReturning.mockImplementation(async () => [storedRow({ runId: "run-1" })]);
 });
@@ -214,6 +218,39 @@ describe("POST /preview-email", () => {
     const res = await request(app).post("/preview-email").send(BODY);
     expect(res.status).toBe(200);
     expect(res.body.cached).toBe(true);
+  });
+
+  it("asks the same completion for highlights over the inputs actually sent, and stores + returns only the verified ones", async () => {
+    mockReturning.mockImplementation(async () => [storedRow({ runId: "run-1", highlights: mockValues.mock.calls[0][0].highlights })]);
+    const res = await request(app).post("/preview-email").send(BODY);
+    expect(res.status).toBe(200);
+    expect(mockGenerate).toHaveBeenCalledTimes(1);
+
+    const [params] = mockGenerate.mock.calls[0];
+    const ids = params.annotate.sources.map((s: { id: string }) => s.id);
+    expect(ids).toEqual(expect.arrayContaining(["recipient.title", "recipient.companyDomain", "audience", "brand.name", "brand.companyOverview", "instruction"]));
+    expect(ids).not.toContain("recipient.headline");
+
+    const stored = mockValues.mock.calls[0][0].highlights;
+    expect(stored).toEqual([
+      {
+        text: "Hello.",
+        start: 10,
+        end: 16,
+        kind: "prospect",
+        source: "recipient.title",
+        sourceLabel: "The prospect's job title",
+        sourceValue: "VP Sales",
+        reason: "She runs sales.",
+      },
+    ]);
+    expect(res.body.highlights).toEqual(stored);
+  });
+
+  it("returns highlights: null for a preview stored before highlights existed", async () => {
+    mockPreviewFindFirst.mockResolvedValue(storedRow({ highlights: null }));
+    const res = await request(app).post("/preview-email").send(BODY);
+    expect(res.body.highlights).toBeNull();
   });
 
   it("400s a recipient missing its name, title or company", async () => {

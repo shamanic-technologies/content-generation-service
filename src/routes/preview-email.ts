@@ -17,6 +17,12 @@ import {
   previewRecipientKey,
   type PreviewRecipient,
 } from "../lib/preview-email.js";
+import {
+  PREVIEW_ANNOTATION_VERSION,
+  buildHighlightSources,
+  resolveHighlights,
+  type PreviewHighlight,
+} from "../lib/preview-highlights.js";
 import { PreviewEmailRequestSchema } from "../schemas.js";
 
 const router = Router();
@@ -33,6 +39,7 @@ function toPreviewResponse(row: PreviewRow, cached: boolean) {
     bodyText: row.bodyText,
     bodyHtml: row.bodyHtml,
     model: row.model,
+    highlights: (row.highlights as PreviewHighlight[] | null) ?? null,
     cached,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
   };
@@ -68,7 +75,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     const orgId = req.orgId!;
     const identity = { orgId, userId: req.userId!, runId, brandId, offerId };
 
-    const recipientKey = previewRecipientKey({ recipient, audience, offerId, promptType: PREVIEW_PROMPT_TYPE, model });
+    const recipientKey = previewRecipientKey({ recipient, audience, offerId, promptType: PREVIEW_PROMPT_TYPE, model, annotationVersion: PREVIEW_ANNOTATION_VERSION });
     const findStored = () =>
       db.query.emailPreviews.findFirst({
         where: and(
@@ -106,6 +113,10 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
       extractTemplateVariableNames(storedPrompt.prompt)
     );
 
+    // Everything the email could rest on, from the inputs actually sent. The same
+    // completion reports which of these each sentence uses; no second call.
+    const sources = buildHighlightSources({ recipient, audience, brandName, brandFields: intel.fields ?? {} });
+
     traceEvent(runId, { service: "content-generation-service", event: "preview-email-start", detail: `brandId=${brandId}, type=${PREVIEW_PROMPT_TYPE}, model=${model}` }, req.headers).catch(() => {});
     const result = await generateFromTemplate(
       {
@@ -113,6 +124,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
         variables,
         campaignContext: buildPreviewContext(audience),
         model,
+        annotate: { sources: sources.map((s) => ({ id: s.id, label: s.label })) },
       },
       identity
     );
@@ -120,6 +132,12 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     const first = result.sequence[0];
     if (!first || !first.bodyText) {
       throw new Error(`Model returned no email body for preview (brandId=${brandId})`);
+    }
+
+    const rawHighlights = result.highlights ?? [];
+    const highlights = resolveHighlights(rawHighlights, first.bodyText, sources);
+    if (highlights.length < rawHighlights.length) {
+      console.warn(`[content-generation-service] /preview-email dropped ${rawHighlights.length - highlights.length}/${rawHighlights.length} highlights that were not verbatim in the body or named an input that was not sent (brandId=${brandId})`);
     }
 
     let row: PreviewRow;
@@ -143,6 +161,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
           tokensOutput: result.tokensOutput,
           promptRaw: result.promptRaw,
           responseRaw: result.responseRaw,
+          highlights,
         })
         .returning();
     } catch (err) {
@@ -153,7 +172,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
       return res.json(toPreviewResponse(winner, true));
     }
 
-    traceEvent(runId, { service: "content-generation-service", event: "preview-email-done", detail: `previewId=${row.id}, model=${result.model}, tokensIn=${result.tokensInput}, tokensOut=${result.tokensOutput}` }, req.headers).catch(() => {});
+    traceEvent(runId, { service: "content-generation-service", event: "preview-email-done", detail: `previewId=${row.id}, model=${result.model}, highlights=${highlights.length}/${rawHighlights.length}, tokensIn=${result.tokensInput}, tokensOut=${result.tokensOutput}` }, req.headers).catch(() => {});
     res.json(toPreviewResponse(row, false));
   } catch (error) {
     if (error instanceof InsufficientCreditsError) {
