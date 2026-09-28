@@ -31,6 +31,20 @@ export interface GenerateFromTemplateParams {
    * byte-identical to what it was before this field existed.
    */
   language?: string | null;
+  /**
+   * Ask the SAME completion to also report, per sentence of the first email, which
+   * input it rests on. Absent → the system prompt and response schema are
+   * byte-identical to before this existed (every /generate call). Only the
+   * signed-out preview sets it; see src/lib/preview-highlights.ts.
+   */
+  annotate?: { sources: ReadonlyArray<{ id: string; label: string }> } | null;
+}
+
+/** One highlight exactly as the model reported it; validated by the caller. */
+export interface RawHighlight {
+  text: unknown;
+  source: unknown;
+  reason: unknown;
 }
 
 export interface SequenceStep {
@@ -48,6 +62,8 @@ export interface GenerateResult {
   model: string;
   promptRaw: string;
   responseRaw: object;
+  /** Present only when `annotate` was requested: the model's raw report, unvalidated. */
+  highlights?: RawHighlight[];
 }
 
 /**
@@ -201,6 +217,54 @@ const GENERATE_RESPONSE_SCHEMA_STRICT = {
   required: ["subject", "emails"],
 } as const;
 
+/**
+ * The response schema with a `highlights` array appended AFTER `emails`, so the
+ * model writes the email before it writes anything about it. `source` is an enum
+ * of the inputs actually present, which structured output enforces where the
+ * provider supports it; the caller re-validates either way.
+ */
+function withHighlightsSchema(
+  base: typeof GENERATE_RESPONSE_SCHEMA | typeof GENERATE_RESPONSE_SCHEMA_STRICT,
+  sourceIds: string[],
+  strict: boolean
+): Record<string, unknown> {
+  const item: Record<string, unknown> = {
+    type: "object",
+    properties: {
+      text: { type: "string" },
+      source: { type: "string", enum: sourceIds },
+      reason: { type: "string" },
+    },
+    required: ["text", "source", "reason"],
+  };
+  if (strict) item.additionalProperties = false;
+  return {
+    ...base,
+    properties: { ...base.properties, highlights: { type: "array", items: item } },
+    required: [...base.required, "highlights"],
+  };
+}
+
+/**
+ * Appended to the system prompt only when annotations are requested. The rule
+ * that matters: the annotation reports what the model DID, it never changes what
+ * it writes, and it may only name an input from the list it was given.
+ */
+export function buildAnnotationDirective(sources: ReadonlyArray<{ id: string; label: string }>): string {
+  return [
+    "",
+    "Annotations (a report about the FIRST email, written after it):",
+    "- Write the emails exactly as you would without this section. The annotations describe the writing; they must never change it.",
+    '- Add a top-level "highlights" array. Cover every sentence of the first email body after the greeting, in order. Each highlight is one sentence or one clause of it.',
+    '- "text": copied VERBATIM from the first email body (same characters, same punctuation), never paraphrased.',
+    '- "source": the ONE input below that this text rests on. Use a data input when the text states or builds on that fact; use "instruction" only when the text exists because a writing rule asked for it (a greeting, a diagnostic question, the call to action) and no fact below produced it.',
+    '- "reason": one short plain-English sentence saying why this text is there, naming the fact or the rule. Never claim a fact that is not in the input you name.',
+    "- Allowed sources (id: what it is):",
+    ...sources.map((s) => `  - ${s.id}: ${s.label}`),
+    '- Return "highlights" inside the same JSON object as "subject" and "emails".',
+  ].join("\n");
+}
+
 // ─── Global system prompt ────────────────────────────────────────────────────
 // Applied to every generation call. Contains universal rules that should NOT
 // be repeated in individual prompt templates.
@@ -325,15 +389,22 @@ export async function generateFromTemplate(
   };
 
   // Absent language → the system prompt is byte-identical to before this existed.
-  const systemPrompt = params.language
+  let systemPrompt = params.language
     ? `${GLOBAL_SYSTEM_PROMPT}\n${buildLanguageDirective(params.language)}`
     : GLOBAL_SYSTEM_PROMPT;
+  const annotate = params.annotate && params.annotate.sources.length > 0 ? params.annotate : null;
+  if (annotate) {
+    systemPrompt = `${systemPrompt}\n${buildAnnotationDirective(annotate.sources)}`;
+  }
 
   const model = params.model ?? DEFAULT_MODEL;
   const provider = MODEL_TO_PROVIDER[model];
   // Anthropic structured-output requires the strict schema; google ignores it.
-  const responseSchema =
+  const baseSchema =
     provider === "anthropic" ? GENERATE_RESPONSE_SCHEMA_STRICT : GENERATE_RESPONSE_SCHEMA;
+  const responseSchema = annotate
+    ? withHighlightsSchema(baseSchema, annotate.sources.map((s) => s.id), provider === "anthropic")
+    : baseSchema;
 
   const response = await fetchWithRetry(
     `${CHAT_SERVICE_URL}/complete`,
@@ -365,8 +436,17 @@ export async function generateFromTemplate(
 
   const parsed = parseSequenceFromJson(data.json);
 
+  let highlights: RawHighlight[] | undefined;
+  if (annotate) {
+    const raw = (data.json as { highlights?: unknown }).highlights;
+    highlights = Array.isArray(raw)
+      ? raw.filter((h): h is RawHighlight => h !== null && typeof h === "object")
+      : [];
+  }
+
   return {
     ...parsed,
+    ...(highlights ? { highlights } : {}),
     tokensInput: data.tokensInput,
     tokensOutput: data.tokensOutput,
     model: data.model,

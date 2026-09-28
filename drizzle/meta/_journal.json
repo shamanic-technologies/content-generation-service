@@ -204,6 +204,13 @@
       "when": 1779518400000,
       "tag": "0028_email_previews",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1779604800000,
+      "tag": "0029_email_previews_highlights",
+      "breakpoints": true
     }
   ]
 }

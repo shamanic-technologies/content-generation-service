@@ -111,6 +111,8 @@ export function previewRecipientKey(input: {
   offerId?: string;
   promptType: string;
   model: string;
+  /** Part of the identity so a stored preview written under an older contract is rewritten. */
+  annotationVersion: string;
 }): string {
   const norm = (v: string | undefined) => (v ?? "").trim().toLowerCase().replace(/\s+/g, " ");
   const r = input.recipient;
@@ -127,6 +129,7 @@ export function previewRecipientKey(input: {
     norm(input.offerId),
     input.promptType,
     input.model,
+    input.annotationVersion,
   ]);
   return createHash("sha256").update(canonical).digest("hex");
 }

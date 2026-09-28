@@ -128,6 +128,9 @@ export const emailPreviews = pgTable(
     tokensOutput: integer("tokens_output"),
     promptRaw: text("prompt_raw"),
     responseRaw: jsonb("response_raw"),
+    // Validated per-sentence reasons (src/lib/preview-highlights.ts). NULL on rows
+    // written before highlights existed.
+    highlights: jsonb("highlights"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
