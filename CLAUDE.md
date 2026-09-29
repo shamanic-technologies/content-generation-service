@@ -182,6 +182,7 @@ email-gateway `POST /orgs/send` requires a numeric `daysSinceLastStep` on every 
 - Step 1 without a delay is `0`. Nothing precedes the first email, so that is the definition, not a guess.
 - A later step without a finite non-negative delay throws `IncompleteSequenceError` → `/generate` answers **502** naming the generation and steps. That wait is the model's choice and cannot be derived, so it is never filled.
 - Do not "fix" the gateway's requirement or default follow-up delays here.
+- **An unusable answer is regenerated once before it fails** (`MAX_GENERATION_ATTEMPTS = 2` in `generateFromTemplate`): an `IncompleteSequenceError` or chat-service's 502 `"LLM returned invalid JSON."` (glm/deepseek, stochastic) re-asks the same request; the last attempt's error is thrown unchanged. 402, 429, 400, generic 5xx and connect errors are never regenerated here. chat-service bills each `/complete` itself; stored tokens sum every completion that returned. Each regeneration logs `[content-gen] regenerating unusable sequence` + trace event `llm-regenerate`.
 
 ## Serving the copy that was written (`bodySource`)
 
