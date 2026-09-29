@@ -213,6 +213,9 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         campaignContext,
         model,
         language,
+        onRegenerate: ({ attempt, reason }) => {
+          traceEvent(req.runId!, { service: "content-generation-service", event: "llm-regenerate", detail: `Unusable sequence, regenerating (attempt ${attempt}): ${reason}`, level: "warn" }, req.headers).catch(() => {});
+        },
       },
       { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug, audienceId, offerId }
     );
