@@ -9,6 +9,8 @@ import { assertExpertQuotePitchVariables, ExpertQuotePitchInputError } from "../
 import { createRun, updateRun } from "../lib/runs-client.js";
 import { getCampaignFeatureInputs } from "../lib/campaign-client.js";
 import { extractBrandFields, resolveBrandNames } from "../lib/brand-client.js";
+import { fetchOfferGiveLists } from "../lib/offer-give-lists-client.js";
+import { type OfferGiveLists, hasGiveLists } from "../lib/offer-give-lists.js";
 import { fetchWorkflowExamples, toExampleEmail } from "../lib/examples-query.js";
 import { getLeadBusinessLanguages } from "../lib/lead-client.js";
 import { resolveLeadLanguage } from "../lib/lead-language.js";
@@ -203,6 +205,24 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       }
     }
 
+    // The offer's confirmed give lists: what the sender gives for free to a prospect
+    // who replies (the email's ask) and what it never gives. Read only when the run
+    // names its offer — workflow-service injects `offerId` into every /generate body,
+    // and every live campaign has one. A brand-service failure degrades loudly to no
+    // lists, i.e. the email is written exactly as it was before this existed.
+    let giveLists: OfferGiveLists | null = null;
+    if (offerId && brandIds.length === 1) {
+      try {
+        giveLists = await fetchOfferGiveLists(serviceIdentity);
+      } catch (err) {
+        console.error(`[content-gen] Could not read the offer's give lists (offerId=${offerId}) — generating without them.`, err instanceof Error ? err.message : err);
+        traceEvent(req.runId!, { service: "content-generation-service", event: "offer-give-lists-unavailable", detail: `offerId=${offerId}: ${err instanceof Error ? err.message : String(err)}`, level: "warn" }, req.headers).catch(() => {});
+      }
+      if (hasGiveLists(giveLists)) {
+        traceEvent(req.runId!, { service: "content-generation-service", event: "offer-give-lists-resolved", detail: `offerId=${offerId}, giveForFree=${giveLists.giveForFree.length}, neverGive=${giveLists.neverGive.length}` }, req.headers).catch(() => {});
+      }
+    }
+
     // Generate using the stored prompt + variable substitution + campaign context
     // Chat-service handles key resolution, billing, and cost tracking internally
     traceEvent(req.runId!, { service: "content-generation-service", event: "llm-call-start", detail: `Calling chat-service with prompt type=${type}, variableCount=${Object.keys(variables).length}, hasCampaignContext=${!!campaignContext}, language=${language ?? "english"}` }, req.headers).catch(() => {});
@@ -213,6 +233,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         campaignContext,
         model,
         language,
+        giveLists,
         onRegenerate: ({ attempt, reason }) => {
           traceEvent(req.runId!, { service: "content-generation-service", event: "llm-regenerate", detail: `Unusable sequence, regenerating (attempt ${attempt}): ${reason}`, level: "warn" }, req.headers).catch(() => {});
         },

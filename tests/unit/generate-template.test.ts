@@ -144,6 +144,8 @@ describe("POST /generate (template-based)", () => {
         // No leadId on this request, so no language is resolved and the system
         // prompt stays byte-identical to what it was before that field existed.
         language: null,
+        // No offerId on this request, so no give lists are read.
+        giveLists: null,
         // Traces each regeneration of an unusable answer on the run.
         onRegenerate: expect.any(Function),
       },
