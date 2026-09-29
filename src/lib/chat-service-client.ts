@@ -10,7 +10,7 @@ import { fetchWithRetry } from "./fetch-retry.js";
 import { type Tracking, buildTrackingHeaders } from "./tracking.js";
 import { unescapeLineBreaks, collapseEscapedLineBreaks } from "./escaped-line-breaks.js";
 import { textToHtml } from "./text-to-html.js";
-import { withSequenceDelays } from "./sequence-delays.js";
+import { withSequenceDelays, IncompleteSequenceError } from "./sequence-delays.js";
 
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
 const CHAT_SERVICE_API_KEY = process.env.CHAT_SERVICE_API_KEY || "";
@@ -44,6 +44,11 @@ export interface GenerateFromTemplateParams {
    * absent/false → the key is not sent and `/generate`'s request is byte-identical.
    */
   disableThinking?: boolean;
+  /**
+   * Called before each REGENERATION (never before the first attempt), with the
+   * reason the previous answer was unusable. Lets the route trace it on the run.
+   */
+  onRegenerate?: (info: { attempt: number; reason: string }) => void;
 }
 
 /** One highlight exactly as the model reported it; validated by the caller. */
@@ -349,6 +354,44 @@ function chatCompleteErrorMessage(
 
 // ─── Chat-service response type ─────────────────────────────────────────────
 
+// ─── Regenerating an unusable answer ────────────────────────────────────────
+//
+// A completion can come back with a SHAPE this service cannot use: chat-service
+// answers 502 "LLM returned invalid JSON." when the model's text did not parse,
+// or the parsed sequence fails `withSequenceDelays` (a follow-up with no delay).
+// Both are stochastic model defects — the same request asked again almost always
+// comes back usable — and each one used to fail a whole campaign run.
+//
+// So an unusable answer is asked again, up to MAX_GENERATION_ATTEMPTS in total,
+// and the LAST attempt's error is thrown unchanged (same message, same status),
+// so a generation that stays unusable fails exactly as loud as before.
+//
+// Everything else is NOT regenerated here: 402 (credits), 429 (vendor capacity —
+// chat-service already spent its own retry budget), a 400 option refusal, a
+// generic 5xx ("LLM call failed"), and connect-phase failures (fetchWithRetry owns
+// those). Cost stays correct per attempt: chat-service provisions and actualizes
+// every /complete call it serves on the run, including the unusable one, and this
+// service declares no cost of its own.
+export const MAX_GENERATION_ATTEMPTS = 2;
+
+/** chat-service's 502 for model output that did not parse as JSON. */
+export class UnusableModelJsonError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UnusableModelJsonError";
+  }
+}
+
+function isInvalidJsonAnswer(status: number, errorText: string): boolean {
+  if (status !== 502) return false;
+  try {
+    const body = JSON.parse(errorText) as { error?: unknown };
+    return typeof body.error === "string" && body.error.startsWith("LLM returned invalid JSON");
+  } catch {
+    return false;
+  }
+}
+
 interface ChatCompleteResponse {
   content: string;
   json: { subject: string; emails: Array<{ body: string; daysSinceLastStep?: unknown }> };
@@ -412,36 +455,61 @@ export async function generateFromTemplate(
     ? withHighlightsSchema(baseSchema, annotate.sources.map((s) => s.id), provider === "anthropic")
     : baseSchema;
 
-  const response = await fetchWithRetry(
-    `${CHAT_SERVICE_URL}/complete`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        message: prompt,
-        systemPrompt,
-        responseSchema,
-        provider,
-        model,
-        ...(params.disableThinking === true ? { disableThinking: true } : {}),
-      }),
-    },
-    { label: "chat-service /complete" }
-  );
+  const requestBody = JSON.stringify({
+    message: prompt,
+    systemPrompt,
+    responseSchema,
+    provider,
+    model,
+    ...(params.disableThinking === true ? { disableThinking: true } : {}),
+  });
 
-  if (response.status === 402) {
-    const error = await response.json() as { balance_cents: number; required_cents: number };
-    throw new InsufficientCreditsError(error.balance_cents, error.required_cents);
+  // Tokens of every attempt that returned a completion, so the stored figures
+  // cover the unusable answer too (an invalid-JSON 502 reports none).
+  let tokensInput = 0;
+  let tokensOutput = 0;
+  let completion: ChatCompleteResponse | undefined;
+  let sequence: ReturnType<typeof parseSequenceFromJson> | undefined;
+
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const response = await fetchWithRetry(
+        `${CHAT_SERVICE_URL}/complete`,
+        { method: "POST", headers, body: requestBody },
+        { label: "chat-service /complete" }
+      );
+
+      if (response.status === 402) {
+        const error = await response.json() as { balance_cents: number; required_cents: number };
+        throw new InsufficientCreditsError(error.balance_cents, error.required_cents);
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        const message = chatCompleteErrorMessage(response.status, provider, model, errorText);
+        throw isInvalidJsonAnswer(response.status, errorText)
+          ? new UnusableModelJsonError(message)
+          : new Error(message);
+      }
+
+      completion = await response.json() as ChatCompleteResponse;
+      tokensInput += completion.tokensInput ?? 0;
+      tokensOutput += completion.tokensOutput ?? 0;
+      sequence = parseSequenceFromJson(completion.json);
+      break;
+    } catch (err) {
+      const unusable = err instanceof UnusableModelJsonError || err instanceof IncompleteSequenceError;
+      if (!unusable || attempt >= MAX_GENERATION_ATTEMPTS) throw err;
+      const reason = (err as Error).message;
+      console.warn(
+        `[content-gen] regenerating unusable sequence: attempt ${attempt + 1}/${MAX_GENERATION_ATTEMPTS} runId=${identity.runId} provider=${provider} model=${model} reason=${reason}`
+      );
+      params.onRegenerate?.({ attempt: attempt + 1, reason });
+    }
   }
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(chatCompleteErrorMessage(response.status, provider, model, errorText));
-  }
-
-  const data = await response.json() as ChatCompleteResponse;
-
-  const parsed = parseSequenceFromJson(data.json);
+  // The loop only exits by `break` after both are set, or by throwing.
+  const data = completion!;
+  const parsed = sequence!;
 
   let highlights: RawHighlight[] | undefined;
   if (annotate) {
@@ -454,8 +522,8 @@ export async function generateFromTemplate(
   return {
     ...parsed,
     ...(highlights ? { highlights } : {}),
-    tokensInput: data.tokensInput,
-    tokensOutput: data.tokensOutput,
+    tokensInput,
+    tokensOutput,
     model: data.model,
     promptRaw: prompt,
     responseRaw: data,

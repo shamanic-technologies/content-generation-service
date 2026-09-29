@@ -84,8 +84,8 @@ describe("generateFromTemplate — the model's delays", () => {
     vi.unstubAllGlobals();
   });
 
-  it("fails loud when the model omitted a follow-up's delay", async () => {
-    const mockFetch = vi.fn().mockResolvedValueOnce(answer([{ body: "a", daysSinceLastStep: 0 }, { body: "b" }]));
+  it("fails loud when the model omitted a follow-up's delay on every attempt", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(answer([{ body: "a", daysSinceLastStep: 0 }, { body: "b" }]));
     vi.stubGlobal("fetch", mockFetch);
     await expect(generateFromTemplate(PARAMS, IDENTITY)).rejects.toThrow(IncompleteSequenceError);
     vi.unstubAllGlobals();
