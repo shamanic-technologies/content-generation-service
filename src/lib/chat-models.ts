@@ -7,7 +7,7 @@
 // module is never mocked, so the alias set is always real. (Same defer-the-access
 // philosophy as the schema/auth mock gotcha in CLAUDE.md.)
 
-// Version-free model aliases. The 15 are unique across providers, so the provider is
+// Version-free model aliases. The 17 are unique across providers, so the provider is
 // derived from the alias — callers pick ONE model, never a provider/model pair.
 //
 // Seven of them are served by chat-service's DIRECT-VENDOR path (v0.51.0 removed the
@@ -62,6 +62,9 @@ export const CHAT_MODELS = [
   "kimi-pro",
   "fable",
   "gpt-pro",
+  // chat-service #464 (2026-09-29): GPT-6 Sol and GPT-5.6 Terra, direct-vendor `openai`.
+  "gpt-sol",
+  "gpt-terra",
 ] as const;
 export type ChatModel = (typeof CHAT_MODELS)[number];
 
@@ -89,7 +92,17 @@ export const MODEL_TO_PROVIDER: Record<ChatModel, ChatProvider> = {
   "kimi-pro": "moonshot",
   fable: "anthropic",
   "gpt-pro": "openai",
+  "gpt-sol": "openai",
+  "gpt-terra": "openai",
 };
 
 // Default when the caller omits `model` — preserves the historical google/pro path.
 export const DEFAULT_MODEL: ChatModel = "pro";
+
+// Model of the signed-out onboarding preview (`POST /preview-email`) when the caller
+// omits `model`. Owner-decided 2026-09-29: the whole public onboarding runs on ONE
+// model, Claude Sonnet 5.5 (chat-service's `sonnet` alias), after a Gemini credit
+// outage broke it and `pro` measured p50 15.6s / p90 22s there. Scoped to the preview
+// route ONLY: campaign generations keep DEFAULT_MODEL, and a DAG's stated `model`
+// always wins. No fallback to the previous model — a failure fails loud.
+export const PREVIEW_MODEL: ChatModel = "sonnet";

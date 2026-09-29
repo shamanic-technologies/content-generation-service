@@ -21,6 +21,8 @@ const ALL_MODELS = [
   "kimi-pro",
   "fable",
   "gpt-pro",
+  "gpt-sol",
+  "gpt-terra",
 ];
 
 describe("model alias set", () => {
@@ -42,6 +44,8 @@ describe("model alias set", () => {
       "kimi-pro": "moonshot",
       fable: "anthropic",
       "gpt-pro": "openai",
+      "gpt-sol": "openai",
+      "gpt-terra": "openai",
     });
   });
 
