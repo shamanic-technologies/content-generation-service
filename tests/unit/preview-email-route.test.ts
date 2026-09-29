@@ -162,7 +162,8 @@ describe("POST /preview-email", () => {
 
     const [params, chatIdentity] = mockGenerate.mock.calls[0];
     expect(params.promptTemplate).toBe(TEMPLATE);
-    expect(params.model).toBe("pro");
+    expect(params.model).toBe("sonnet");
+    expect(params.disableThinking).toBe(true);
     expect(params.variables).toMatchObject({
       leadFirstName: "Jane",
       leadTitle: "VP Sales",

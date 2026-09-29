@@ -240,6 +240,16 @@ describe("model selection (generateFromTemplate)", () => {
     expect(body.responseSchema.additionalProperties).toBeUndefined();
   });
 
+  it("sends disableThinking only when asked (preview), never on the default path", async () => {
+    mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
+    await generateFromTemplate(PARAMS, IDENTITY);
+    expect("disableThinking" in JSON.parse(mockFetch.mock.calls[0][1].body)).toBe(false);
+
+    mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
+    await generateFromTemplate({ ...PARAMS, model: "sonnet", disableThinking: true }, IDENTITY);
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body).disableThinking).toBe(true);
+  });
+
   it("model=sonnet derives the anthropic provider and sends the strict schema", async () => {
     mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
 
