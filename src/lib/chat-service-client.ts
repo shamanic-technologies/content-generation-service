@@ -1,5 +1,6 @@
 import { extractTemplateVariableNames } from "./template-vars.js";
 import { buildLeadContextBlock } from "./lead-context-block.js";
+import { type OfferGiveLists, buildGiveListsDirective } from "./offer-give-lists.js";
 import {
   type ChatModel,
   type ChatProvider,
@@ -31,6 +32,12 @@ export interface GenerateFromTemplateParams {
    * byte-identical to what it was before this field existed.
    */
   language?: string | null;
+  /**
+   * The offer's confirmed give lists (what the sender gives for free to a prospect
+   * who replies, and what it never gives). Absent, null or both empty → no rule is
+   * emitted and the system prompt stays byte-identical. See offer-give-lists.ts.
+   */
+  giveLists?: OfferGiveLists | null;
   /**
    * Ask the SAME completion to also report, per sentence of the first email, which
    * input it rests on. Absent → the system prompt and response schema are
@@ -441,6 +448,10 @@ export async function generateFromTemplate(
   let systemPrompt = params.language
     ? `${GLOBAL_SYSTEM_PROMPT}\n${buildLanguageDirective(params.language)}`
     : GLOBAL_SYSTEM_PROMPT;
+  const giveListsDirective = params.giveLists ? buildGiveListsDirective(params.giveLists) : "";
+  if (giveListsDirective) {
+    systemPrompt = `${systemPrompt}\n${giveListsDirective}`;
+  }
   const annotate = params.annotate && params.annotate.sources.length > 0 ? params.annotate : null;
   if (annotate) {
     systemPrompt = `${systemPrompt}\n${buildAnnotationDirective(annotate.sources)}`;

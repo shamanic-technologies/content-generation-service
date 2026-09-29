@@ -17,6 +17,7 @@
  * Pure leaf module (no I/O, never `vi.mock`'d).
  */
 import { createHash } from "node:crypto";
+import { type OfferGiveLists, giveListsFingerprint } from "./offer-give-lists.js";
 
 /**
  * Most-rendered platform cold-email template in production (890 of the last 7 days'
@@ -113,10 +114,15 @@ export function previewRecipientKey(input: {
   model: string;
   /** Part of the identity so a stored preview written under an older contract is rewritten. */
   annotationVersion: string;
+  /**
+   * The offer's confirmed give lists, so editing them writes a new preview. Empty →
+   * not part of the key, which stays byte-identical to what it was before the lists existed.
+   */
+  giveLists?: OfferGiveLists | null;
 }): string {
   const norm = (v: string | undefined) => (v ?? "").trim().toLowerCase().replace(/\s+/g, " ");
   const r = input.recipient;
-  const canonical = JSON.stringify([
+  let canonical = JSON.stringify([
     norm(r.firstName),
     norm(r.lastName),
     norm(r.title),
@@ -131,5 +137,7 @@ export function previewRecipientKey(input: {
     input.model,
     input.annotationVersion,
   ]);
+  const lists = giveListsFingerprint(input.giveLists);
+  if (lists) canonical = `${canonical}${lists}`;
   return createHash("sha256").update(canonical).digest("hex");
 }

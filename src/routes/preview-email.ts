@@ -5,6 +5,7 @@ import { emailPreviews, prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { generateFromTemplate, InsufficientCreditsError } from "../lib/chat-service-client.js";
 import { fetchBrandIntel, BrandIntelError } from "../lib/brand-client.js";
+import { fetchOfferGiveLists, OfferGiveListsError } from "../lib/offer-give-lists-client.js";
 import { extractTemplateVariableNames } from "../lib/template-vars.js";
 import { PREVIEW_MODEL } from "../lib/chat-models.js";
 import { IncompleteSequenceError } from "../lib/sequence-delays.js";
@@ -75,7 +76,12 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     const orgId = req.orgId!;
     const identity = { orgId, userId: req.userId!, runId, brandId, offerId };
 
-    const recipientKey = previewRecipientKey({ recipient, audience, offerId, promptType: PREVIEW_PROMPT_TYPE, model, annotationVersion: PREVIEW_ANNOTATION_VERSION });
+    // The offer's confirmed give lists shape the email (its ask, and what it must never
+    // offer), so they are read first and are part of the stored preview's identity.
+    // A plain read, nothing billed; a refusal fails the preview like its brand intel does.
+    const giveLists = await fetchOfferGiveLists(identity);
+
+    const recipientKey = previewRecipientKey({ recipient, audience, offerId, promptType: PREVIEW_PROMPT_TYPE, model, annotationVersion: PREVIEW_ANNOTATION_VERSION, giveLists });
     const findStored = () =>
       db.query.emailPreviews.findFirst({
         where: and(
@@ -115,7 +121,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
 
     // Everything the email could rest on, from the inputs actually sent. The same
     // completion reports which of these each sentence uses; no second call.
-    const sources = buildHighlightSources({ recipient, audience, brandName, brandFields: intel.fields ?? {} });
+    const sources = buildHighlightSources({ recipient, audience, brandName, brandFields: intel.fields ?? {}, giveForFree: giveLists?.giveForFree });
 
     traceEvent(runId, { service: "content-generation-service", event: "preview-email-start", detail: `brandId=${brandId}, type=${PREVIEW_PROMPT_TYPE}, model=${model}` }, req.headers).catch(() => {});
     const result = await generateFromTemplate(
@@ -124,6 +130,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
         variables,
         campaignContext: buildPreviewContext(audience),
         model,
+        giveLists,
         annotate: { sources: sources.map((s) => ({ id: s.id, label: s.label })) },
         // A visitor waits on this; ask for the lowest reasoning level.
         disableThinking: true,
@@ -184,7 +191,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
         required_cents: error.required_cents,
       });
     }
-    if (error instanceof BrandIntelError) {
+    if (error instanceof BrandIntelError || error instanceof OfferGiveListsError) {
       // brand-service's own verdict on the brand (not found, several offers, bad
       // input, unscrapable site) is the caller's to act on; anything else is ours.
       const status = [400, 404, 409].includes(error.status) ? error.status
