@@ -38,6 +38,12 @@ export interface GenerateFromTemplateParams {
    * signed-out preview sets it; see src/lib/preview-highlights.ts.
    */
   annotate?: { sources: ReadonlyArray<{ id: string; label: string }> } | null;
+  /**
+   * Ask chat-service for the model's lowest reasoning level (Anthropic: output_config
+   * effort "low"; Gemini: its per-model floor). Only the latency-bound preview sets it;
+   * absent/false → the key is not sent and `/generate`'s request is byte-identical.
+   */
+  disableThinking?: boolean;
 }
 
 /** One highlight exactly as the model reported it; validated by the caller. */
@@ -417,6 +423,7 @@ export async function generateFromTemplate(
         responseSchema,
         provider,
         model,
+        ...(params.disableThinking === true ? { disableThinking: true } : {}),
       }),
     },
     { label: "chat-service /complete" }

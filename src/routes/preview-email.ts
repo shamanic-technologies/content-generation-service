@@ -6,7 +6,7 @@ import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { generateFromTemplate, InsufficientCreditsError } from "../lib/chat-service-client.js";
 import { fetchBrandIntel, BrandIntelError } from "../lib/brand-client.js";
 import { extractTemplateVariableNames } from "../lib/template-vars.js";
-import { DEFAULT_MODEL } from "../lib/chat-models.js";
+import { PREVIEW_MODEL } from "../lib/chat-models.js";
 import { IncompleteSequenceError } from "../lib/sequence-delays.js";
 import { traceEvent } from "../lib/trace-event.js";
 import {
@@ -71,7 +71,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
       return res.status(400).json({ error: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ") });
     }
     const { brandId, recipient, audience, offerId } = parsed.data;
-    const model = parsed.data.model ?? DEFAULT_MODEL;
+    const model = parsed.data.model ?? PREVIEW_MODEL;
     const orgId = req.orgId!;
     const identity = { orgId, userId: req.userId!, runId, brandId, offerId };
 
@@ -125,6 +125,8 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
         campaignContext: buildPreviewContext(audience),
         model,
         annotate: { sources: sources.map((s) => ({ id: s.id, label: s.label })) },
+        // A visitor waits on this; ask for the lowest reasoning level.
+        disableThinking: true,
       },
       identity
     );
