@@ -57,6 +57,19 @@ vi.mock("../../src/lib/brand-client.js", () => {
   };
 });
 
+const mockFetchGiveLists = vi.fn();
+vi.mock("../../src/lib/offer-give-lists-client.js", () => {
+  class OfferGiveListsError extends Error {
+    constructor(public status: number, public body: string) {
+      super(`brand-service user-fields read failed: ${status} - ${body}`);
+    }
+  }
+  return {
+    OfferGiveListsError,
+    fetchOfferGiveLists: (...a: unknown[]) => mockFetchGiveLists(...a),
+  };
+});
+
 const mockGenerate = vi.fn();
 vi.mock("../../src/lib/chat-service-client.js", () => {
   class InsufficientCreditsError extends Error {
@@ -77,6 +90,7 @@ vi.mock("../../src/lib/trace-event.js", () => ({
 import previewRoutes from "../../src/routes/preview-email.js";
 import { InsufficientCreditsError } from "../../src/lib/chat-service-client.js";
 import { BrandIntelError } from "../../src/lib/brand-client.js";
+import { OfferGiveListsError } from "../../src/lib/offer-give-lists-client.js";
 import { BRAND_INTEL_FIELDS, PREVIEW_PROMPT_TYPE } from "../../src/lib/preview-email.js";
 
 const app = express();
@@ -123,6 +137,7 @@ beforeEach(() => {
   mockPreviewFindFirst.mockResolvedValue(undefined);
   mockPromptFindFirst.mockResolvedValue({ type: PREVIEW_PROMPT_TYPE, prompt: TEMPLATE });
   mockFetchBrandIntel.mockResolvedValue(INTEL);
+  mockFetchGiveLists.mockResolvedValue({ giveForFree: [], neverGive: [] });
   mockGenerate.mockResolvedValue({
     subject: "Quick question",
     sequence: [
@@ -184,7 +199,7 @@ describe("POST /preview-email", () => {
     expect(mockValues.mock.calls[0][0]).toMatchObject({ bodyText: "Hi Jane,\n\nHello.", brandName: "Brand Co" });
   });
 
-  it("answers a repeat from storage without calling brand-service or chat-service", async () => {
+  it("answers a repeat from storage without brand intel or a completion", async () => {
     mockPreviewFindFirst.mockResolvedValue(storedRow());
     const res = await request(app).post("/preview-email").send(BODY);
     expect(res.status).toBe(200);
@@ -209,6 +224,50 @@ describe("POST /preview-email", () => {
     mockFetchBrandIntel.mockRejectedValueOnce(new BrandIntelError(409, "SEVERAL_OFFERS"));
     expect((await request(app).post("/preview-email").send(BODY)).status).toBe(409);
     mockFetchBrandIntel.mockRejectedValueOnce(new BrandIntelError(500, "boom"));
+    expect((await request(app).post("/preview-email").send(BODY)).status).toBe(502);
+    expect(mockGenerate).not.toHaveBeenCalled();
+  });
+
+  it("writes with the offer's give lists: passed to the completion, and the free-give list is a highlight source", async () => {
+    const lists = { giveForFree: ["A free pipeline audit"], neverGive: ["Discounts"] };
+    mockFetchGiveLists.mockResolvedValue(lists);
+    const res = await request(app).post("/preview-email").send({ ...BODY, offerId: "9a1b2c3d-0000-4000-8000-000000000001" });
+    expect(res.status).toBe(200);
+
+    const [identity] = mockFetchGiveLists.mock.calls[0];
+    expect(identity).toMatchObject({ brandId: BRAND_ID, offerId: "9a1b2c3d-0000-4000-8000-000000000001" });
+
+    const [params] = mockGenerate.mock.calls[0];
+    expect(params.giveLists).toEqual(lists);
+    const source = params.annotate.sources.find((s: { id: string }) => s.id === "offer.giveForFree");
+    expect(source).toBeDefined();
+    // The won't-give list is never something an email rests on.
+    expect(params.annotate.sources.map((s: { id: string }) => s.id).join(" ")).not.toContain("neverGive");
+  });
+
+  it("offers no free-give highlight source when the lists are empty", async () => {
+    await request(app).post("/preview-email").send(BODY);
+    const [params] = mockGenerate.mock.calls[0];
+    expect(params.giveLists).toEqual({ giveForFree: [], neverGive: [] });
+    expect(params.annotate.sources.map((s: { id: string }) => s.id)).not.toContain("offer.giveForFree");
+  });
+
+  it("stores a different preview once the give lists change, and the same one while they are empty", async () => {
+    await request(app).post("/preview-email").send(BODY);
+    const emptyKey = mockValues.mock.calls[0][0].recipientKey;
+    mockFetchGiveLists.mockResolvedValue({ giveForFree: ["A free audit"], neverGive: [] });
+    await request(app).post("/preview-email").send(BODY);
+    const listKey = mockValues.mock.calls[1][0].recipientKey;
+    expect(listKey).not.toBe(emptyKey);
+    mockFetchGiveLists.mockResolvedValue({ giveForFree: [], neverGive: [] });
+    await request(app).post("/preview-email").send(BODY);
+    expect(mockValues.mock.calls[2][0].recipientKey).toBe(emptyKey);
+  });
+
+  it("passes brand-service's verdict on the give-list read through, before any completion", async () => {
+    mockFetchGiveLists.mockRejectedValueOnce(new OfferGiveListsError(409, "SEVERAL_OFFERS"));
+    expect((await request(app).post("/preview-email").send(BODY)).status).toBe(409);
+    mockFetchGiveLists.mockRejectedValueOnce(new OfferGiveListsError(500, "boom"));
     expect((await request(app).post("/preview-email").send(BODY)).status).toBe(502);
     expect(mockGenerate).not.toHaveBeenCalled();
   });

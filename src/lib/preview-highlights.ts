@@ -86,6 +86,8 @@ export function buildHighlightSources(input: {
   audience?: string;
   brandName: string;
   brandFields: Record<string, { value: unknown } | undefined>;
+  /** The offer's confirmed free-give items; the email's ask may rest on them. */
+  giveForFree?: readonly string[];
 }): HighlightSource[] {
   const sources: HighlightSource[] = [];
   for (const [key, label] of RECIPIENT_LABELS) {
@@ -102,6 +104,10 @@ export function buildHighlightSources(input: {
     if (value) {
       sources.push({ id: `brand.${key}`, kind: "brand", label: `The sender's company: ${humanize(key)} (read from its website)`, value });
     }
+  }
+  const giveForFree = valueToString(input.giveForFree ? [...input.giveForFree] : undefined);
+  if (giveForFree) {
+    sources.push({ id: "offer.giveForFree", kind: "brand", label: "What the sender gives for free to a prospect who replies (stated by the sender)", value: giveForFree });
   }
   sources.push({ id: "instruction", kind: "instruction", label: "A writing rule of the email template, not a fact", value: null });
   return sources;
