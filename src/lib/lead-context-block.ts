@@ -56,6 +56,18 @@ export function buildLeadContextBlock(
       const value = variables[variable.name];
       if (!hasValue(value)) continue;
 
+      if (variable.format) {
+        const formatted = variable.format(value);
+        if (formatted === null) {
+          console.warn(
+            `[content-gen] context variable '${variable.name}' carried no usable value, not rendered`
+          );
+          continue;
+        }
+        lines.push(...formatted);
+        continue;
+      }
+
       const rendered = render(value);
       // A multi-line rendering (object, or array of objects) reads better under
       // its own label than glued onto the bullet.

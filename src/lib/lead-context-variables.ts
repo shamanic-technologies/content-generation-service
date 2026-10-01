@@ -28,6 +28,12 @@ export interface PromptContextVariable {
   /** Human label used as the bullet key when the value is rendered into the prompt. */
   label: string;
   description: string;
+  /**
+   * Optional dedicated renderer for a structured value. Returns the lines to
+   * place under the group heading, or null when the value carries nothing
+   * usable (then nothing is rendered for it). Absent → the generic renderer.
+   */
+  format?: (value: unknown) => string[] | null;
 }
 
 /** Person-level facts. */
@@ -83,10 +89,49 @@ const ORGANIZATION_VARIABLES: PromptContextVariable[] = [
   { name: "leadCompanyCountry", label: "country", description: "Country of the organization's headquarters." },
 ];
 
+/**
+ * The buying signal lead-service serves on a lead from a signal audience:
+ * `{ type, occurredOn, fact, source, sourceUrl }`. `fact` is one English
+ * sentence meant to be quoted. Rendered as the fact plus its kind and date;
+ * `source` / `sourceUrl` are provenance for us, not copy for the prospect, so
+ * they never reach the prompt. A value without a usable `fact` renders nothing:
+ * the signal is never reconstructed from its other fields.
+ */
+export function formatBuyingSignal(value: unknown): string[] | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const signal = value as Record<string, unknown>;
+  const fact = typeof signal.fact === "string" ? signal.fact.trim() : "";
+  if (!fact) return null;
+  const lines = [`- what happened: ${fact}`];
+  if (typeof signal.type === "string" && signal.type.trim()) {
+    lines.push(`- kind: ${signal.type.trim().replace(/_/g, " ")}`);
+  }
+  if (typeof signal.occurredOn === "string" && signal.occurredOn.trim()) {
+    lines.push(`- date: ${signal.occurredOn.trim()}`);
+  }
+  return lines;
+}
+
+/** A recent event observed at the recipient or their organization. */
+const SIGNAL_VARIABLES: PromptContextVariable[] = [
+  {
+    name: "leadBuyingSignal",
+    label: "buying signal",
+    description:
+      "A recent event that makes this recipient worth writing to now, exactly as lead-service serves it on the lead: an object with type ('hiring', 'job_change' or 'funding'), occurredOn (YYYY-MM-DD), fact (one English sentence meant to be quoted), source and sourceUrl. Rendered as the fact, its kind and its date; the email may reference it. Omit the key entirely when the lead carries no signal.",
+    format: formatBuyingSignal,
+  },
+];
+
 /** Ordered groups, used to render the context block under readable headings. */
 export const LEAD_CONTEXT_GROUPS: Array<{ heading: string; variables: PromptContextVariable[] }> = [
   { heading: "Person", variables: PERSON_VARIABLES },
   { heading: "Organization", variables: ORGANIZATION_VARIABLES },
+  {
+    heading:
+      "Recent buying signal (an event we observed; you may reference it as the reason for writing now, stated as given and without embellishment)",
+    variables: SIGNAL_VARIABLES,
+  },
 ];
 
 /** Flat catalog of every accepted context variable, person first. */

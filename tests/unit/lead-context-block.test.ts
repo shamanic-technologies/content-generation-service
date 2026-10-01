@@ -241,3 +241,65 @@ describe("generateFromTemplate with lead context", () => {
     expect(sent).not.toContain("do-not-leak");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Buying signal (`leadBuyingSignal`), served by lead-service on signal leads
+// ---------------------------------------------------------------------------
+
+const SIGNAL = {
+  type: "hiring",
+  occurredOn: "2026-09-21",
+  fact: "Acme Clinics posted a job for Office Manager (Austin, United States) on September 21, 2026",
+  source: "apollo:job_postings",
+  sourceUrl: "https://example.com/jobs/123",
+};
+
+describe("leadBuyingSignal", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("is published in the context catalog", () => {
+    const published = LEAD_CONTEXT_VARIABLES_PUBLISHED.find((v) => v.name === "leadBuyingSignal");
+    expect(published).toBeDefined();
+    expect(published!.description).toContain("job_change");
+  });
+
+  it("renders the fact, kind and date, never the provenance", () => {
+    const out = block({ leadBuyingSignal: SIGNAL });
+    expect(out).toContain("Recent buying signal");
+    expect(out).toContain(`- what happened: ${SIGNAL.fact}`);
+    expect(out).toContain("- kind: hiring");
+    expect(out).toContain("- date: 2026-09-21");
+    expect(out).not.toContain("apollo:job_postings");
+    expect(out).not.toContain(SIGNAL.sourceUrl);
+    expect(out).not.toContain("—");
+  });
+
+  it("humanizes job_change", () => {
+    expect(block({ leadBuyingSignal: { ...SIGNAL, type: "job_change" } })).toContain("- kind: job change");
+  });
+
+  it("renders nothing for a signal without a usable fact", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(block({ leadBuyingSignal: { ...SIGNAL, fact: "  " } })).toBe("");
+    expect(block({ leadBuyingSignal: "hiring" })).toBe("");
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("puts the fact and date in the prompt sent to the model", async () => {
+    const variables = { leadFirstName: "Sarah", leadCompanyName: "Acme", leadBuyingSignal: SIGNAL };
+    const sent = await promptSentFor(variables);
+    expect(sent).toContain(SIGNAL.fact);
+    expect(sent).toContain("2026-09-21");
+    expect(sent).toContain(substituteVariables(TEMPLATE, variables));
+  });
+
+  it("leaves the prompt byte-identical when the key is absent", async () => {
+    const variables = { leadFirstName: "Sarah", leadCompanyName: "Acme", leadCity: "Berlin" };
+    const withoutKey = await promptSentFor(variables);
+    expect(withoutKey).not.toContain("buying signal");
+    expect(withoutKey.toLowerCase()).not.toContain("signal");
+  });
+});
