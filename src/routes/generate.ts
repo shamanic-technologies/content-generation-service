@@ -25,6 +25,8 @@ import { traceEvent } from "../lib/trace-event.js";
 import { findGenerationForLead } from "../lib/lead-generation-query.js";
 import { withResolvedBody } from "../lib/generation-body.js";
 import { withSequenceDelays, IncompleteSequenceError } from "../lib/sequence-delays.js";
+import { stripDashes, hasDashes } from "../lib/dashes.js";
+import { textToHtml } from "../lib/text-to-html.js";
 
 const router = Router();
 
@@ -45,16 +47,25 @@ function toGenerationResponse(generation: {
 }) {
   return {
     id: generation.id,
-    subject: generation.subject ?? "",
+    // Rows stored before the dash strip (dashes.ts) are re-served to uncontacted
+    // leads, so the same rule applies here; rows stored since are unchanged by it.
+    subject: stripDashes(generation.subject ?? ""),
     // Stored rows predate the generation-time check (glm/deepseek dropped step 1's
     // delay), and the lead-retry path re-serves them — so the same rule applies here.
     sequence: withSequenceDelays(
-      (generation.sequence ?? []) as Array<{ daysSinceLastStep?: unknown }>,
+      (generation.sequence ?? []) as Array<{ daysSinceLastStep?: unknown; bodyText?: unknown }>,
       generation.id
-    ),
+    ).map(withoutDashes),
     tokensInput: generation.tokensInput ?? 0,
     tokensOutput: generation.tokensOutput ?? 0,
   };
+}
+
+/** A stored step with a dash in its body gets the stripped text and HTML regenerated from it. */
+function withoutDashes<T extends { bodyText?: unknown }>(step: T): T {
+  if (typeof step.bodyText !== "string" || !hasDashes(step.bodyText)) return step;
+  const bodyText = stripDashes(step.bodyText);
+  return { ...step, bodyText, bodyHtml: textToHtml(bodyText) };
 }
 
 /**

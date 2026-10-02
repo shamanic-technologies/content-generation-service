@@ -16,6 +16,7 @@
  * Pure leaf module (no I/O, never `vi.mock`'d).
  */
 import { unescapeLineBreaks } from "./escaped-line-breaks.js";
+import { stripDashes } from "./dashes.js";
 import type { PreviewRecipient } from "./preview-email.js";
 
 /** Bump when the annotation contract changes, so stored previews are rewritten. */
@@ -131,8 +132,8 @@ export function resolveHighlights(
     const source = byId.get(h.source);
     const reason = h.reason.trim();
     if (!source || !reason) continue;
-    // The body went through unescapeLineBreaks + trim; the model's copy of it may not have.
-    const text = unescapeLineBreaks(h.text).trim();
+    // The body went through unescapeLineBreaks + stripDashes + trim; the model's copy of it may not have.
+    const text = stripDashes(unescapeLineBreaks(h.text)).trim();
     if (!text) continue;
     let start = bodyText.indexOf(text, cursor);
     if (start === -1) start = bodyText.indexOf(text);
