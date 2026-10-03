@@ -112,13 +112,40 @@ export function formatBuyingSignal(value: unknown): string[] | null {
   return lines;
 }
 
+/**
+ * Signal kinds the email may quote. The signal always chooses WHO we write to;
+ * only these kinds may also shape WHAT we write. Any other kind (today
+ * `linkedin_engagement`: the person reacted to or commented on a competitor's
+ * LinkedIn post, which reads as surveillance) never reaches the model at all,
+ * neither in the recipient-context block nor through a `{{leadBuyingSignal}}`
+ * token. A new kind is not quotable until it is added here.
+ */
+export const QUOTABLE_BUYING_SIGNAL_TYPES: ReadonlySet<string> = new Set(["hiring", "job_change", "funding"]);
+
+/**
+ * The caller's variables minus a buying signal whose kind may not be quoted.
+ * Returns the same object when there is nothing to drop, so every other
+ * request is untouched.
+ */
+export function withoutUnquotableBuyingSignal(
+  variables: Record<string, unknown>
+): Record<string, unknown> {
+  const signal = variables.leadBuyingSignal;
+  // Not a signal object: the context block already renders nothing for it.
+  if (signal === null || typeof signal !== "object" || Array.isArray(signal)) return variables;
+  const type = (signal as Record<string, unknown>).type;
+  if (typeof type === "string" && QUOTABLE_BUYING_SIGNAL_TYPES.has(type.trim())) return variables;
+  const { leadBuyingSignal: _dropped, ...rest } = variables;
+  return rest;
+}
+
 /** A recent event observed at the recipient or their organization. */
 const SIGNAL_VARIABLES: PromptContextVariable[] = [
   {
     name: "leadBuyingSignal",
     label: "buying signal",
     description:
-      "A recent event that makes this recipient worth writing to now, exactly as lead-service serves it on the lead: an object with type ('hiring', 'job_change' or 'funding'), occurredOn (YYYY-MM-DD), fact (one English sentence meant to be quoted), source and sourceUrl. Rendered as the fact, its kind and its date; the email may reference it. Omit the key entirely when the lead carries no signal.",
+      "A recent event that makes this recipient worth writing to now, exactly as lead-service serves it on the lead: an object with type ('hiring', 'job_change' or 'funding'), occurredOn (YYYY-MM-DD), fact (one English sentence meant to be quoted), source and sourceUrl. Rendered as the fact, its kind and its date; the email may reference it. Any other type (e.g. 'linkedin_engagement') is accepted and never shown to the model: it chose the recipient, it does not shape the message. Omit the key entirely when the lead carries no signal.",
     format: formatBuyingSignal,
   },
 ];

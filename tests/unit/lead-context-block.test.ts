@@ -3,6 +3,7 @@ import { buildLeadContextBlock } from "../../src/lib/lead-context-block";
 import {
   LEAD_CONTEXT_VARIABLES,
   LEAD_CONTEXT_VARIABLES_PUBLISHED,
+  withoutUnquotableBuyingSignal,
 } from "../../src/lib/lead-context-variables";
 import {
   coerceToString,
@@ -193,10 +194,10 @@ function successResponse() {
   };
 }
 
-async function promptSentFor(variables: Record<string, unknown>): Promise<string> {
+async function promptSentFor(variables: Record<string, unknown>, promptTemplate = TEMPLATE): Promise<string> {
   mockFetch.mockResolvedValueOnce(successResponse());
-  await generateFromTemplate({ promptTemplate: TEMPLATE, variables }, IDENTITY);
-  const [, opts] = mockFetch.mock.calls[0];
+  await generateFromTemplate({ promptTemplate, variables }, IDENTITY);
+  const [, opts] = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
   return JSON.parse(opts.body).message as string;
 }
 
@@ -301,5 +302,87 @@ describe("leadBuyingSignal", () => {
     const withoutKey = await promptSentFor(variables);
     expect(withoutKey).not.toContain("buying signal");
     expect(withoutKey.toLowerCase()).not.toContain("signal");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// linkedin_engagement: the signal chooses WHO we write to, never WHAT we write
+// ---------------------------------------------------------------------------
+
+const ENGAGEMENT_SIGNAL = {
+  type: "linkedin_engagement",
+  occurredOn: "2026-09-30",
+  fact: "Sarah Lee commented on Rivalco's LinkedIn post on September 30, 2026",
+  source: "linkedin:company/rivalco",
+  sourceUrl: "https://www.linkedin.com/feed/update/urn:li:activity:123",
+  engagement: {
+    competitorPage: "https://www.linkedin.com/company/rivalco",
+    postUrl: "https://www.linkedin.com/feed/update/urn:li:activity:123",
+    postPublishedOn: "2026-09-29",
+    kind: "comment",
+    reactionType: null,
+    commentText: "Great take on onboarding automation",
+    commentedAt: "2026-09-30T10:00:00Z",
+  },
+};
+
+function expectNoEngagementTrace(text: string): void {
+  for (const needle of [
+    ENGAGEMENT_SIGNAL.fact,
+    "Rivalco",
+    "rivalco",
+    "linkedin_engagement",
+    "linkedin engagement",
+    "activity:123",
+    "commented",
+    "onboarding automation",
+    "2026-09-30",
+    "buying signal",
+  ]) {
+    expect(text).not.toContain(needle);
+  }
+}
+
+describe("leadBuyingSignal of kind linkedin_engagement", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("leaves no trace of the engagement, the competitor or the post in the prompt", async () => {
+    const variables = { leadFirstName: "Sarah", leadCompanyName: "Acme", leadCity: "Berlin", leadBuyingSignal: ENGAGEMENT_SIGNAL };
+    const sent = await promptSentFor(variables);
+    expectNoEngagementTrace(sent);
+    // The rest of the recipient context is still there.
+    expect(sent).toContain("- city: Berlin");
+  });
+
+  it("sends exactly the prompt the lead would get with no signal at all", async () => {
+    const base = { leadFirstName: "Sarah", leadCompanyName: "Acme", leadCity: "Berlin" };
+    const withEngagement = await promptSentFor({ ...base, leadBuyingSignal: ENGAGEMENT_SIGNAL });
+    const withoutSignal = await promptSentFor(base);
+    expect(withEngagement).toBe(withoutSignal);
+  });
+
+  it("is not rendered through a {{leadBuyingSignal}} token either", async () => {
+    const sent = await promptSentFor(
+      { leadFirstName: "Sarah", leadCompanyName: "Acme", leadBuyingSignal: ENGAGEMENT_SIGNAL },
+      "Write to {{leadFirstName}}. Signal: {{leadBuyingSignal}}"
+    );
+    expectNoEngagementTrace(sent);
+  });
+
+  it("treats an unknown or missing kind the same way: a kind is quotable only once listed", () => {
+    expect(withoutUnquotableBuyingSignal({ leadBuyingSignal: { ...SIGNAL, type: "web_visit" } })).toEqual({});
+    expect(withoutUnquotableBuyingSignal({ leadBuyingSignal: { fact: SIGNAL.fact } })).toEqual({});
+  });
+
+  it("keeps hiring, job_change and funding byte-identical", async () => {
+    for (const type of ["hiring", "job_change", "funding"]) {
+      const variables = { leadFirstName: "Sarah", leadCompanyName: "Acme", leadBuyingSignal: { ...SIGNAL, type } };
+      expect(withoutUnquotableBuyingSignal(variables)).toBe(variables);
+      const sent = await promptSentFor(variables);
+      expect(sent).toContain(`- what happened: ${SIGNAL.fact}`);
+      expect(sent).toContain(`- kind: ${type.replace("_", " ")}`);
+    }
   });
 });
