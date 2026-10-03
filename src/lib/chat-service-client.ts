@@ -1,5 +1,6 @@
 import { extractTemplateVariableNames } from "./template-vars.js";
 import { buildLeadContextBlock } from "./lead-context-block.js";
+import { withoutUnquotableBuyingSignal } from "./lead-context-variables.js";
 import { type OfferGiveLists, buildGiveListsDirective } from "./offer-give-lists.js";
 import {
   type ChatModel,
@@ -419,14 +420,17 @@ export async function generateFromTemplate(
   params: GenerateFromTemplateParams,
   identity: ChatServiceIdentity
 ): Promise<GenerateResult> {
-  let prompt = substituteVariables(params.promptTemplate, params.variables);
+  // A buying signal the email may not quote (see QUOTABLE_BUYING_SIGNAL_TYPES)
+  // is dropped before anything is rendered, so no path can show it to the model.
+  const variables = withoutUnquotableBuyingSignal(params.variables);
+  let prompt = substituteVariables(params.promptTemplate, variables);
 
   // Lead + organization facts the caller supplied that this template body never
   // asked for. Empty when the caller sent none of them, in which case the prompt
   // is byte-identical to what it was before this block existed.
   const leadContext = buildLeadContextBlock(
     params.promptTemplate,
-    params.variables,
+    variables,
     coerceToString
   );
   if (leadContext) {
