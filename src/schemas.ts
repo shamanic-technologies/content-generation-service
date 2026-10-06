@@ -757,6 +757,68 @@ registry.registerPath({
   },
 });
 
+export const PreviewEmailPrepareRequestSchema = registry.register(
+  "PreviewEmailPrepareRequest",
+  z
+    .object({
+      brandId: z.string().uuid().describe("A brand of the calling org, the one the previews will be written for."),
+      offerId: z
+        .string()
+        .uuid()
+        .optional()
+        .describe("Optional. Only needed when the brand already sells several offers; the warmed brand intel is shared by every offer of the brand."),
+    })
+    .openapi("PreviewEmailPrepareRequest")
+);
+
+const PreviewEmailPrepareResponseSchema = registry.register(
+  "PreviewEmailPrepareResponse",
+  z
+    .object({
+      brandId: z.string().uuid(),
+      status: z
+        .enum(["started", "in_progress", "ready"])
+        .describe(
+          "started: a warm-up began with this call. in_progress: one was already running for this brand; nothing new was started. " +
+            "ready: one completed in the last few minutes; nothing was called. A warm-up that fails is logged and not reported here: " +
+            "the preview then makes the read itself and returns brand-service's verdict."
+        ),
+    })
+    .openapi("PreviewEmailPrepareResponse")
+);
+
+registry.registerPath({
+  method: "post",
+  path: "/preview-email/prepare",
+  tags: ["Content Generation"],
+  summary: "Get ready to write preview emails for a brand (fire and forget)",
+  description:
+    "Sends brand-service, in the background, the same brand-intel request POST /preview-email will send for this brand (the best " +
+    "mature workflow's own field set), so the first preview finds it cached and only pays for the model. Answers 202 at once and never " +
+    "waits for the site read (which can take minutes). Idempotent: at most one warm-up per org + brand runs at a time, a repeat " +
+    "while it runs or shortly after it completes starts nothing, and brand-service's field cache makes any later repeat a cache read. " +
+    "A POST /preview-email arriving while a warm-up runs waits for it rather than reading the site a second time. " +
+    "Billing: the only spend is that brand-service read, the preview's own spend moved earlier, billed by brand-service to the calling " +
+    "org (x-org-id). No email is written and no completion is made here.",
+  request: {
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
+    body: {
+      required: true,
+      content: { "application/json": { schema: PreviewEmailPrepareRequestSchema } },
+    },
+  },
+  responses: {
+    202: {
+      description: "Warm-up started, already running, or recently completed",
+      content: { "application/json": { schema: PreviewEmailPrepareResponseSchema } },
+    },
+    400: {
+      description: "Invalid request or missing identity headers",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Shared EmailGeneration schema (mirrors Drizzle emailGenerations table)
 // ---------------------------------------------------------------------------

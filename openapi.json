@@ -707,6 +707,46 @@
           "reason"
         ]
       },
+      "PreviewEmailPrepareRequest": {
+        "type": "object",
+        "properties": {
+          "brandId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A brand of the calling org, the one the previews will be written for."
+          },
+          "offerId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Optional. Only needed when the brand already sells several offers; the warmed brand intel is shared by every offer of the brand."
+          }
+        },
+        "required": [
+          "brandId"
+        ]
+      },
+      "PreviewEmailPrepareResponse": {
+        "type": "object",
+        "properties": {
+          "brandId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "started",
+              "in_progress",
+              "ready"
+            ],
+            "description": "started: a warm-up began with this call. in_progress: one was already running for this brand; nothing new was started. ready: one completed in the last few minutes; nothing was called. A warm-up that fails is logged and not reported here: the preview then makes the read itself and returns brand-service's verdict."
+          }
+        },
+        "required": [
+          "brandId",
+          "status"
+        ]
+      },
       "EmailGeneration": {
         "type": "object",
         "properties": {
@@ -2379,6 +2419,73 @@
           },
           "502": {
             "description": "brand-service or the model failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/preview-email/prepare": {
+      "post": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "Get ready to write preview emails for a brand (fire and forget)",
+        "description": "Sends brand-service, in the background, the same brand-intel request POST /preview-email will send for this brand (the best mature workflow's own field set), so the first preview finds it cached and only pays for the model. Answers 202 at once and never waits for the site read (which can take minutes). Idempotent: at most one warm-up per org + brand runs at a time, a repeat while it runs or shortly after it completes starts nothing, and brand-service's field cache makes any later repeat a cache read. A POST /preview-email arriving while a warm-up runs waits for it rather than reading the site a second time. Billing: the only spend is that brand-service read, the preview's own spend moved earlier, billed by brand-service to the calling org (x-org-id). No email is written and no completion is made here.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewEmailPrepareRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Warm-up started, already running, or recently completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewEmailPrepareResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or missing identity headers",
             "content": {
               "application/json": {
                 "schema": {
