@@ -147,3 +147,30 @@ export async function resolveBrandNames(brandIds: string[]): Promise<Map<string,
     return new Map();
   }
 }
+
+/** A brand-service brand-row read refusal, carried with its status so the caller can answer in kind. */
+export class BrandRowsError extends Error {
+  constructor(public status: number, public body: string) {
+    super(`brand-service GET /internal/brands failed: ${status} - ${body}`);
+  }
+}
+
+/**
+ * The brand's row(s) exactly as a live cold-email DAG reads them (`brands-fetch` /
+ * `brand-profile` nodes: `GET /internal/brands?ids=`), for a preview whose template is
+ * fed from them. Fail loud: an absent brand is a 404, any refusal is thrown.
+ */
+export async function fetchBrandRows(brandId: string, identity: ServiceIdentity): Promise<Array<Record<string, unknown>>> {
+  const response = await fetch(`${BRAND_SERVICE_URL}/internal/brands?ids=${encodeURIComponent(brandId)}`, {
+    headers: buildHeaders(identity),
+  });
+  if (!response.ok) {
+    throw new BrandRowsError(response.status, await response.text());
+  }
+  const data = (await response.json()) as { brands?: Array<Record<string, unknown>> };
+  const rows = (data.brands ?? []).filter((b) => b.id === brandId);
+  if (rows.length === 0) {
+    throw new BrandRowsError(404, `brand ${brandId} not found`);
+  }
+  return rows;
+}

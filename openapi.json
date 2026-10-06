@@ -523,29 +523,6 @@
             "type": "string",
             "format": "uuid",
             "description": "Which offer of the brand to pitch. Required by brand-service only when the brand sells several offers."
-          },
-          "model": {
-            "type": "string",
-            "enum": [
-              "haiku",
-              "sonnet",
-              "opus",
-              "flash-lite",
-              "flash",
-              "flash-pro",
-              "pro",
-              "deepseek-flash",
-              "deepseek-pro",
-              "glm-flash",
-              "glm-pro",
-              "kimi-flash",
-              "kimi-pro",
-              "fable",
-              "gpt-pro",
-              "gpt-sol",
-              "gpt-terra"
-            ],
-            "description": "LLM model to generate with (version-free alias). Provider is derived automatically: anthropic → haiku | sonnet | opus; google → flash-lite | flash | flash-pro | pro; deepseek → deepseek-flash (DeepSeek V4 Flash) | deepseek-pro (DeepSeek V4 Pro); zai → glm-flash (glm-4.7-flashx) | glm-pro (glm-5.2); moonshot → kimi-flash (kimi-k2.6) | kimi-pro (kimi-k3). The six deepseek/zai/moonshot aliases are called directly on each vendor's OpenAI-compatible API. That path is text-only, which this service never exceeds; note that JSON-mode enforcement there is best-effort (fails loud rather than degrading), and a vendor whose account is out of credit answers 429 — surfaced as an error naming the provider, never silently rerouted to another vendor. Omit to use the default 'pro' (google) — unchanged from before this field existed."
           }
         },
         "required": [
@@ -630,6 +607,20 @@
             "type": "string",
             "description": "Resolved model id that wrote the email."
           },
+          "promptType": {
+            "type": "string",
+            "description": "The prompt template that wrote the email: the best mature cold-email workflow's, when it was written."
+          },
+          "modelAlias": {
+            "type": "string",
+            "nullable": true,
+            "description": "The model alias the workflow states (e.g. glm-pro). null on a preview stored before the preview followed the best mature workflow."
+          },
+          "workflowSlug": {
+            "type": "string",
+            "nullable": true,
+            "description": "The workflow whose template + model wrote the email (the best mature cold-email workflow at the time). null on a preview stored before the preview followed it."
+          },
           "highlights": {
             "type": "array",
             "nullable": true,
@@ -655,6 +646,9 @@
           "bodyText",
           "bodyHtml",
           "model",
+          "promptType",
+          "modelAlias",
+          "workflowSlug",
           "highlights",
           "cached",
           "createdAt"
@@ -2295,7 +2289,7 @@
           "Content Generation"
         ],
         "summary": "Write ONE cold email for a brand and a sample recipient, before any campaign exists",
-        "description": "Writes the email exactly the way live campaigns do: the same stored platform cold-email template, the same brand intel request to brand-service, the same chat-service completion and default model. The LLM spend is declared and authorized against the calling org by chat-service; an org that cannot afford it gets 402. Creates no campaign, no lead and no email_generations row, so nothing here can be sent or counted. The same brand + recipient (+ audience, offer, model) returns the stored email instead of a second billed completion.",
+        "description": "Writes the email the visitor would receive once they pay: the prompt template AND model of the fleet's best MATURE cold-email workflow (features-service leg ranking, read at request time, cached a few minutes), with that workflow's own brand intel request and input mapping. 502/503 when the ranking or the workflow cannot be read: there is no fallback template or model. A request carrying `model` is refused (400). The LLM spend is declared and authorized against the calling org by chat-service; an org that cannot afford it gets 402. Creates no campaign, no lead and no email_generations row, so nothing here can be sent or counted. The same brand + recipient (+ audience, offer, model) returns the stored email instead of a second billed completion, as long as the best workflow is unchanged.",
         "parameters": [
           {
             "schema": {

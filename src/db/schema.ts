@@ -131,6 +131,10 @@ export const emailPreviews = pgTable(
     // Validated per-sentence reasons (src/lib/preview-highlights.ts). NULL on rows
     // written before highlights existed.
     highlights: jsonb("highlights"),
+    // The best mature cold-email workflow whose template + model wrote it, and the model
+    // alias that workflow states. NULL on rows written before the preview followed it.
+    workflowSlug: text("workflow_slug"),
+    modelAlias: text("model_alias"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
