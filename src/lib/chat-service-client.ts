@@ -48,12 +48,6 @@ export interface GenerateFromTemplateParams {
    */
   annotate?: { sources: ReadonlyArray<{ id: string; label: string }> } | null;
   /**
-   * Ask chat-service for the model's lowest reasoning level (Anthropic: output_config
-   * effort "low"; Gemini: its per-model floor). Only the latency-bound preview sets it;
-   * absent/false → the key is not sent and `/generate`'s request is byte-identical.
-   */
-  disableThinking?: boolean;
-  /**
    * Called before each REGENERATION (never before the first attempt), with the
    * reason the previous answer was unusable. Lets the route trace it on the run.
    */
@@ -477,7 +471,6 @@ export async function generateFromTemplate(
     responseSchema,
     provider,
     model,
-    ...(params.disableThinking === true ? { disableThinking: true } : {}),
   });
 
   // Tokens of every attempt that returned a completion, so the stored figures

@@ -4,16 +4,15 @@ import { db } from "../db/index.js";
 import { emailPreviews, prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { generateFromTemplate, InsufficientCreditsError } from "../lib/chat-service-client.js";
-import { fetchBrandIntel, BrandIntelError } from "../lib/brand-client.js";
+import { fetchBrandIntel, fetchBrandRows, BrandIntelError, BrandRowsError } from "../lib/brand-client.js";
 import { fetchOfferGiveLists, OfferGiveListsError } from "../lib/offer-give-lists-client.js";
 import { extractTemplateVariableNames } from "../lib/template-vars.js";
-import { PREVIEW_MODEL } from "../lib/chat-models.js";
 import { IncompleteSequenceError } from "../lib/sequence-delays.js";
 import { traceEvent } from "../lib/trace-event.js";
+import { resolvePreviewWorkflow } from "../lib/preview-workflow-client.js";
+import { PreviewWorkflowError, planNeedsBrandRows, resolvePreviewVariables } from "../lib/preview-workflow.js";
 import {
-  PREVIEW_PROMPT_TYPE,
   BRAND_INTEL_FIELDS,
-  buildPreviewVariables,
   buildPreviewContext,
   previewRecipientKey,
   type PreviewRecipient,
@@ -40,6 +39,11 @@ function toPreviewResponse(row: PreviewRow, cached: boolean) {
     bodyText: row.bodyText,
     bodyHtml: row.bodyHtml,
     model: row.model,
+    // Which workflow's template + model wrote it. Null on rows stored before the preview
+    // followed the best mature workflow.
+    promptType: row.promptType,
+    modelAlias: row.modelAlias ?? null,
+    workflowSlug: row.workflowSlug ?? null,
     highlights: (row.highlights as PreviewHighlight[] | null) ?? null,
     cached,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
@@ -54,7 +58,10 @@ function isPreviewDuplicateError(err: unknown): boolean {
 /**
  * POST /preview-email — ONE cold email for a brand of the calling org and a sample
  * recipient, written before any campaign or lead exists (the signed-out onboarding's
- * last screen). See src/lib/preview-email.ts for why this is the product's real writing.
+ * last screen). It is written with the template + model of the fleet's best MATURE
+ * cold-email workflow, read at request time (src/lib/preview-workflow.ts): the email the
+ * visitor would receive once they pay. No fallback template or model: an unreadable
+ * ranking fails the request.
  *
  * Billing: the only paid call is the chat-service completion, which provisions,
  * authorizes and declares the LLM cost against the calling org (x-org-id) itself — the
@@ -71,8 +78,10 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ") });
     }
+    if (req.body && typeof req.body === "object" && "model" in req.body) {
+      return res.status(400).json({ error: "model: not accepted; the preview writes with the model of the best mature cold-email workflow" });
+    }
     const { brandId, recipient, audience, offerId } = parsed.data;
-    const model = parsed.data.model ?? PREVIEW_MODEL;
     const orgId = req.orgId!;
     const identity = { orgId, userId: req.userId!, runId, brandId, offerId };
 
@@ -81,7 +90,12 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     // A plain read, nothing billed; a refusal fails the preview like its brand intel does.
     const giveLists = await fetchOfferGiveLists(identity);
 
-    const recipientKey = previewRecipientKey({ recipient, audience, offerId, promptType: PREVIEW_PROMPT_TYPE, model, annotationVersion: PREVIEW_ANNOTATION_VERSION, giveLists });
+    // The best mature cold-email workflow's template + model (cached a few minutes). Part
+    // of the stored preview's identity, so a new best workflow writes a new preview.
+    const plan = await resolvePreviewWorkflow(identity);
+    const model = plan.model;
+
+    const recipientKey = previewRecipientKey({ recipient, audience, offerId, promptType: plan.promptType, model, workflowSlug: plan.workflowSlug, annotationVersion: PREVIEW_ANNOTATION_VERSION, giveLists });
     const findStored = () =>
       db.query.emailPreviews.findFirst({
         where: and(
@@ -99,23 +113,26 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
       return res.json(toPreviewResponse(existing, true));
     }
 
-    // The same brand-service request the live cold-email workflows send; it is also the
-    // check that brandId is a brand of this org, and it carries the brand's name.
-    const intel = await fetchBrandIntel(BRAND_INTEL_FIELDS, identity);
+    // The same brand-service request the workflow's own brand-extract-fields node sends; it
+    // is also the check that brandId is a brand of this org, and it carries the brand's name.
+    const intel = await fetchBrandIntel(plan.brandIntelFields ?? BRAND_INTEL_FIELDS, identity);
     const brandName = intel.brands[0]?.name;
     if (!brandName) {
       throw new Error(`brand-service returned no brand for brandId=${brandId}`);
     }
 
-    const storedPrompt = await db.query.prompts.findFirst({ where: eq(prompts.type, PREVIEW_PROMPT_TYPE) });
+    // The brand rows the workflow's brands-fetch / brand-profile nodes read, when its
+    // template is fed from them.
+    const brands = planNeedsBrandRows(plan) ? await fetchBrandRows(brandId, identity) : null;
+
+    const storedPrompt = await db.query.prompts.findFirst({ where: eq(prompts.type, plan.promptType) });
     if (!storedPrompt) {
-      throw new Error(`Preview prompt type=${PREVIEW_PROMPT_TYPE} is not registered`);
+      throw new Error(`Preview prompt type=${plan.promptType} (workflow ${plan.workflowSlug}) is not registered`);
     }
 
-    const variables = buildPreviewVariables(
-      recipient,
-      brandName,
-      intel,
+    const variables = resolvePreviewVariables(
+      plan,
+      { recipient, brandIntel: intel as unknown as Record<string, unknown>, brands, currentDate: new Date().toISOString().split("T")[0] },
       extractTemplateVariableNames(storedPrompt.prompt)
     );
 
@@ -123,7 +140,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     // completion reports which of these each sentence uses; no second call.
     const sources = buildHighlightSources({ recipient, audience, brandName, brandFields: intel.fields ?? {}, giveForFree: giveLists?.giveForFree });
 
-    traceEvent(runId, { service: "content-generation-service", event: "preview-email-start", detail: `brandId=${brandId}, type=${PREVIEW_PROMPT_TYPE}, model=${model}` }, req.headers).catch(() => {});
+    traceEvent(runId, { service: "content-generation-service", event: "preview-email-start", detail: `brandId=${brandId}, workflow=${plan.workflowSlug}, type=${plan.promptType}, model=${model}` }, req.headers).catch(() => {});
     const result = await generateFromTemplate(
       {
         promptTemplate: storedPrompt.prompt,
@@ -132,8 +149,8 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
         model,
         giveLists,
         annotate: { sources: sources.map((s) => ({ id: s.id, label: s.label })) },
-        // A visitor waits on this; ask for the lowest reasoning level.
-        disableThinking: true,
+        // No reasoning override: /generate sends none, so the preview writes exactly as a
+        // campaign run does. Latency is not a constraint here (owner 2026-10-06).
       },
       identity
     );
@@ -160,7 +177,9 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
           runId,
           recipientKey,
           recipient,
-          promptType: PREVIEW_PROMPT_TYPE,
+          promptType: plan.promptType,
+          modelAlias: plan.model,
+          workflowSlug: plan.workflowSlug,
           subject: result.subject,
           bodyText: first.bodyText,
           bodyHtml: first.bodyHtml,
@@ -191,7 +210,14 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
         required_cents: error.required_cents,
       });
     }
-    if (error instanceof BrandIntelError || error instanceof OfferGiveListsError) {
+    if (error instanceof PreviewWorkflowError) {
+      // The ranking or the winning workflow could not be read: there is no fallback
+      // template or model, so the preview is refused rather than written by anything else.
+      console.error("[content-generation-service] /preview-email workflow error:", error.message);
+      traceEvent(runId, { service: "content-generation-service", event: "preview-email-error", detail: error.message, level: "error" }, req.headers).catch(() => {});
+      return res.status(error.status).json({ error: error.message });
+    }
+    if (error instanceof BrandIntelError || error instanceof BrandRowsError || error instanceof OfferGiveListsError) {
       // brand-service's own verdict on the brand (not found, several offers, bad
       // input, unscrapable site) is the caller's to act on; anything else is ours.
       const status = [400, 404, 409].includes(error.status) ? error.status
