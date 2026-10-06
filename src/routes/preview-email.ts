@@ -11,9 +11,10 @@ import { IncompleteSequenceError } from "../lib/sequence-delays.js";
 import { traceEvent } from "../lib/trace-event.js";
 import { resolvePreviewWorkflow } from "../lib/preview-workflow-client.js";
 import { PreviewWorkflowError, planNeedsBrandRows, resolvePreviewVariables } from "../lib/preview-workflow.js";
+import { awaitPreviewWarmup, startPreviewWarmup } from "../lib/preview-warmup.js";
 import {
-  BRAND_INTEL_FIELDS,
   buildPreviewContext,
+  previewBrandIntelFields,
   previewRecipientKey,
   type PreviewRecipient,
 } from "../lib/preview-email.js";
@@ -23,7 +24,7 @@ import {
   resolveHighlights,
   type PreviewHighlight,
 } from "../lib/preview-highlights.js";
-import { PreviewEmailRequestSchema } from "../schemas.js";
+import { PreviewEmailRequestSchema, PreviewEmailPrepareRequestSchema } from "../schemas.js";
 
 const router = Router();
 
@@ -115,7 +116,10 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
 
     // The same brand-service request the workflow's own brand-extract-fields node sends; it
     // is also the check that brandId is a brand of this org, and it carries the brand's name.
-    const intel = await fetchBrandIntel(plan.brandIntelFields ?? BRAND_INTEL_FIELDS, identity);
+    // A warm-up in flight for this brand (POST /preview-email/prepare) is doing this very
+    // read: wait for it, then read its cache instead of starting a second site read.
+    await awaitPreviewWarmup(orgId, brandId);
+    const intel = await fetchBrandIntel(previewBrandIntelFields(plan), identity);
     const brandName = intel.brands[0]?.name;
     if (!brandName) {
       throw new Error(`brand-service returned no brand for brandId=${brandId}`);
@@ -232,6 +236,31 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     const status = error instanceof IncompleteSequenceError || message.startsWith("chat-service") ? 502 : 500;
     res.status(status).json({ error: message });
   }
+});
+
+/**
+ * POST /preview-email/prepare — "get ready to write preview emails for this brand".
+ *
+ * The onboarding knows the brand long before it asks for the first preview. This sends
+ * brand-service, in the background, the same brand-intel request the preview will send
+ * (src/lib/preview-warmup.ts), so the first POST /preview-email finds it cached and only
+ * pays for the model. Answered 202 at once; the caller never waits for the site read.
+ *
+ * Idempotent: one warm-up per (org, brand) in flight, a completed one answers `ready` for
+ * a while, and brand-service's own field cache makes any later repeat a cache read.
+ * Billing: the brand-service call is the preview's own, moved earlier, billed by brand-
+ * service to the calling org (x-org-id) like the preview's. No completion is made here.
+ */
+router.post("/preview-email/prepare", serviceAuth, (req: AuthenticatedRequest, res) => {
+  const parsed = PreviewEmailPrepareRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ") });
+  }
+  const { brandId, offerId } = parsed.data;
+  const orgId = req.orgId!;
+  const status = startPreviewWarmup({ orgId, userId: req.userId!, runId: req.runId!, brandId, offerId });
+  traceEvent(req.runId!, { service: "content-generation-service", event: "preview-email-prepare", detail: `brandId=${brandId}, status=${status}` }, req.headers).catch(() => {});
+  res.status(202).json({ brandId, status });
 });
 
 export default router;

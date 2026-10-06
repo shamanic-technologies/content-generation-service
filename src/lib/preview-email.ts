@@ -12,6 +12,7 @@
  */
 import { createHash } from "node:crypto";
 import { type OfferGiveLists, giveListsFingerprint } from "./offer-give-lists.js";
+import type { PreviewPlan } from "./preview-workflow.js";
 
 /**
  * The brand-extract-fields request the live cold-email workflows send, used ONLY when the
@@ -40,6 +41,15 @@ export const BRAND_INTEL_FIELDS: ReadonlyArray<{ key: string; description: strin
   { key: "awardsAndRecognition", description: "Awards, recognition, and press mentions" },
   { key: "additionalContext", description: "Any additional relevant context about the company" },
 ];
+
+/**
+ * The brand-extract-fields request a preview sends for its workflow: the workflow's own
+ * node's field list, else `BRAND_INTEL_FIELDS`. The one place this is decided, so the
+ * warm-up (`preview-warmup.ts`) asks brand-service for exactly what the preview will read.
+ */
+export function previewBrandIntelFields(plan: Pick<PreviewPlan, "brandIntelFields">): ReadonlyArray<{ key: string; description: string }> {
+  return plan.brandIntelFields ?? BRAND_INTEL_FIELDS;
+}
 
 export interface PreviewRecipient {
   firstName: string;
