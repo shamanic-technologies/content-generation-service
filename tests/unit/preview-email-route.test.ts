@@ -3,7 +3,8 @@ import express from "express";
 import request from "supertest";
 
 // POST /preview-email writes ONE cold email for a brand + a sample recipient, before any
-// campaign exists. These tests pin: the live template + brand-intel request are reused,
+// campaign exists. These tests pin: the best mature workflow's template + model + brand-intel
+// request are used (no hardcoded template/model, no fallback when the ranking is unreadable),
 // the spend goes through chat-service under the calling org, a refusal to pay is a clean
 // 402, a repeat is answered from storage with no downstream call, and nothing is written
 // to email_generations.
@@ -45,17 +46,30 @@ vi.mock("../../src/db/index.js", () => ({
 }));
 
 const mockFetchBrandIntel = vi.fn();
+const mockFetchBrandRows = vi.fn();
 vi.mock("../../src/lib/brand-client.js", () => {
   class BrandIntelError extends Error {
     constructor(public status: number, public body: string) {
       super(`brand-service extract-fields failed: ${status} - ${body}`);
     }
   }
+  class BrandRowsError extends Error {
+    constructor(public status: number, public body: string) {
+      super(`brand-service GET /internal/brands failed: ${status} - ${body}`);
+    }
+  }
   return {
     BrandIntelError,
+    BrandRowsError,
     fetchBrandIntel: (...a: unknown[]) => mockFetchBrandIntel(...a),
+    fetchBrandRows: (...a: unknown[]) => mockFetchBrandRows(...a),
   };
 });
+
+const mockResolvePreviewWorkflow = vi.fn();
+vi.mock("../../src/lib/preview-workflow-client.js", () => ({
+  resolvePreviewWorkflow: (...a: unknown[]) => mockResolvePreviewWorkflow(...a),
+}));
 
 const mockFetchGiveLists = vi.fn();
 vi.mock("../../src/lib/offer-give-lists-client.js", () => {
@@ -91,7 +105,7 @@ import previewRoutes from "../../src/routes/preview-email.js";
 import { InsufficientCreditsError } from "../../src/lib/chat-service-client.js";
 import { BrandIntelError } from "../../src/lib/brand-client.js";
 import { OfferGiveListsError } from "../../src/lib/offer-give-lists-client.js";
-import { BRAND_INTEL_FIELDS, PREVIEW_PROMPT_TYPE } from "../../src/lib/preview-email.js";
+import { PreviewWorkflowError, type PreviewPlan } from "../../src/lib/preview-workflow.js";
 
 const app = express();
 app.use(express.json());
@@ -110,7 +124,32 @@ const INTEL = {
   provenance: {},
 };
 
-const TEMPLATE = "Prospect {{leadFirstName}} {{leadLastName}}, {{leadTitle}} at {{leadCompanyName}} ({{leadCompanyIndustry}}). Client {{clientName}}. Intel {{brandExtractedFields}}";
+const TEMPLATE = "Today {{currentDate}}. Prospect {{leadFirstName}} {{leadLastName}}, {{leadTitle}} at {{leadCompanyName}} ({{leadCompanyIndustry}}). Client {{clientName}}. Intel {{brandExtractedFields}}. Brands {{brands}}. Page {{landingPageContent}}";
+
+// The best mature workflow's plan, as resolvePreviewWorkflow reads it off the ranking + DAG.
+// Deliberately NOT cold-email-v39 / sonnet: the route must use whatever the plan says.
+const PLAN_FIELDS = [{ key: "companyOverview", description: "A comprehensive overview of the company" }];
+const PLAN: PreviewPlan = {
+  workflowSlug: "sales-cold-email-outreach-nobelium-v5",
+  workflowDynastySlug: "sales-cold-email-outreach-nobelium",
+  promptType: "blind-discovery-email-v33",
+  model: "glm-pro",
+  brandIntelFields: PLAN_FIELDS,
+  sources: {
+    currentDate: { kind: "current-date" },
+    leadFirstName: { kind: "recipient", field: "firstName" },
+    leadLastName: { kind: "recipient", field: "lastName" },
+    leadTitle: { kind: "recipient", field: "title" },
+    leadCompanyName: { kind: "recipient", field: "companyName" },
+    leadCompanyIndustry: { kind: "recipient", field: "companyIndustry" },
+    leadCompanyWebsiteUrl: { kind: "recipient", field: "companyDomain" },
+    leadCity: { kind: "lead-unknown", path: "city" },
+    clientName: { kind: "brand", path: "name" },
+    brandExtractedFields: { kind: "brand-intel", part: "fields" },
+    brands: { kind: "brands" },
+  },
+};
+const BRAND_ROWS = [{ id: BRAND_ID, name: "Brand Co", domain: "brand.io", clickDestinationUrl: "https://brand.io/start" }];
 
 function storedRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -121,7 +160,7 @@ function storedRow(overrides: Record<string, unknown> = {}) {
     runId: "run-0",
     recipientKey: "k",
     recipient: BODY.recipient,
-    promptType: PREVIEW_PROMPT_TYPE,
+    promptType: PLAN.promptType,
     subject: "Quick question",
     bodyText: "Hi Jane,\n\nHello.",
     bodyHtml: "<p>Hi Jane,</p><p>Hello.</p>",
@@ -135,7 +174,9 @@ function storedRow(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockPreviewFindFirst.mockResolvedValue(undefined);
-  mockPromptFindFirst.mockResolvedValue({ type: PREVIEW_PROMPT_TYPE, prompt: TEMPLATE });
+  mockPromptFindFirst.mockResolvedValue({ type: PLAN.promptType, prompt: TEMPLATE });
+  mockResolvePreviewWorkflow.mockResolvedValue(PLAN);
+  mockFetchBrandRows.mockResolvedValue(BRAND_ROWS);
   mockFetchBrandIntel.mockResolvedValue(INTEL);
   mockFetchGiveLists.mockResolvedValue({ giveForFree: [], neverGive: [] });
   mockGenerate.mockResolvedValue({
@@ -158,7 +199,7 @@ beforeEach(() => {
 });
 
 describe("POST /preview-email", () => {
-  it("writes the first email with the live template, the live brand-intel request, and the caller's org identity", async () => {
+  it("writes with the best mature workflow's template, model, brand-intel request and input mapping", async () => {
     const res = await request(app).post("/preview-email").send(BODY);
 
     expect(res.status).toBe(200);
@@ -170,26 +211,90 @@ describe("POST /preview-email", () => {
       cached: false,
     });
 
-    // Same field set (keys + descriptions) the live workflows send, under the caller's org.
+    // The workflow is read at request time, under the caller's identity.
+    expect(mockResolvePreviewWorkflow.mock.calls[0][0]).toMatchObject({ orgId: "11111111-1111-1111-1111-111111111111", runId: "run-1", brandId: BRAND_ID });
+
+    // The workflow's own brand-extract-fields request, under the caller's org.
     const [fields, identity] = mockFetchBrandIntel.mock.calls[0];
-    expect(fields).toEqual(BRAND_INTEL_FIELDS);
+    expect(fields).toEqual(PLAN_FIELDS);
     expect(identity).toMatchObject({ orgId: "11111111-1111-1111-1111-111111111111", userId: "user-1", runId: "run-1", brandId: BRAND_ID });
+    expect(mockFetchBrandRows.mock.calls[0][0]).toBe(BRAND_ID);
 
     const [params, chatIdentity] = mockGenerate.mock.calls[0];
     expect(params.promptTemplate).toBe(TEMPLATE);
-    expect(params.model).toBe("sonnet");
-    expect(params.disableThinking).toBe(true);
+    expect(params.model).toBe("glm-pro");
+    // No reasoning override: /generate sends none.
+    expect("disableThinking" in params).toBe(false);
     expect(params.variables).toMatchObject({
       leadFirstName: "Jane",
       leadTitle: "VP Sales",
       leadCompanyName: "Acme",
       leadCompanyWebsiteUrl: "acme.com",
       clientName: "Brand Co",
-      brandExtractedFields: INTEL,
+      brandExtractedFields: INTEL.fields,
+      brands: BRAND_ROWS,
       leadCompanyIndustry: "",
+      // A template input the workflow maps from nothing a preview holds is empty, never invented.
+      landingPageContent: "",
     });
+    expect(params.variables.currentDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // A lead fact the sample recipient lacks and the template never asks for is absent.
+    expect("leadCity" in params.variables).toBe(false);
     expect(params.campaignContext).toEqual({ audience: BODY.audience });
     expect(chatIdentity).toMatchObject({ orgId: "11111111-1111-1111-1111-111111111111", runId: "run-1", brandId: BRAND_ID });
+
+    // The template is looked up by the workflow's type, not a constant.
+    expect(mockPromptFindFirst).toHaveBeenCalledTimes(1);
+  });
+
+  it("records which workflow, template and model alias wrote the stored preview", async () => {
+    mockReturning.mockImplementation(async () => [storedRow({ runId: "run-1", ...mockValues.mock.calls[0][0] })]);
+    const res = await request(app).post("/preview-email").send(BODY);
+    expect(mockValues.mock.calls[0][0]).toMatchObject({
+      promptType: "blind-discovery-email-v33",
+      modelAlias: "glm-pro",
+      workflowSlug: "sales-cold-email-outreach-nobelium-v5",
+    });
+    expect(res.body).toMatchObject({ promptType: "blind-discovery-email-v33", modelAlias: "glm-pro", workflowSlug: "sales-cold-email-outreach-nobelium-v5" });
+  });
+
+  it("writes a new preview when the best workflow changes", async () => {
+    await request(app).post("/preview-email").send(BODY);
+    const first = mockValues.mock.calls[0][0].recipientKey;
+    mockResolvePreviewWorkflow.mockResolvedValue({ ...PLAN, workflowSlug: "sales-cold-email-outreach-nobelium-v6" });
+    await request(app).post("/preview-email").send(BODY);
+    expect(mockValues.mock.calls[1][0].recipientKey).not.toBe(first);
+    mockResolvePreviewWorkflow.mockResolvedValue({ ...PLAN, model: "deepseek-flash" });
+    await request(app).post("/preview-email").send(BODY);
+    expect(mockValues.mock.calls[2][0].recipientKey).not.toBe(first);
+  });
+
+  it("fails loud when the ranking cannot be read: no fallback template or model, nothing billed", async () => {
+    mockResolvePreviewWorkflow.mockRejectedValue(new PreviewWorkflowError(503, "features-service has not computed the cold-email workflow ranking yet"));
+    const res = await request(app).post("/preview-email").send(BODY);
+    expect(res.status).toBe(503);
+    expect(res.body.error).toContain("ranking");
+    expect(mockPromptFindFirst).not.toHaveBeenCalled();
+    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+
+    mockResolvePreviewWorkflow.mockRejectedValue(new PreviewWorkflowError(502, "features-service leg-workflow-ranking failed: 500"));
+    expect((await request(app).post("/preview-email").send(BODY)).status).toBe(502);
+    expect(mockGenerate).not.toHaveBeenCalled();
+  });
+
+  it("refuses a caller-chosen model", async () => {
+    const res = await request(app).post("/preview-email").send({ ...BODY, model: "sonnet" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("model");
+    expect(mockGenerate).not.toHaveBeenCalled();
+  });
+
+  it("reads no brand rows when the workflow's template is not fed from them", async () => {
+    const { brands: _b, clientName: _c, ...sources } = PLAN.sources;
+    mockResolvePreviewWorkflow.mockResolvedValue({ ...PLAN, sources });
+    expect((await request(app).post("/preview-email").send(BODY)).status).toBe(200);
+    expect(mockFetchBrandRows).not.toHaveBeenCalled();
   });
 
   it("stores the preview in email_previews only — never in email_generations", async () => {

@@ -99,10 +99,3 @@ export const MODEL_TO_PROVIDER: Record<ChatModel, ChatProvider> = {
 // Default when the caller omits `model` — preserves the historical google/pro path.
 export const DEFAULT_MODEL: ChatModel = "pro";
 
-// Model of the signed-out onboarding preview (`POST /preview-email`) when the caller
-// omits `model`. Owner-decided 2026-09-29: the whole public onboarding runs on ONE
-// model, Claude Sonnet 5.5 (chat-service's `sonnet` alias), after a Gemini credit
-// outage broke it and `pro` measured p50 15.6s / p90 22s there. Scoped to the preview
-// route ONLY: campaign generations keep DEFAULT_MODEL, and a DAG's stated `model`
-// always wins. No fallback to the previous model — a failure fails loud.
-export const PREVIEW_MODEL: ChatModel = "sonnet";

@@ -651,7 +651,6 @@ export const PreviewEmailRequestSchema = registry.register(
       recipient: PreviewRecipientSchema,
       audience: z.string().trim().min(1).optional().describe("The audience / segment the sample recipient was found in, in plain English. Given to the model as context."),
       offerId: z.string().uuid().optional().describe("Which offer of the brand to pitch. Required by brand-service only when the brand sells several offers."),
-      model: ModelField,
     })
     .openapi("PreviewEmailRequest")
 );
@@ -689,6 +688,12 @@ const PreviewEmailResponseSchema = registry.register(
       bodyText: z.string().describe("The first email of the sequence the product would send, as plain text."),
       bodyHtml: z.string(),
       model: z.string().describe("Resolved model id that wrote the email."),
+      promptType: z.string().describe("The prompt template that wrote the email: the best mature cold-email workflow's, when it was written."),
+      modelAlias: z.string().nullable().describe("The model alias the workflow states (e.g. glm-pro). null on a preview stored before the preview followed the best mature workflow."),
+      workflowSlug: z
+        .string()
+        .nullable()
+        .describe("The workflow whose template + model wrote the email (the best mature cold-email workflow at the time). null on a preview stored before the preview followed it."),
       highlights: z
         .array(PreviewHighlightSchema)
         .nullable()
@@ -710,11 +715,13 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Write ONE cold email for a brand and a sample recipient, before any campaign exists",
   description:
-    "Writes the email exactly the way live campaigns do: the same stored platform cold-email template, the same brand " +
-    "intel request to brand-service, the same chat-service completion and default model. The LLM spend is declared and " +
+    "Writes the email the visitor would receive once they pay: the prompt template AND model of the fleet's best MATURE " +
+    "cold-email workflow (features-service leg ranking, read at request time, cached a few minutes), with that workflow's " +
+    "own brand intel request and input mapping. 502/503 when the ranking or the workflow cannot be read: there is no " +
+    "fallback template or model. A request carrying `model` is refused (400). The LLM spend is declared and " +
     "authorized against the calling org by chat-service; an org that cannot afford it gets 402. Creates no campaign, no lead " +
     "and no email_generations row, so nothing here can be sent or counted. The same brand + recipient (+ audience, offer, model) " +
-    "returns the stored email instead of a second billed completion.",
+    "returns the stored email instead of a second billed completion, as long as the best workflow is unchanged.",
   request: {
     headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
     body: {
