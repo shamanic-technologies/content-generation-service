@@ -386,3 +386,132 @@ describe("leadBuyingSignal of kind linkedin_engagement", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Offer checks on the recipient's company (`leadQualification`), served by
+// lead-service on every lead as `lead.qualification`
+// ---------------------------------------------------------------------------
+
+const QUALIFICATION = {
+  domain: "acme.com",
+  checks: [
+    {
+      criterionId: "c1",
+      offerId: "o1",
+      question: "Does the site load in under 3 seconds on mobile?",
+      mode: "must_pass",
+      source: "PageSpeed mobile run",
+      verdict: "yes",
+      yesProbability: 0.92,
+      evidence: "The home page loaded in 1.8 seconds on a mobile connection.",
+      screenshotUrl: "https://cdn.example.com/shots/acme-mobile.png",
+      reason: null,
+      checkedAt: "2026-10-07T09:00:00Z",
+    },
+    {
+      criterionId: "c2",
+      offerId: "o1",
+      question: "Does the company publish a newsletter?",
+      mode: "mention",
+      source: "Site crawl",
+      verdict: "no",
+      yesProbability: 0.08,
+      evidence: "No newsletter signup form was found on acme.com.",
+      screenshotUrl: null,
+      reason: null,
+      checkedAt: "2026-10-07T09:00:00Z",
+    },
+    {
+      criterionId: "c3",
+      offerId: "o1",
+      question: "Is the company hiring for support roles?",
+      mode: "mention",
+      source: "Job boards",
+      verdict: "unavailable",
+      yesProbability: null,
+      evidence: null,
+      screenshotUrl: null,
+      reason: "The careers page could not be reached.",
+      checkedAt: "2026-10-07T09:00:00Z",
+    },
+  ],
+};
+
+describe("leadQualification", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("is published in the context catalog", () => {
+    const published = LEAD_CONTEXT_VARIABLES_PUBLISHED.find((v) => v.name === "leadQualification");
+    expect(published).toBeDefined();
+    expect(published!.description).toContain("must_pass");
+  });
+
+  it("puts every check, passed or failed, in the prompt sent to the model", async () => {
+    const variables = { leadFirstName: "Sarah", leadCompanyName: "Acme", leadQualification: QUALIFICATION };
+    const sent = await promptSentFor(variables);
+
+    expect(sent).toContain("- company checked: acme.com");
+    expect(sent).toContain(
+      [
+        "1. Does the site load in under 3 seconds on mobile?",
+        "   role: Hard filter",
+        "   outcome: pass",
+        "   evidence: The home page loaded in 1.8 seconds on a mobile connection.",
+        "   screenshot: https://cdn.example.com/shots/acme-mobile.png",
+      ].join("\n")
+    );
+    expect(sent).toContain(
+      [
+        "2. Does the company publish a newsletter?",
+        "   role: Bonus",
+        "   outcome: fail",
+        "   evidence: No newsletter signup form was found on acme.com.",
+      ].join("\n")
+    );
+    expect(sent).toContain(
+      [
+        "3. Is the company hiring for support roles?",
+        "   role: Bonus",
+        "   outcome: could not check",
+        "   reason: The careers page could not be reached.",
+      ].join("\n")
+    );
+    expect(sent).toContain(substituteVariables(TEMPLATE, variables));
+  });
+
+  it("never tells the model it must mention the checks, and adds no dashes", () => {
+    const out = block({ leadQualification: QUALIFICATION });
+    expect(out).not.toMatch(/\bmust\b|\balways\b|\brequired?\b|\bmention\b/i);
+    expect(out).not.toMatch(/[–—]/);
+  });
+
+  it("renders nothing, silently, for an offer with no checks", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(block({ leadQualification: { domain: "acme.com", checks: [] } })).toBe("");
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("renders nothing for a value that is not lead-service's shape", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(block({ leadQualification: "yes" })).toBe("");
+    expect(block({ leadQualification: { domain: "acme.com" } })).toBe("");
+    expect(block({ leadQualification: { checks: [{ verdict: "yes" }] } })).toBe("");
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("leaves the prompt byte-identical when the key is absent or the checks are empty", async () => {
+    const variables = { leadFirstName: "Sarah", leadCompanyName: "Acme" };
+    const before = await promptSentFor(variables);
+    expect(before).toBe(substituteVariables(TEMPLATE, variables));
+    const empty = await promptSentFor({ ...variables, leadQualification: { domain: "acme.com", checks: [] } });
+    expect(empty).toBe(before);
+  });
+
+  it("is not repeated in the block when the template consumes it as a token", () => {
+    expect(block({ leadQualification: QUALIFICATION }, "Checks: {{leadQualification}}")).toBe("");
+  });
+});
