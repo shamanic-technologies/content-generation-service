@@ -150,6 +150,79 @@ const SIGNAL_VARIABLES: PromptContextVariable[] = [
   },
 ];
 
+/** How each check verdict lead-service serves reads to the writer. */
+const QUALIFICATION_OUTCOMES: Record<string, string> = {
+  yes: "pass",
+  no: "fail",
+  unavailable: "could not check",
+  not_checked: "not checked yet",
+};
+
+/** How each check mode reads to the writer: the client's own words for it. */
+const QUALIFICATION_ROLES: Record<string, string> = {
+  must_pass: "Hard filter",
+  mention: "Bonus",
+};
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/**
+ * The checks of the campaign's offer, run on the recipient's company, exactly
+ * as lead-service serves them on the lead (`lead.qualification`):
+ * `{ domain, checks: [{ question, mode, verdict, evidence, screenshotUrl, reason, ... }] }`.
+ * Every check is rendered, passed or failed: a failed check is information too.
+ * Nothing is re-judged or summarized here; the evidence sentence is carried as
+ * lead-service stated it. `checks: []` (an offer with no checks) renders
+ * nothing, silently. A value that is not that shape renders nothing (logged),
+ * and so does a check without a question: a verdict on no question is noise.
+ */
+export function formatQualificationChecks(value: unknown): string[] | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const qualification = value as Record<string, unknown>;
+  if (!Array.isArray(qualification.checks)) return null;
+
+  const lines: string[] = [];
+  const domain = nonEmptyString(qualification.domain);
+  if (domain && qualification.checks.length > 0) lines.push(`- company checked: ${domain}`);
+
+  let n = 0;
+  for (const raw of qualification.checks) {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const check = raw as Record<string, unknown>;
+    const question = nonEmptyString(check.question);
+    if (!question) continue;
+    n += 1;
+    lines.push(`${n}. ${question}`);
+    const mode = nonEmptyString(check.mode);
+    if (mode) lines.push(`   role: ${QUALIFICATION_ROLES[mode] ?? mode}`);
+    const verdict = nonEmptyString(check.verdict);
+    if (verdict) lines.push(`   outcome: ${QUALIFICATION_OUTCOMES[verdict] ?? verdict}`);
+    const evidence = nonEmptyString(check.evidence);
+    if (evidence) lines.push(`   evidence: ${evidence}`);
+    // Why it could not be checked. On a pass or fail the evidence says it.
+    const reason = nonEmptyString(check.reason);
+    if (reason && verdict !== "yes" && verdict !== "no") lines.push(`   reason: ${reason}`);
+    const screenshotUrl = nonEmptyString(check.screenshotUrl);
+    if (screenshotUrl) lines.push(`   screenshot: ${screenshotUrl}`);
+  }
+
+  if (qualification.checks.length > 0 && n === 0) return null;
+  return lines;
+}
+
+/** What the offer's checks found about the recipient's company. */
+const QUALIFICATION_VARIABLES: PromptContextVariable[] = [
+  {
+    name: "leadQualification",
+    label: "company checks",
+    description:
+      "Every enabled check of the campaign's offer, run on the recipient's company, exactly as lead-service serves it on the lead (`lead.qualification`): an object { domain, checks: [{ criterionId, offerId, question, mode ('must_pass' = Hard filter, 'mention' = Bonus), source, verdict ('yes' | 'no' | 'unavailable' | 'not_checked'), yesProbability, evidence, screenshotUrl, reason, checkedAt }] }. Passed AND failed checks are rendered: each check's question, role, outcome (pass, fail, could not check), evidence sentence, and screenshot link when there is one. Context only: nothing tells the model to mention it; a template that wants it used says so. `checks: []` or an absent key leaves the prompt unchanged.",
+    format: formatQualificationChecks,
+  },
+];
+
 /** Ordered groups, used to render the context block under readable headings. */
 export const LEAD_CONTEXT_GROUPS: Array<{ heading: string; variables: PromptContextVariable[] }> = [
   { heading: "Person", variables: PERSON_VARIABLES },
@@ -158,6 +231,11 @@ export const LEAD_CONTEXT_GROUPS: Array<{ heading: string; variables: PromptCont
     heading:
       "Recent buying signal (an event we observed; you may reference it as the reason for writing now, stated as given and without embellishment)",
     variables: SIGNAL_VARIABLES,
+  },
+  {
+    heading:
+      "Checks we ran on their company (what we measured, passed or failed; use it only where it makes the email more relevant)",
+    variables: QUALIFICATION_VARIABLES,
   },
 ];
 
