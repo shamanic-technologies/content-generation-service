@@ -20,7 +20,7 @@ import { JudgmentsError } from "./judgments-client.js";
  * part of the persisted verdict key, so a new rule re-judges instead of serving
  * a verdict reached under the old one.
  */
-export const TEMPLATE_NEUTRALITY_VERSION = "1";
+export const TEMPLATE_NEUTRALITY_VERSION = "2";
 
 /** A passage is refused at or above this yes-probability. */
 export const SPECIFIC_PROBABILITY_THRESHOLD = 0.5;
@@ -120,7 +120,7 @@ const CRITERIA = {
   true:
     "Yes: the fixed text carries a specific identity or fact, e.g. a company, brand or product name ('Acme', 'Notion'), a concrete offer ('our free 14-day SEO audit'), a price ('$99/month'), a claimed result or figure about a business ('we helped 300 dentists', 'cut churn by 32%'), a customer name, or a named person ('Sarah, our CEO').",
   false:
-    "No: it is a generic writing instruction, structure, tone, length or formatting rule that fits any company. Generic roles ('the client', 'the prospect', 'the brand'), word counts and step counts are generic. A specific detail that sits only inside a {{variable}} is fine, because each company fills the variable with its own data.",
+    "No: it is a generic writing instruction, structure, tone, length or formatting rule that fits any company. Generic roles ('the client', 'the prospect', 'the brand'), word counts and step counts are generic. A specific detail that sits only inside a {{variable}} is fine, because each company fills the variable with its own data. Naming the channel, platform or tool the content is written for or published on ('LinkedIn', 'Featured.com', 'Gmail', 'X') is also fine: that is the same for every company using the template, not one company's identity.",
 };
 
 export function buildNeutralityQuestion(passage: TemplatePassage): NoulQuestion {
@@ -136,7 +136,7 @@ export function buildNeutralityQuestion(passage: TemplatePassage): NoulQuestion 
       "",
       `Passage: """${passage.text}"""`,
       "",
-      "Does this passage's fixed text name or describe ONE particular company, brand, product, offer, price, result figure, customer or person, so that it would be false or out of place in another company's email?",
+      "Does this passage's fixed text name or describe ONE particular company, brand, product, offer, price, result figure, customer or person, so that it would be false or out of place in another company's email? The channel or platform the content is written for does not count.",
     ].join("\n"),
     criteria: CRITERIA,
   };
