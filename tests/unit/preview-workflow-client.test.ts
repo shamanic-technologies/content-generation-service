@@ -42,7 +42,7 @@ describe("resolvePreviewWorkflow", () => {
     expect(plan).toMatchObject({ workflowSlug: "plain-v3", promptType: "cold-email-v55", model: "flash-lite" });
     const rankingUrl = new URL(mockFetch.mock.calls[0][0]);
     expect(rankingUrl.searchParams.get("featureSlug")).toBe("sales-cold-email-outreach");
-    expect(rankingUrl.searchParams.get("leg")).toBe("start_to_conversation");
+    expect(rankingUrl.searchParams.get("leg")).toBe("lead_found_to_conversation");
     // workflow-service gets the caller's identity headers.
     expect(mockFetch.mock.calls[1][1].headers).toMatchObject({ "x-org-id": "org-1", "x-user-id": "user-1", "x-run-id": "run-1" });
   });
