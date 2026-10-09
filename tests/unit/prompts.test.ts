@@ -2,6 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 
+// Brand/offer neutrality is pinned in template-neutrality*.test.ts; here every template passes.
+vi.mock("../../src/lib/template-neutrality-guard.js", () => ({
+  assertTemplateNeutral: vi.fn().mockResolvedValue(undefined),
+}));
+
+
 // Mock auth middleware
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {

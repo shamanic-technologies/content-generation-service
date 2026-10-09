@@ -3,6 +3,12 @@ import express from "express";
 import request from "supertest";
 import { LEAD_CONTEXT_VARIABLES_PUBLISHED } from "../../src/lib/lead-context-variables";
 
+// Brand/offer neutrality is pinned in template-neutrality*.test.ts; here every template passes.
+vi.mock("../../src/lib/template-neutrality-guard.js", () => ({
+  assertTemplateNeutral: vi.fn().mockResolvedValue(undefined),
+}));
+
+
 // Mock auth middleware
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
