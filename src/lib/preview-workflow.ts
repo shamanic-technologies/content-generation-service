@@ -8,7 +8,7 @@
  * workflow changes the preview with no deploy.
  *
  *  - The ranking is features-service's `GET /public/stats/leg-workflow-ranking` on the
- *    positive-reply leg (`start_to_conversation`) of `sales-cold-email-outreach`. The
+ *    positive-reply leg (`lead_found_to_conversation`) of `sales-cold-email-outreach`. The
  *    row with `moneyGoesHere` is "the best mature workflow" (owner rule 2026-09-30, its
  *    `lib/leg-workflow-ranking.ts`); the other selectable mature rows follow it in rank
  *    order, cheapest first. Learning rows are never candidates.
@@ -30,8 +30,8 @@ import type { PreviewRecipient } from "./preview-email.js";
 
 /** The feature whose fleet ranking picks the preview's workflow. */
 export const PREVIEW_FEATURE_SLUG = "sales-cold-email-outreach";
-/** The leg a cold email is bought for: a positive reply (features-service `start_to_conversation`). */
-export const PREVIEW_LEG_KEY = "start_to_conversation";
+/** The leg a cold email is bought for: a positive reply (features-service `lead_found_to_conversation`). */
+export const PREVIEW_LEG_KEY = "lead_found_to_conversation";
 
 /** One row of features-service's leg ranking, as far as the preview reads it. */
 export interface LegRankingRow {
