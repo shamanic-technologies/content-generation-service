@@ -1,6 +1,8 @@
 import { eq, like } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { prompts } from "../db/schema.js";
+import { assertTemplateNeutral } from "./template-neutrality-guard.js";
+import type { JudgmentCaller } from "./judgments-client.js";
 
 /**
  * Find the next available versioned type name.
@@ -33,6 +35,8 @@ export interface CreatePromptVersionParams {
   prompt: string;
   variables: Array<{ name: string; description: string }>;
   orgId: string | null;
+  /** Who pays the brand/offer neutrality judgment run before the new row is stored. */
+  neutralityCaller: JudgmentCaller;
 }
 
 export interface PromptVersionResult {
@@ -49,12 +53,13 @@ export interface PromptVersionResult {
  *   the source row is returned untouched (`created: false`) — no new version.
  * - Otherwise a new `<base>-vN` row is inserted and returned (`created: true`).
  *
- * The source row is never mutated.
+ * The source row is never mutated. A new row is stored only once its content
+ * passes the brand/offer neutrality check (throws TemplateNotNeutralError).
  */
 export async function createPromptVersion(
   params: CreatePromptVersionParams
 ): Promise<PromptVersionResult> {
-  const { sourceType, prompt, variables, orgId } = params;
+  const { sourceType, prompt, variables, orgId, neutralityCaller } = params;
 
   const source = await db.query.prompts.findFirst({
     where: eq(prompts.type, sourceType),
@@ -68,6 +73,8 @@ export async function createPromptVersion(
   ) {
     return { row: source, created: false };
   }
+
+  await assertTemplateNeutral({ prompt, variables, caller: neutralityCaller });
 
   const newType = source ? await findNextVersionType(sourceType) : sourceType;
 

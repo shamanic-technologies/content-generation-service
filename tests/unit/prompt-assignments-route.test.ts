@@ -7,6 +7,17 @@ import {
   EXPERT_QUOTE_PITCH_VARIABLES,
 } from "../../src/lib/expert-quote-pitch-template.js";
 
+// Brand/offer neutrality is pinned in template-neutrality*.test.ts; here every template passes.
+vi.mock("../../src/lib/template-neutrality-guard.js", () => ({
+  assertTemplateNeutral: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../../src/lib/runs-client.js", () => ({
+  createRun: vi.fn().mockResolvedValue({ id: "run-own-1" }),
+  updateRun: vi.fn().mockResolvedValue({}),
+}));
+
+
 // Auth: x-org-id + x-user-id required, x-run-id optional.
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuthRunOptional: (req: any, res: any, next: any) => {
@@ -193,6 +204,20 @@ describe("PUT /prompt-assignments", () => {
         variables: EXPERT_QUOTE_PITCH_VARIABLES,
       })
       .expect(200);
+
+    // No caller run: a root run is opened for the org-billed neutrality judgment, then closed.
+    const { createRun, updateRun } = await import("../../src/lib/runs-client.js");
+    const { assertTemplateNeutral } = await import("../../src/lib/template-neutrality-guard.js");
+    expect(createRun).toHaveBeenCalledWith(
+      expect.objectContaining({ taskName: "prompt-assignment-neutrality" }),
+      { orgId: "org-1", userId: "user-1" },
+    );
+    expect(assertTemplateNeutral).toHaveBeenCalledWith(
+      expect.objectContaining({
+        caller: { mode: "org", tracking: { orgId: "org-1", userId: "user-1", runId: "run-own-1" } },
+      }),
+    );
+    expect(updateRun).toHaveBeenCalledWith("run-own-1", "completed", { orgId: "org-1", userId: "user-1" });
   });
 
   it("dropping a {{var}} → 400 naming the var, no fork, no assignment", async () => {

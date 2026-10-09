@@ -161,6 +161,23 @@ export const prompts = pgTable(
   ]
 );
 
+// Brand/offer neutrality verdicts (src/lib/template-neutrality*.ts). One row per
+// distinct template content (rule version + body + variables): a template is judged
+// by chat-service Jev once, and a resubmission of the same content reads this row
+// instead of paying again. Content-keyed, so it is shared across orgs like prompts.
+export const templateNeutralityJudgments = pgTable("template_neutrality_judgments", {
+  contentKey: text("content_key").primaryKey(),
+  ruleVersion: text("rule_version").notNull(),
+  neutral: boolean("neutral").notNull(),
+  // Every judged passage: { text, location, probability }.
+  passages: jsonb("passages").notNull(),
+  model: text("model").notNull(),
+  inputTokens: integer("input_tokens").notNull(),
+  orgId: uuid("org_id"),
+  runId: text("run_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Per-feature prompt assignment — maps a feature slug to the prompt type rendered
 // when generating for that feature. Feature-global (NOT org/brand-scoped): the
 // assignment is brand-agnostic, brand facts arrive via the {{brand}} variable at

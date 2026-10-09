@@ -6,6 +6,10 @@ import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { CreatePromptRequestSchema, VersionPromptRequestSchema } from "../schemas.js";
 import { createPromptVersion } from "../lib/prompt-versioning.js";
 import { LEAD_CONTEXT_VARIABLES_PUBLISHED } from "../lib/lead-context-variables.js";
+import { assertTemplateNeutral } from "../lib/template-neutrality-guard.js";
+import { templateWriteErrorResponse } from "../lib/template-neutrality.js";
+import type { JudgmentCaller } from "../lib/judgments-client.js";
+import { extractTracking } from "../lib/tracking.js";
 
 const router = Router();
 
@@ -26,6 +30,11 @@ function formatPromptResponse(row: typeof prompts.$inferSelect) {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/** Org-billed neutrality judgment under the inbound identity (serviceAuth guarantees runId). */
+function orgCaller(req: AuthenticatedRequest): JudgmentCaller {
+  return { mode: "org", tracking: { ...extractTracking(req), runId: req.runId! } };
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +107,8 @@ router.post("/prompts", serviceAuth, async (req: AuthenticatedRequest, res) => {
       return res.status(200).json(formatPromptResponse(existing));
     }
 
+    await assertTemplateNeutral({ prompt, variables, caller: orgCaller(req) });
+
     const [result] = await db
       .insert(prompts)
       .values({ orgId: req.orgId!, type, prompt, variables })
@@ -105,6 +116,8 @@ router.post("/prompts", serviceAuth, async (req: AuthenticatedRequest, res) => {
 
     res.status(201).json(formatPromptResponse(result));
   } catch (error) {
+    const refused = templateWriteErrorResponse(error);
+    if (refused) return res.status(refused.status).json(refused.body);
     console.error("Create prompt error:", error);
     res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
   }
@@ -130,6 +143,8 @@ router.post("/platform-prompts", async (req, res) => {
       return res.status(200).json(formatPromptResponse(existing));
     }
 
+    await assertTemplateNeutral({ prompt, variables, caller: { mode: "platform" } });
+
     const [result] = await db
       .insert(prompts)
       .values({ orgId: null, type, prompt, variables })
@@ -137,6 +152,8 @@ router.post("/platform-prompts", async (req, res) => {
 
     res.status(201).json(formatPromptResponse(result));
   } catch (error) {
+    const refused = templateWriteErrorResponse(error);
+    if (refused) return res.status(refused.status).json(refused.body);
     console.error("Create platform prompt error:", error);
     res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
   }
@@ -159,10 +176,13 @@ router.put("/prompts", serviceAuth, async (req: AuthenticatedRequest, res) => {
       prompt,
       variables,
       orgId: req.orgId!,
+      neutralityCaller: orgCaller(req),
     });
 
     res.status(created ? 201 : 200).json(formatPromptResponse(row));
   } catch (error) {
+    const refused = templateWriteErrorResponse(error);
+    if (refused) return res.status(refused.status).json(refused.body);
     console.error("Version prompt error:", error);
     res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
   }

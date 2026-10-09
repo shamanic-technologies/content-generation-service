@@ -11,6 +11,8 @@ import {
   PLATFORM_DEFAULT_PROMPT_TYPE,
 } from "../lib/prompt-assignment.js";
 import { createPromptVersion } from "../lib/prompt-versioning.js";
+import { templateWriteErrorResponse, TemplateNotNeutralError } from "../lib/template-neutrality.js";
+import { createRun, updateRun } from "../lib/runs-client.js";
 
 const router = Router();
 
@@ -78,13 +80,34 @@ router.put("/prompt-assignments", serviceAuthRunOptional, async (req: Authentica
     // declared variable-name set. Throws → 400; nothing forked, nothing assigned.
     assertPromptVariablesMatch(prompt, sourceType, source.variables);
 
-    // Fork (reuses the auto-version logic; source row is never mutated).
-    const { row } = await createPromptVersion({
-      sourceType,
-      prompt,
-      variables,
-      orgId: req.orgId!,
-    });
+    // Fork (reuses the auto-version logic; source row is never mutated). The
+    // fork is judged brand/offer neutral first, org-billed: a dashboard save
+    // carries no x-run-id, so a root run is opened for that judgment and closed here.
+    const identity = { orgId: req.orgId!, userId: req.userId! };
+    const ownRun = req.runId
+      ? null
+      : await createRun(
+          { serviceName: "content-generation-service", taskName: "prompt-assignment-neutrality" },
+          identity,
+        );
+    const runId = req.runId ?? ownRun!.id;
+    let row;
+    try {
+      ({ row } = await createPromptVersion({
+        sourceType,
+        prompt,
+        variables,
+        orgId: req.orgId!,
+        neutralityCaller: { mode: "org", tracking: { ...identity, runId } },
+      }));
+    } catch (err) {
+      // A neutrality refusal is the judgment doing its job: the run completed.
+      if (ownRun) {
+        await updateRun(ownRun.id, err instanceof TemplateNotNeutralError ? "completed" : "failed", identity);
+      }
+      throw err;
+    }
+    if (ownRun) await updateRun(ownRun.id, "completed", identity);
 
     // Reassign the feature to the forked type.
     await db
@@ -105,6 +128,8 @@ router.put("/prompt-assignments", serviceAuthRunOptional, async (req: Authentica
     if (error instanceof PromptVariableMismatchError) {
       return res.status(400).json({ error: error.message });
     }
+    const refused = templateWriteErrorResponse(error);
+    if (refused) return res.status(refused.status).json(refused.body);
     console.error("[content-generation-service] Put prompt assignment error:", error);
     res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
   }

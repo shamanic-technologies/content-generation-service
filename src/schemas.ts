@@ -75,6 +75,61 @@ const ErrorResponseSchema = registry.register(
   z.object({ error: z.string() }).openapi("ErrorResponse")
 );
 
+// Brand/offer neutrality of a shared template (src/lib/template-neutrality.ts).
+const TemplateNotNeutralResponseSchema = registry.register(
+  "TemplateNotNeutralResponse",
+  z
+    .object({
+      error: z.string().openapi({ description: "What is wrong and how to fix it, written for the caller to act on." }),
+      code: z.literal("TEMPLATE_NOT_NEUTRAL"),
+      passages: z
+        .array(
+          z.object({
+            passage: z.string().openapi({ description: "The refused passage, verbatim as submitted." }),
+            location: z.string().openapi({
+              description: "`prompt` for the template body, `variables.<name>` for a variable description.",
+            }),
+            probability: z.number().openapi({ description: "Jev's probability (0..1) that the passage is specific." }),
+          })
+        )
+        .openapi({ description: "Every passage that names or describes one specific company, offer, figure or person." }),
+    })
+    .openapi("TemplateNotNeutralResponse")
+);
+
+const TemplateNeutralityCheckFailedResponseSchema = registry.register(
+  "TemplateNeutralityCheckFailedResponse",
+  z
+    .object({ error: z.string(), code: z.literal("TEMPLATE_NEUTRALITY_CHECK_FAILED") })
+    .openapi("TemplateNeutralityCheckFailedResponse")
+);
+
+/**
+ * Responses shared by every route that STORES a template: each new template is
+ * judged brand/offer neutral (chat-service Jev) before it is stored.
+ */
+const TEMPLATE_NEUTRALITY_RESPONSES = {
+  402: {
+    description: "The neutrality judgment could not be paid (chat-service 402). Nothing stored.",
+    content: { "application/json": { schema: TemplateNeutralityCheckFailedResponseSchema } },
+  },
+  422: {
+    description:
+      "The template is not brand/offer neutral: a passage of its fixed text names a specific company, brand, offer, " +
+      "price, figure or person. Templates are shared by every brand. Replace the specific part of each cited passage " +
+      "with a {{variable}} declared in `variables`, or make it generic, then resubmit. Nothing stored.",
+    content: { "application/json": { schema: TemplateNotNeutralResponseSchema } },
+  },
+  429: {
+    description: "The judgment vendor rate-limited the check (retryable). Nothing stored.",
+    content: { "application/json": { schema: TemplateNeutralityCheckFailedResponseSchema } },
+  },
+  502: {
+    description: "The neutrality judgment failed upstream (chat-service). Nothing stored.",
+    content: { "application/json": { schema: TemplateNeutralityCheckFailedResponseSchema } },
+  },
+} as const;
+
 const InsufficientCreditsResponseSchema = registry.register(
   "InsufficientCreditsResponse",
   z
@@ -243,6 +298,9 @@ registry.registerPath({
   path: "/prompts",
   tags: ["Prompts"],
   summary: "Create a prompt template (idempotent — no-op if type already exists)",
+  description:
+    "A new template is judged brand/offer neutral before it is stored (422 with the cited passages otherwise). " +
+    "Templates are shared by every brand, so fixed text must not name one company, offer, figure or person.",
   request: {
     headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
     body: {
@@ -251,6 +309,7 @@ registry.registerPath({
     },
   },
   responses: {
+    ...TEMPLATE_NEUTRALITY_RESPONSES,
     201: {
       description: "Prompt created",
       content: { "application/json": { schema: PromptResponseSchema } },
@@ -274,7 +333,9 @@ registry.registerPath({
   path: "/platform-prompts",
   tags: ["Prompts"],
   summary: "Create a prompt template (idempotent — no-op if type already exists, no identity headers required)",
-  description: "Used at cold start to register prompt templates. Same pattern as key-service POST /platform-keys.",
+  description:
+    "Used at cold start to register prompt templates. Same pattern as key-service POST /platform-keys. " +
+    "A new template is judged brand/offer neutral before it is stored (422 with the cited passages otherwise).",
   request: {
     body: {
       required: true,
@@ -282,6 +343,7 @@ registry.registerPath({
     },
   },
   responses: {
+    ...TEMPLATE_NEUTRALITY_RESPONSES,
     201: {
       description: "Prompt created",
       content: { "application/json": { schema: PromptResponseSchema } },
@@ -311,7 +373,8 @@ registry.registerPath({
     "E.g. sourceType 'cold-email' → creates 'cold-email-v2'. " +
     "sourceType 'cold-email-v5' → creates 'cold-email-v6'. " +
     "If sourceType does not exist, creates the prompt with that type directly (201). " +
-    "The source prompt is never modified.",
+    "The source prompt is never modified. " +
+    "A new version is judged brand/offer neutral before it is stored (422 with the cited passages otherwise).",
   request: {
     headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
     body: {
@@ -320,6 +383,7 @@ registry.registerPath({
     },
   },
   responses: {
+    ...TEMPLATE_NEUTRALITY_RESPONSES,
     200: {
       description: "Prompt unchanged — returned existing version as-is",
       content: { "application/json": { schema: PromptResponseSchema } },
@@ -419,7 +483,8 @@ registry.registerPath({
     "Forks the currently-resolved prompt type for the feature (auto-incremented '<type>-vN'), then assigns the feature " +
     "to the new fork. The source template is never modified. Returns 400 (naming the offending variable) if the {{var}} " +
     "tokens in the submitted prompt do not exactly match the source template's declared variable-name set — on 400 " +
-    "nothing is forked or assigned.",
+    "nothing is forked or assigned. The fork is judged brand/offer neutral before it is stored (422 with the cited " +
+    "passages otherwise, nothing forked or assigned).",
   request: {
     headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string().optional() }),
     body: {
@@ -428,6 +493,7 @@ registry.registerPath({
     },
   },
   responses: {
+    ...TEMPLATE_NEUTRALITY_RESPONSES,
     200: {
       description: "Feature reassigned to the forked prompt",
       content: { "application/json": { schema: PutPromptAssignmentResponseSchema } },
