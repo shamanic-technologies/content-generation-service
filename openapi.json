@@ -28,6 +28,70 @@
           "error"
         ]
       },
+      "TemplateNotNeutralResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "What is wrong and how to fix it, written for the caller to act on."
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "TEMPLATE_NOT_NEUTRAL"
+            ]
+          },
+          "passages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "passage": {
+                  "type": "string",
+                  "description": "The refused passage, verbatim as submitted."
+                },
+                "location": {
+                  "type": "string",
+                  "description": "`prompt` for the template body, `variables.<name>` for a variable description."
+                },
+                "probability": {
+                  "type": "number",
+                  "description": "Jev's probability (0..1) that the passage is specific."
+                }
+              },
+              "required": [
+                "passage",
+                "location",
+                "probability"
+              ]
+            },
+            "description": "Every passage that names or describes one specific company, offer, figure or person."
+          }
+        },
+        "required": [
+          "error",
+          "code",
+          "passages"
+        ]
+      },
+      "TemplateNeutralityCheckFailedResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "TEMPLATE_NEUTRALITY_CHECK_FAILED"
+            ]
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ]
+      },
       "InsufficientCreditsResponse": {
         "type": "object",
         "properties": {
@@ -1666,6 +1730,7 @@
           "Prompts"
         ],
         "summary": "Create a prompt template (idempotent — no-op if type already exists)",
+        "description": "A new template is judged brand/offer neutral before it is stored (422 with the cited passages otherwise). Templates are shared by every brand, so fixed text must not name one company, offer, figure or person.",
         "parameters": [
           {
             "schema": {
@@ -1732,6 +1797,46 @@
                 }
               }
             }
+          },
+          "402": {
+            "description": "The neutrality judgment could not be paid (chat-service 402). Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNeutralityCheckFailedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The template is not brand/offer neutral: a passage of its fixed text names a specific company, brand, offer, price, figure or person. Templates are shared by every brand. Replace the specific part of each cited passage with a {{variable}} declared in `variables`, or make it generic, then resubmit. Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNotNeutralResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The judgment vendor rate-limited the check (retryable). Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNeutralityCheckFailedResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The neutrality judgment failed upstream (chat-service). Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNeutralityCheckFailedResponse"
+                }
+              }
+            }
           }
         }
       },
@@ -1740,7 +1845,7 @@
           "Prompts"
         ],
         "summary": "Create or version a prompt (auto-increments type name if sourceType exists)",
-        "description": "If the prompt and variables are identical to the existing sourceType, returns the existing prompt as-is (200). If sourceType already exists but content differs, creates a new prompt with an auto-incremented type name (201). E.g. sourceType 'cold-email' → creates 'cold-email-v2'. sourceType 'cold-email-v5' → creates 'cold-email-v6'. If sourceType does not exist, creates the prompt with that type directly (201). The source prompt is never modified.",
+        "description": "If the prompt and variables are identical to the existing sourceType, returns the existing prompt as-is (200). If sourceType already exists but content differs, creates a new prompt with an auto-incremented type name (201). E.g. sourceType 'cold-email' → creates 'cold-email-v2'. sourceType 'cold-email-v5' → creates 'cold-email-v6'. If sourceType does not exist, creates the prompt with that type directly (201). The source prompt is never modified. A new version is judged brand/offer neutral before it is stored (422 with the cited passages otherwise).",
         "parameters": [
           {
             "schema": {
@@ -1807,6 +1912,46 @@
                 }
               }
             }
+          },
+          "402": {
+            "description": "The neutrality judgment could not be paid (chat-service 402). Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNeutralityCheckFailedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The template is not brand/offer neutral: a passage of its fixed text names a specific company, brand, offer, price, figure or person. Templates are shared by every brand. Replace the specific part of each cited passage with a {{variable}} declared in `variables`, or make it generic, then resubmit. Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNotNeutralResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The judgment vendor rate-limited the check (retryable). Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNeutralityCheckFailedResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The neutrality judgment failed upstream (chat-service). Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNeutralityCheckFailedResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -1867,7 +2012,7 @@
           "Prompts"
         ],
         "summary": "Create a prompt template (idempotent — no-op if type already exists, no identity headers required)",
-        "description": "Used at cold start to register prompt templates. Same pattern as key-service POST /platform-keys.",
+        "description": "Used at cold start to register prompt templates. Same pattern as key-service POST /platform-keys. A new template is judged brand/offer neutral before it is stored (422 with the cited passages otherwise).",
         "requestBody": {
           "required": true,
           "content": {
@@ -1905,6 +2050,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "The neutrality judgment could not be paid (chat-service 402). Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNeutralityCheckFailedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The template is not brand/offer neutral: a passage of its fixed text names a specific company, brand, offer, price, figure or person. Templates are shared by every brand. Replace the specific part of each cited passage with a {{variable}} declared in `variables`, or make it generic, then resubmit. Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNotNeutralResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The judgment vendor rate-limited the check (retryable). Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNeutralityCheckFailedResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The neutrality judgment failed upstream (chat-service). Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNeutralityCheckFailedResponse"
                 }
               }
             }
@@ -1993,7 +2178,7 @@
           "Prompts"
         ],
         "summary": "Fork the resolved prompt and reassign the feature to the fork",
-        "description": "Forks the currently-resolved prompt type for the feature (auto-incremented '<type>-vN'), then assigns the feature to the new fork. The source template is never modified. Returns 400 (naming the offending variable) if the {{var}} tokens in the submitted prompt do not exactly match the source template's declared variable-name set — on 400 nothing is forked or assigned.",
+        "description": "Forks the currently-resolved prompt type for the feature (auto-incremented '<type>-vN'), then assigns the feature to the new fork. The source template is never modified. Returns 400 (naming the offending variable) if the {{var}} tokens in the submitted prompt do not exactly match the source template's declared variable-name set — on 400 nothing is forked or assigned. The fork is judged brand/offer neutral before it is stored (422 with the cited passages otherwise, nothing forked or assigned).",
         "parameters": [
           {
             "schema": {
@@ -2051,12 +2236,52 @@
               }
             }
           },
+          "402": {
+            "description": "The neutrality judgment could not be paid (chat-service 402). Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNeutralityCheckFailedResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Resolved source prompt type not registered",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The template is not brand/offer neutral: a passage of its fixed text names a specific company, brand, offer, price, figure or person. Templates are shared by every brand. Replace the specific part of each cited passage with a {{variable}} declared in `variables`, or make it generic, then resubmit. Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNotNeutralResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The judgment vendor rate-limited the check (retryable). Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNeutralityCheckFailedResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The neutrality judgment failed upstream (chat-service). Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateNeutralityCheckFailedResponse"
                 }
               }
             }
