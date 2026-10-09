@@ -31,6 +31,12 @@ describe("buildNeutralityQuestions", () => {
     expect(q.p50.type).toBe("noul");
     expect(q.p50.instructions).toContain('"""Pitch Acme\'s audit."""');
   });
+
+  it("exempts the channel the content is written for (Featured.com was refused at p=0.6 under v1)", () => {
+    const q = buildNeutralityQuestions([{ text: "x", location: "prompt" }], 0);
+    expect(q.p0.criteria.false).toMatch(/Featured\.com/);
+    expect(q.p0.instructions).toMatch(/channel or platform the content is written for does not count/);
+  });
 });
 
 describe("interpretNeutralityAnswers", () => {
