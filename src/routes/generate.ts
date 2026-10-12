@@ -1,3 +1,4 @@
+import { normalizeInstruction } from "../lib/campaign-instruction.js";
 import { Router, type Response, type NextFunction } from "express";
 import { eq, and, inArray, arrayContains, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
@@ -101,6 +102,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       featureSlug: bodyFeatureSlug,
       audienceId: bodyAudienceId,
       offerId: bodyOfferId,
+      instruction: bodyInstruction,
     } = parsed.data;
 
     // Header values (from workflow-service) serve as fallback when body values are missing
@@ -234,6 +236,13 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       }
     }
 
+    // The campaign's own instruction, when its run carries one: the email is written from it
+    // (see campaign-instruction.ts). Body only, threaded by workflow-service from /start-run.
+    const instruction = normalizeInstruction(bodyInstruction);
+    if (instruction) {
+      traceEvent(req.runId!, { service: "content-generation-service", event: "campaign-instruction-applied", detail: `Writing from the campaign's instruction (${instruction.length} chars)` }, req.headers).catch(() => {});
+    }
+
     // Generate using the stored prompt + variable substitution + campaign context
     // Chat-service handles key resolution, billing, and cost tracking internally
     traceEvent(req.runId!, { service: "content-generation-service", event: "llm-call-start", detail: `Calling chat-service with prompt type=${type}, variableCount=${Object.keys(variables).length}, hasCampaignContext=${!!campaignContext}, language=${language ?? "english"}` }, req.headers).catch(() => {});
@@ -245,6 +254,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         model,
         language,
         giveLists,
+        instruction,
         onRegenerate: ({ attempt, reason }) => {
           traceEvent(req.runId!, { service: "content-generation-service", event: "llm-regenerate", detail: `Unusable sequence, regenerating (attempt ${attempt}): ${reason}`, level: "warn" }, req.headers).catch(() => {});
         },
