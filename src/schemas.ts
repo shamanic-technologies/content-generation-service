@@ -4,6 +4,7 @@ import {
   OpenAPIRegistry,
 } from "@asteasolutions/zod-to-openapi";
 import { CHAT_MODELS } from "./lib/chat-models.js";
+import { DEBRIEF_ERROR_CODES } from "./lib/debrief/errors.js";
 
 extendZodWithOpenApi(z);
 
@@ -1517,5 +1518,139 @@ registry.registerPath({
       description: "Invalid request body",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
+  },
+});
+
+// ─── Industry debrief video (src/lib/debrief/) ──────────────────────────────
+
+const DebriefPostSchema = z
+  .discriminatedUnion("platform", [
+    z.object({
+      platform: z.literal("linkedin"),
+      activityId: z.string().regex(/^\d{10,25}$/).describe("LinkedIn activity id: the digits of `urn:li:activity:<id>` / `activity-<id>` in the post URL."),
+    }),
+    z.object({
+      platform: z.literal("x"),
+      tweetId: z.string().regex(/^\d{5,25}$/).describe("The status id in https://x.com/<user>/status/<id>."),
+    }),
+  ])
+  .describe("The original post shown on screen, captured from its PUBLIC embed (no login).");
+
+export const DebriefStorySchema = z
+  .object({
+    post: DebriefPostSchema,
+    spotlight: z
+      .array(z.string().trim().min(3))
+      .min(1)
+      .max(2)
+      .describe(
+        "The sentence(s) to spotlight, VERBATIM from the post (straight vs curly apostrophes are matched either way). " +
+          "One per story; two only if both are essential. On an X post, one short line. Not verbatim → the render fails SPOTLIGHT_NOT_FOUND."
+      ),
+    cropFrom: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Optional: start the card at this verbatim phrase, hiding everything above it (e.g. a figure we never show)."),
+    kicker: z.string().trim().min(1).max(40).describe("Short label above the headline, usually the company in the news (`SalesCaptain`). Also used on the badge."),
+    headline: z.string().trim().min(1).max(140).describe("The news in one line."),
+    poster: z.object({
+      relation: z
+        .enum(["official", "own", "third"])
+        .describe("official: the poster speaks for the company in the news. own: the news IS the poster's own test/experience. third: comments on someone else's news."),
+      name: z.string().trim().min(1).optional().describe("Overrides the name read from the embed (when the embed shows a noisy display name)."),
+      role: z.string().trim().min(1).max(60).describe("Short role, e.g. `CEO, SalesCaptain`."),
+      about: z.string().trim().min(1).max(120).describe("What the poster's company does, one line, from their own headline or post."),
+    }),
+    why: z.string().trim().min(1).max(140).describe("Why it matters: one market observation, max ~15 words."),
+    note: z.string().trim().min(1).max(160).describe("The note shown under `why` once it is read (attribution, sample size)."),
+    take: z.string().trim().min(1).max(140).describe("What we think: our conviction, optimistic, max ~14 words, no figures."),
+  })
+  .openapi("DebriefStory");
+export type DebriefStory = z.infer<typeof DebriefStorySchema>;
+
+export const DebriefVideoRequestSchema = registry.register(
+  "DebriefVideoRequest",
+  z
+    .object({
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("The bulletin's day (YYYY-MM-DD), shown in the masthead as `Sunday, Oct 12`."),
+      scan: z.object({
+        postsRead: z.number().int().positive().describe("How many posts the day's scan read (the intro counts up to it)."),
+        windowHours: z.number().int().positive().max(168).describe("How far back the scan read, in hours (`from the last 36 hours`)."),
+      }),
+      stories: z
+        .array(DebriefStorySchema)
+        .min(2)
+        .max(4)
+        .describe("The day's stories in screen order (2 to 4; our own news, when there is one, is a story like the others, last)."),
+      idempotencyKey: z
+        .string()
+        .trim()
+        .min(1)
+        .max(200)
+        .optional()
+        .describe("Same key + same org → the existing render is returned (no second render). Use e.g. `industry-debrief-<date>`."),
+    })
+    .openapi("DebriefVideoRequest")
+);
+export type DebriefVideoRequest = z.infer<typeof DebriefVideoRequestSchema>;
+
+export const DebriefVideoSchema = registry.register(
+  "DebriefVideo",
+  z
+    .object({
+      id: z.string().uuid(),
+      status: z.enum(["queued", "rendering", "done", "failed"]),
+      stage: z.enum(["capturing", "rendering", "mixing", "checking", "uploading"]).nullable().describe("What a `rendering` job is doing now."),
+      videoUrl: z.string().url().nullable().describe("Public MP4 URL (R2) once `done`: 1080x1350 (4:5), H.264 yuv420p, AAC, faststart."),
+      durationSeconds: z.number().nullable().describe("The video's length = the scene's sum of screen times."),
+      musicTrackId: z.number().int().nullable().describe("Mixkit track id used (rotates, never the previous render's)."),
+      errorCode: z.enum(DEBRIEF_ERROR_CODES).nullable().describe("Why a `failed` job failed. Nothing is uploaded on failure."),
+      error: z.string().nullable().describe("Human-readable failure detail, naming the story and phrase when relevant."),
+      runId: z.string().nullable().describe("This render's runs-service run."),
+      createdAt: z.string(),
+      finishedAt: z.string().nullable(),
+    })
+    .openapi("DebriefVideo")
+);
+
+registry.registerPath({
+  method: "post",
+  path: "/industry-debrief-videos",
+  tags: ["Industry debrief video"],
+  summary: "Start rendering the daily industry debrief news-bulletin video (async)",
+  description:
+    "Queues a render of the 4:5 news bulletin defined by the industry-debrief-video skill: per story the headline, the real post " +
+    "captured from its public embed with the sentence spotlit under a header saying who wrote it, why it matters + its note, " +
+    "what we think; reading time per screen from word count; house chrome; sign-off; music longer than the video (rotating Mixkit " +
+    "tracks, never looped). Answers 202 at once: a render takes several minutes, poll `GET /industry-debrief-videos/{id}?waitSeconds=240`. " +
+    "Renders run one at a time on the service's own CPU (no metered vendor); the R2 upload is declared by cloudflare-service on this run.",
+  request: {
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
+    body: { required: true, content: { "application/json": { schema: DebriefVideoRequestSchema } } },
+  },
+  responses: {
+    202: { description: "Queued (or the existing render for this idempotencyKey)", content: { "application/json": { schema: DebriefVideoSchema } } },
+    400: { description: "Invalid request", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/industry-debrief-videos/{id}",
+  tags: ["Industry debrief video"],
+  summary: "A debrief render's status; optionally wait for it to finish",
+  description:
+    "With `waitSeconds` (1-240) the call holds until the render is `done`/`failed` or the wait elapses, then answers the current " +
+    "state (always 200): one call stays under the platform's 300 s client timeout. A workflow polls it with " +
+    "`validateResponse: { field: \"status\", equals: \"done\" }` and retries.",
+  request: {
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string() }),
+    params: z.object({ id: z.string().uuid() }),
+    query: z.object({ waitSeconds: z.string().optional() }),
+  },
+  responses: {
+    200: { description: "The render", content: { "application/json": { schema: DebriefVideoSchema } } },
+    404: { description: "No render with this id for this org", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });

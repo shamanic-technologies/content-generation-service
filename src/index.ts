@@ -18,6 +18,8 @@ import composeRoutes from "./routes/compose.js";
 import submagicRoutes from "./routes/submagic.js";
 import transferBrandRoutes from "./routes/transfer-brand.js";
 import previewEmailRoutes from "./routes/preview-email.js";
+import industryDebriefVideoRoutes from "./routes/industry-debrief-videos.js";
+import { resumeDebriefJobs } from "./lib/debrief/jobs.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -64,6 +66,7 @@ app.use(composeRoutes);
 app.use(submagicRoutes);
 app.use(transferBrandRoutes);
 app.use(previewEmailRoutes);
+app.use(industryDebriefVideoRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -100,6 +103,8 @@ if (process.env.NODE_ENV !== "test") {
     .then(() => {
       app.listen(Number(PORT), "::", () => {
         console.log(`Content generation service running on port ${PORT}`);
+        // After the port binds: renders a restart interrupted are re-queued in the background.
+        resumeDebriefJobs().catch((err) => console.error("[debrief] resume at boot failed:", err));
       });
     })
     .catch((err) => {

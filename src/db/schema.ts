@@ -1,4 +1,4 @@
-import { pgTable, pgView, uuid, text, timestamp, uniqueIndex, index, integer, jsonb, boolean } from "drizzle-orm/pg-core";
+import { pgTable, pgView, uuid, text, timestamp, uniqueIndex, index, integer, jsonb, boolean, doublePrecision } from "drizzle-orm/pg-core";
 
 // Email generations
 export const emailGenerations = pgTable(
@@ -232,6 +232,34 @@ export const contentGenerations = pgTable(
     index("idx_contentgen_org").on(table.orgId),
   ]
 );
+
+// One industry debrief video render (src/lib/debrief/jobs.ts). `tracking` keeps the
+// inbound attribution headers: they do not survive the async boundary otherwise.
+export const industryDebriefVideos = pgTable(
+  "industry_debrief_videos",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    parentRunId: text("parent_run_id").notNull(),
+    runId: text("run_id").notNull(),
+    tracking: jsonb("tracking").notNull(),
+    idempotencyKey: text("idempotency_key"),
+    request: jsonb("request").notNull(),
+    status: text("status").notNull().default("queued"),
+    stage: text("stage"),
+    videoUrl: text("video_url"),
+    durationSeconds: doublePrecision("duration_seconds"),
+    musicTrackId: integer("music_track_id"),
+    errorCode: text("error_code"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (table) => [index("idx_debrief_videos_status").on(table.status)]
+);
+export type IndustryDebriefVideo = typeof industryDebriefVideos.$inferSelect;
 
 export type EmailGeneration = typeof emailGenerations.$inferSelect;
 export type NewEmailGeneration = typeof emailGenerations.$inferInsert;

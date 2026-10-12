@@ -1,0 +1,191 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Inter:wght@400;500;600;700&display=block" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1350px; overflow: hidden; background: #f4f2ec; font-family: Inter, sans-serif; color: #111; -webkit-font-smoothing: antialiased; }
+  #mast { position: absolute; left: 60px; right: 60px; top: 44px; height: 40px; display: flex; align-items: center; justify-content: space-between; font: 700 20px Inter; letter-spacing: .14em; text-transform: uppercase; }
+  #mast .l { display: flex; align-items: center; gap: 14px; }
+  #mast .dot { width: 12px; height: 12px; border-radius: 6px; background: #d92d20; }
+  #mast .r { font-weight: 600; letter-spacing: .02em; text-transform: none; color: #6b6760; }
+  #rule { position: absolute; left: 60px; right: 60px; top: 98px; height: 2px; background: #111; transform-origin: 0 50%; }
+  #prog { position: absolute; left: 60px; top: 108px; height: 4px; background: #d92d20; }
+  .serif { font-family: Newsreader, Georgia, serif; font-weight: 600; letter-spacing: -0.015em; }
+  .shot { position: absolute; left: 90px; width: 900px; visibility: hidden; }
+  .w { display: inline-block; }
+  .kick { font: 700 24px Inter; letter-spacing: .14em; text-transform: uppercase; color: #d92d20; }
+  .kick span { color: #111; }
+  /* one screen = one thing to read */
+  .big { font-size: 84px; line-height: 1.04; margin-top: 26px; }
+  .sub { font: 500 36px Inter; color: #4a4741; margin-top: 34px; line-height: 1.35; }
+  .sub b { color: #111; font-variant-numeric: tabular-nums; }
+  /* credit super: SOURCE / USER, then role */
+  .cred { display: flex; align-items: flex-start; gap: 40px; }
+  .av { width: 190px; height: 190px; border-radius: 50%; flex: none; background-repeat: no-repeat; box-shadow: 0 0 0 6px #fff, 0 16px 40px rgba(20,18,14,.18); }
+  .cred .src { font: 700 26px Inter; letter-spacing: .14em; text-transform: uppercase; color: #6b6760; }
+  .cred .nm { font-size: 76px; line-height: 1.02; margin-top: 10px; }
+  .cred .rl { font: 500 38px Inter; color: #333; margin-top: 14px; line-height: 1.25; }
+  .cred .ab { font: 500 32px Inter; color: #6b6760; margin-top: 18px; line-height: 1.3; }
+  /* post card */
+  .card { position: absolute; left: 90px; width: 900px; border-radius: 22px; background: #fff; overflow: hidden; visibility: hidden;
+          box-shadow: 0 30px 70px rgba(20,18,14,.18), 0 0 0 1px rgba(20,18,14,.08); }
+  .card .pg { position: absolute; left: 0; top: 0; width: 900px; transform-origin: 0 0; }
+  .card .pg img { width: 900px; display: block; }
+  .mark { position: absolute; background: #ffd84d; mix-blend-mode: multiply; border-radius: 4px; transform-origin: 0 50%; }
+  .card .hd { position: absolute; left: 0; top: 0; width: 900px; height: 190px; background: #fff; border-bottom: 1px solid #ebe8e1; display: flex; align-items: center; gap: 26px; padding: 0 34px; z-index: 2; }
+  .card .hd .av { width: 112px; height: 112px; box-shadow: 0 0 0 4px #fff, 0 8px 20px rgba(20,18,14,.15); }
+  .card .hs { font: 700 18px Inter; letter-spacing: .12em; text-transform: uppercase; color: #8a867e; }
+  .card .hn { font-size: 46px; line-height: 1.05; margin-top: 4px; }
+  .card .hr { font: 500 26px Inter; color: #333; margin-top: 6px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .card .ha { font: 500 21px Inter; color: #6b6760; margin-top: 6px; line-height: 1.3; }
+  .bdg { font: 700 16px Inter; letter-spacing: .1em; text-transform: uppercase; padding: 6px 12px; border-radius: 8px; }
+  .bdg.thr { background: #fff1d6; color: #8a5a00; } .bdg.off { background: #e3f4e8; color: #1f6b3a; }
+  .card .vp { position: absolute; left: 0; top: 190px; width: 900px; overflow: hidden; }
+  .spot { position: absolute; border-radius: 10px; box-shadow: 0 0 0 3000px rgba(255,255,255,.78); }
+  .why .l { font: 700 24px Inter; letter-spacing: .16em; text-transform: uppercase; color: #d92d20; }
+  .why .t { font: 600 60px Inter; line-height: 1.15; letter-spacing: -0.02em; margin-top: 22px; }
+  .why .n { font: 500 38px Inter; line-height: 1.3; color: #4a4741; margin-top: 40px; }
+</style></head>
+<body>
+  <div id="mast"><div class="l"><i class="dot"></i><span id="mname"></span></div><div class="r" id="mdate"></div></div>
+  <div id="rule"></div><div id="prog"></div>
+  <div id="root"></div>
+
+<script src="engine.js"></script>
+<script src="posts.js"></script>
+<script src="data.js"></script>
+<script>
+// DATA + POSTS come from data.js / posts.js, written per render by content-generation-service
+// (src/lib/debrief/scene-data.ts builds DATA from the request; capture.ts writes POSTS).
+// relation = 'official' | 'own' | 'third'; key = a captured post (post-<key>.png + rects in posts.js).
+const DATA = window.DEBRIEF_DATA;
+
+const { clamp, smoother } = Motion;
+const $ = id => document.getElementById(id);
+const px = n => n.toFixed(2) + 'px';
+const ease = k => smoother(clamp(k, 0, 1));
+const SFX = []; const sfx = (t, type, p = 1) => SFX.push({ t, type, p });
+const CAP_W = 420, K = 900 / CAP_W;          // cap.mjs viewport width -> card px
+// Reading time (BBC subtitle guideline: 160-180 wpm = 0.33-0.375 s/word), plus time to find the
+// text after a cut. Every screen holds ONE thing to read and stays up at least MIN seconds.
+const TEXT_TOP = 200;   // headlines sit high, like a front page (owner, 2026-09-28)
+const PER_WORD = 0.38, FIND = 1.3, MIN = 2.8, XF = 0.55;
+const words = s => s.replace(/<[^>]+>/g, '').trim().split(/\s+/).length;
+// owner, 2026-09-28: tuned by eye (x0.75, x0.8, x0.85 = too fast at 0.51, then x1.3) -> every reading time x 0.663
+const READ_SCALE = 0.663;
+const TAKE_SCALE = 1.3;   // owner, 2026-10-01: the take screen left too little time to read
+const HD = 190;   // sticky poster header height inside the card
+const readT = s => READ_SCALE * Math.max(MIN, FIND + PER_WORD * words(s));
+
+$('mdate').textContent = DATA.date; $('mname').textContent = DATA.industry;
+const root = $('root');
+const mk = (cls, html) => { const d = document.createElement('div'); d.className = cls; d.innerHTML = html; root.appendChild(d); return d; };
+const wrapWords = (el, text) => { el.innerHTML = text.split(' ').map(w => `<span class="w">${w}</span>`).join(' '); return [...el.querySelectorAll('.w')]; };
+
+// ---------- build the timeline: a list of shots, each [t0, t1] ----------
+const shots = []; let T = 0;
+const add = (el, dur, extra = {}) => { const s = { el, t0: T, t1: T + dur, ...extra }; shots.push(s); T += dur; return s; };
+
+// intro: title, then the scope line under it (read in order)
+const intro = mk('shot', `<div class="kick">Today in</div><div class="big serif" style="font-size:72px;margin-top:14px">${DATA.industry}</div><div class="sub" style="font:600 52px Inter;color:#111;margin-top:48px"></div><div class="sub">${DATA.intro.sub}</div>`);
+const iw = wrapWords(intro.children[2], DATA.intro.head);
+const introShot = add(intro, readT(DATA.industry + ' ' + DATA.intro.head) + readT(DATA.intro.sub) - FIND, { y: 330, words: iw, subAt: readT(DATA.industry + ' ' + DATA.intro.head) });
+sfx(0, 'pop', .8);
+
+const nInd = DATA.stories.length;
+DATA.stories.forEach((s, i) => {
+  const P = POSTS[s.key], who = P.who || {};
+  const num = `${i + 1} / ${nInd} &nbsp;·&nbsp; `;   // our news is numbered like the others (owner, 2026-10-01)
+  // 1. headline alone
+  const h = mk('shot', `<div class="kick">${num}<span>${s.kicker}</span></div><div class="big serif"></div>`);
+  const hw = wrapWords(h.children[1], s.head);
+  add(h, readT(s.head) + .4, { y: 380, words: hw }); sfx(shots.at(-1).t0, 'send', .8);
+  // 2. who said it lives IN the post: a sticky, enlarged header above the post body (owner, 2026-09-28:
+  // a separate credit screen did not read as related to the story). The badge says whether the poster
+  // speaks for the company in the news (official) or comments on it (third party).
+  const name = s.name || who.name, role = s.role || who.role;
+  const avatar = who.avatar ? (() => { const [x, y, w] = who.avatar, D = 112, sc = D / w;
+    return `<div class="av" style="background-image:url(post-${s.key}.png);background-size:${px(CAP_W * sc)} auto;background-position:${px(-x * sc)} ${px(-y * sc)}"></div>`; })() : '';
+  const badge = s.relation === 'official' ? `<span class="bdg off">Official · ${s.kicker}</span>` : s.relation === 'own' ? `<span class="bdg off">Ran this test</span>` : `<span class="bdg thr">Third party · not ${s.kicker}</span>`;
+  const src = s.source || `${who.src || 'LinkedIn'} · ${String(who.age).split(/\s+/)[0]} ago`;
+  // 3. the post itself, the cited sentence spotlit (the rest dimmed), one mark at a time
+  const marks = Object.entries(P.marks);
+  const card = document.createElement('div'); card.className = 'card'; root.appendChild(card);
+  card.innerHTML = `<div class="hd">${avatar}<div class="hx"><div class="hs">${src}</div><div class="hn serif">${name}</div><div class="hr">${role} ${badge}</div><div class="ha">${s.about || ''}</div></div></div><div class="vp"><div class="pg"><img src="post-${s.key}.png"></div></div>`;
+  const pg = card.querySelector('.pg');
+  const mEls = marks.map(([phrase, lines]) => {
+    const ls = lines.map(r => { const m = document.createElement('div'); m.className = 'mark'; pg.appendChild(m);
+      m.style.left = px((r[0] - 4) * K); m.style.top = px((r[1] - 2) * K); m.style.width = px((r[2] + 8) * K); m.style.height = px((r[3] + 5) * K); return m; });
+    const x0 = Math.min(...lines.map(r => r[0])), y0 = Math.min(...lines.map(r => r[1])), x1 = Math.max(...lines.map(r => r[0] + r[2])), y1 = Math.max(...lines.map(r => r[1] + r[3]));
+    const sp = document.createElement('div'); sp.className = 'spot'; pg.appendChild(sp);
+    sp.style.left = px((x0 - 12) * K); sp.style.top = px((y0 - 10) * K); sp.style.width = px((x1 - x0 + 24) * K); sp.style.height = px((y1 - y0 + 20) * K);
+    return { phrase, ls, sp, y: y0 * K };
+  });
+  const skip = Math.max(who.avatar ? who.avatar[1] + who.avatar[3] + 6 : 0, P.from || 0);   // hide the embed's own small header (ours replaces it), or crop to P.from
+  const VPH = Math.min(900, HD + (P.H - skip) * K);
+  const settle = readT(`${name} ${role} ${s.about || ''}`);          // read who is talking before anything is highlighted
+  const cardShot = add(card, settle + marks.reduce((a, [ph]) => a + readT(ph) + .6, 0), { y: 250, card: true, pg, mEls, VPH, H: (P.H - skip) * K, skip: skip * K, settle });
+  let tm = cardShot.t0 + settle; mEls.forEach(m => { m.at = tm; tm += readT(m.phrase) + .6; sfx(m.at, 'key', 1); });
+  // 3b. explain screens (our own study: how it was measured, what it found), same layout as "why"
+  (s.explain || []).forEach(e => {
+    const x = mk('shot why', `<div class="l">${e.l}</div><div class="t">${e.t}</div><div class="n">${e.n}</div>`);
+    const xd = readT(e.t), xn = readT(e.n);
+    add(x, xd + xn - FIND + .6, { y: 360, noteAt: xd }); sfx(shots.at(-1).t0, 'chime', .8);
+  });
+  // 4. why it matters, then its note under it
+  const w = mk('shot why', `<div class="l">${s.whyLabel || 'Why it matters'}</div><div class="t">${s.why}</div><div class="n">${s.note}</div>`);
+  const wd = readT(s.why), nd = readT(s.note);
+  add(w, wd + nd - FIND + .6, { y: 360, noteAt: wd }); sfx(shots.at(-1).t0, 'chime', .85);
+  // 5. the editor's take: critical, including on our own story (owner, 2026-10-01)
+  const d = mk('shot why', `<div class="l">What we think</div><div class="t">${s.take}</div>`);
+  add(d, TAKE_SCALE * readT(s.take) + .3, { y: 360 });   // an opinion reads slower than a headline sfx(shots.at(-1).t0, 'pop', 1.1);
+});
+// sign-off, then where the links are (read in order)
+const nb = x => x.replace(/-/g, '\u2011');   // non-breaking hyphens: "Done-For-You" never splits across lines
+const outro = mk('shot why', `<div class="t" style="font:600 76px/1.06 Newsreader,Georgia,serif;letter-spacing:-0.015em">${nb(DATA.outro.head)}</div><div class="n">${DATA.outro.sub}</div>`);
+const od = readT(DATA.outro.head);
+add(outro, od + readT(DATA.outro.sub) - FIND + .5, { y: 480, noteAt: od, keepHead: true, last: true }); sfx(shots.at(-1).t0, 'send', .9);
+window.DURATION = T; window.BEATS = Math.round(T / 1.5);   // frames.mjs "beats" = one still per 1.5 s
+
+function seek(t) {
+  $('rule').style.transform = `scaleX(${ease(t / .8).toFixed(4)})`;
+  $('prog').style.width = px(960 * clamp(t / T, 0, 1));
+  for (const s of shots) {
+    const inK = s.t0 === 0 ? 1 : ease((t - s.t0) / XF), outK = s.last ? 0 : ease((t - (s.t1 - XF * .6)) / (XF * .6));
+    const v = t < s.t0 - .01 || t > s.t1 + .01 ? 0 : inK * (1 - outK);
+    if (v <= 0.003) { s.el.style.visibility = 'hidden'; continue; }
+    s.el.style.visibility = 'visible'; s.el.style.opacity = v.toFixed(3);
+    const dy = (1 - inK) * 36 - outK * 30;
+    // every screen centred in the frame below the masthead (measured once, at full size)
+    if (s.h === undefined) s.h = s.card ? s.VPH : s.el.offsetHeight;
+    // newspaper layout: text hangs from the top under the masthead; the post card is centred
+    s.el.style.top = px((s.card ? 120 + (1350 - 120 - s.h) / 2 : TEXT_TOP) + dy);
+    if (s.words) s.words.forEach((w, i) => { const k = s.t0 === 0 ? ease((t - .1 - i * .07) / .45) : ease((t - s.t0 - i * .05) / .45); w.style.opacity = k.toFixed(3); w.style.transform = `translateY(${px((1 - k) * 24)})`; });
+    if (s.subAt !== undefined) { const subs = s.el.querySelectorAll('.sub'); const k = ease((t - s.t0 - s.subAt + .4) / .5);
+      subs[1].style.opacity = k.toFixed(3); const c = $('icount'); if (c) c.textContent = Math.round(DATA.intro.count * ease((t - s.t0 - s.subAt + .4) / 1.4)).toLocaleString('en-US'); }
+    if (s.noteAt !== undefined) { const n = s.el.querySelector('.n'), tt = s.el.querySelector('.t'); const k = ease((t - s.t0 - s.noteAt + .3) / .5);
+      n.style.opacity = k.toFixed(3); tt.style.opacity = s.keepHead ? '1' : (1 - .45 * k).toFixed(3); }
+    if (s.card) {
+      s.el.style.height = px(s.VPH);
+      const vh = s.VPH - HD; s.el.querySelector('.vp').style.height = px(vh);
+      // scroll the body under the sticky header: bring each spotlit sentence to ~35% of the visible body
+      let target = 0, from = 0, t0 = s.t0 + .2;
+      for (const m of s.mEls) { const tgt = clamp(m.y - s.skip - vh * .35, 0, Math.max(0, s.H - vh)); if (t >= m.at - .9) { from = target; target = tgt; t0 = m.at - .9; } }
+      const sc = from + (target - from) * ease((t - t0) / .8);
+      s.pg.style.transform = `translateY(${px(-(s.skip + sc))})`;
+      s.mEls.forEach((m, j) => {
+        const on = t >= m.at && (j === s.mEls.length - 1 || t < s.mEls[j + 1].at);
+        const k = ease((t - m.at) / .45);
+        m.ls.forEach((l, li) => { const kk = ease((t - m.at - .15 - li * .25) / .4); l.style.transform = `scaleX(${kk.toFixed(4)})`; l.style.opacity = kk > 0 ? '.95' : '0'; });
+        m.sp.style.opacity = on ? k.toFixed(3) : '0';
+      });
+    }
+  }
+}
+window.SFX = SFX.sort((a, c) => a.t - c.t);
+window.seek = seek;
+window.ready = document.fonts.ready.then(async () => {
+  await Promise.all([...document.images].map(i => i.decode()));
+  seek(0); return document.fonts.check('600 40px Newsreader') && document.fonts.check('600 20px Inter');
+});
+</script></body></html>
