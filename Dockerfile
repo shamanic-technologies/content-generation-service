@@ -37,7 +37,8 @@ RUN pnpm install --prod --frozen-lockfile || pnpm install --prod
 # embeds and renders the scene frame by frame. Emoji + Latin fallback fonts so a post's
 # emoji and symbols draw like they do in a browser, not as boxes.
 RUN npx playwright install --with-deps chromium \
-  && apt-get update && apt-get install -y fonts-noto-color-emoji fonts-liberation && rm -rf /var/lib/apt/lists/*
+  && apt-get update && apt-get install -y fonts-noto-color-emoji fonts-liberation fonts-roboto && rm -rf /var/lib/apt/lists/*
+COPY docker/fonts-local.conf /etc/fonts/local.conf
 
 # Copy built files, migrations, and OpenAPI spec
 COPY --from=builder /app/dist ./dist
