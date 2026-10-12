@@ -388,6 +388,12 @@
             "type": "string",
             "description": "Audience attribution ID. Falls back to x-audience-id header if omitted."
           },
+          "instruction": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 4000,
+            "description": "The campaign's own instruction (campaign-service's sales-funnel campaign `instruction`, reported by /start-run; workflow-service threads it into every /generate body). When set, the email is written from it: it outranks the template's angle, pitch and structure, never the output format. Absent, null or blank = the template alone, byte-identical to before."
+          },
           "offerId": {
             "type": "string",
             "description": "The campaign's offer id. Forwarded to brand-service on the extract-fields request, which refuses brand-scoped reads for a brand selling several offers until one is named. Body only — there is no header fallback. Sent only when a single brand is named; ignored for a multi-brand request, which brand-service rejects with an offer."

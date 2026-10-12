@@ -1,3 +1,4 @@
+import { MAX_INSTRUCTION_LENGTH } from "./lib/campaign-instruction.js";
 import { z } from "zod";
 import {
   extendZodWithOpenApi,
@@ -538,6 +539,7 @@ export const GenerateRequestSchema = registry.register(
       workflowSlug: z.string().optional(),
       featureSlug: z.string().optional().describe("Feature slug for tracking"),
       audienceId: z.string().optional().describe("Audience attribution ID. Falls back to x-audience-id header if omitted."),
+      instruction: z.string().max(MAX_INSTRUCTION_LENGTH).nullable().optional().describe("The campaign's own instruction (campaign-service's sales-funnel campaign `instruction`, reported by /start-run; workflow-service threads it into every /generate body). When set, the email is written from it: it outranks the template's angle, pitch and structure, never the output format. Absent, null or blank = the template alone, byte-identical to before."),
       offerId: z.string().optional().describe("The campaign's offer id. Forwarded to brand-service on the extract-fields request, which refuses brand-scoped reads for a brand selling several offers until one is named. Body only — there is no header fallback. Sent only when a single brand is named; ignored for a multi-brand request, which brand-service rejects with an offer."),
     })
     .openapi("GenerateRequest")
