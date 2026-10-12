@@ -146,6 +146,8 @@ describe("POST /generate (template-based)", () => {
         language: null,
         // No offerId on this request, so no give lists are read.
         giveLists: null,
+        // The run carries no campaign instruction, so the template writes alone.
+        instruction: null,
         // Traces each regeneration of an unusable answer on the run.
         onRegenerate: expect.any(Function),
       },

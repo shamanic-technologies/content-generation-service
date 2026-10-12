@@ -2,6 +2,7 @@ import { extractTemplateVariableNames } from "./template-vars.js";
 import { buildLeadContextBlock } from "./lead-context-block.js";
 import { withoutUnquotableBuyingSignal } from "./lead-context-variables.js";
 import { type OfferGiveLists, buildGiveListsDirective } from "./offer-give-lists.js";
+import { buildCampaignInstructionDirective } from "./campaign-instruction.js";
 import {
   type ChatModel,
   type ChatProvider,
@@ -40,6 +41,12 @@ export interface GenerateFromTemplateParams {
    * emitted and the system prompt stays byte-identical. See offer-give-lists.ts.
    */
   giveLists?: OfferGiveLists | null;
+  /**
+   * The campaign's own instruction (campaign-service, threaded by workflow-service). Absent,
+   * null or blank → no rule is emitted and the system prompt stays byte-identical. Appended
+   * LAST so it outranks every rule before it. See campaign-instruction.ts.
+   */
+  instruction?: string | null;
   /**
    * Ask the SAME completion to also report, per sentence of the first email, which
    * input it rests on. Absent → the system prompt and response schema are
@@ -454,6 +461,10 @@ export async function generateFromTemplate(
   const annotate = params.annotate && params.annotate.sources.length > 0 ? params.annotate : null;
   if (annotate) {
     systemPrompt = `${systemPrompt}\n${buildAnnotationDirective(annotate.sources)}`;
+  }
+  const instructionDirective = buildCampaignInstructionDirective(params.instruction);
+  if (instructionDirective) {
+    systemPrompt = `${systemPrompt}\n${instructionDirective}`;
   }
 
   const model = params.model ?? DEFAULT_MODEL;

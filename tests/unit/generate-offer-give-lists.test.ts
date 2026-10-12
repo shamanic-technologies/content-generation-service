@@ -139,4 +139,20 @@ describe("POST /generate — the offer's give lists", () => {
     expect(mockFetchGiveLists).not.toHaveBeenCalled();
     expect(mockGenerateFromTemplate).not.toHaveBeenCalled();
   });
+  it("hands the campaign's instruction to the writer, trimmed", async () => {
+    await request(app).post("/generate").send({ ...body, instruction: "  Thank them, ask ONE open question.  " }).expect(200);
+    expect(mockGenerateFromTemplate.mock.calls[0][0].instruction).toBe("Thank them, ask ONE open question.");
+  });
+
+  it("hands no instruction when the run carries none, null or blank", async () => {
+    await request(app).post("/generate").send(body).expect(200);
+    await request(app).post("/generate").send({ ...body, instruction: null }).expect(200);
+    await request(app).post("/generate").send({ ...body, instruction: "  " }).expect(200);
+    expect(mockGenerateFromTemplate.mock.calls.map((c) => c[0].instruction)).toEqual([null, null, null]);
+  });
+
+  it("refuses an instruction longer than campaign-service allows", async () => {
+    await request(app).post("/generate").send({ ...body, instruction: "x".repeat(4001) }).expect(400);
+    expect(mockGenerateFromTemplate).not.toHaveBeenCalled();
+  });
 });
