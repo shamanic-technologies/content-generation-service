@@ -21,6 +21,7 @@ Microservice that generates personalized content (emails, calendar events, etc.)
 - `src/routes/generate.ts` — POST /generate endpoint (email generation via chat-service)
 - `src/routes/stats.ts` — POST /stats and POST /stats/by-model endpoints
 - `src/routes/transfer-brand.ts` + `src/lib/transfer-brand.ts` — POST /internal/transfer-brand (fleet contract, see "Brand transfer" below)
+- `src/routes/industry-debrief-videos.ts` + `src/lib/debrief/` + `assets/industry-debrief/` — the daily industry debrief news-bulletin video (see "Industry debrief video" below)
 - `src/routes/health.ts` — GET /health endpoint
 - `src/middleware/auth.ts` — Authentication middleware (X-Clerk-Org-Id header)
 - `src/lib/chat-service-client.ts` — Chat-service client + email template utilities (prompt substitution, JSON parsing)
@@ -262,6 +263,19 @@ In onboarding the customer states, per offer, what they give for free to a prosp
 - **The rule lives in the system prompt** (`buildGiveListsDirective`), like the language directive, so it reaches every hand-tuned template without editing a stored body. It says it overrides the template's generic call to action.
 - **Failure:** `/generate` degrades loudly to no lists (trace `offer-give-lists-unavailable`), same as brand fields and language. `/preview-email` fails loud (`OfferGiveListsError`, brand-service's 400/404/409 passed through, else 502), like its brand intel.
 - The preview's highlights can name `offer.giveForFree` (kind `brand`) as a sentence's source; `neverGive` is never a source.
+
+## Industry debrief video (`POST /industry-debrief-videos`)
+
+The daily "industry update" bulletin (4:5, 2-4 stories, ~60-110 s) the Social post workflow publishes, rendered here instead of on the owner's Mac. Editorial rules are the `industry-debrief-video` skill's; the scene (`assets/industry-debrief/scene.html` + `engine.js`) is that skill's scene with only its DATA block moved to `data.js`, so pacing (readT x 0.663, TAKE_SCALE), screens and spotlight are byte-identical. Change the scene THERE first, then port it here.
+
+- **Async, never past 300 s**: `POST` → 202 `{ id }` (own runs-service run, `idempotencyKey` → the existing render); `GET /industry-debrief-videos/{id}?waitSeconds<=240` holds until `done`/`failed` or the wait ends, always 200. A workflow node polls it with `validateResponse { field: "status", equals: "done" }` + retries.
+- **Pipeline** (`pipeline.ts`): Playwright captures each post's PUBLIC embed (`capture.ts` + `capture-page.js`, evaluated over CDP because LinkedIn's CSP blocks injected `<script>`) → scene → `window.DURATION`/`SFX` → music → frames piped to ffmpeg (`render.ts`, SUB=2 motion blur, 2 workers split on SUB multiples) → soundtrack (`audio.ts`, port of promo-motion's audio.py, the 4 sounds the scene uses) → mux faststart → `output-check.ts` (h264, yuv420p, 1080x1350, audio, duration = scene T ± 0.1 s, moov first) → R2 via cloudflare-service `/upload/base64` under the render's run (cloudflare-service declares the R2 cost; render CPU is our box, no metered vendor, no cost row).
+- **Named failures only** (`errors.ts`): EMBED_UNREACHABLE, SPOTLIGHT_NOT_FOUND (phrase not verbatim, story named), CROP_PHRASE_NOT_FOUND, FONT_NOT_LOADED, MUSIC_UNAVAILABLE, RENDER_FAILED, OUTPUT_INVALID, UPLOAD_FAILED, RENDER_INTERRUPTED. Nothing is uploaded on failure.
+- **Music**: Mixkit rotation in `music.ts`, starts after the last `done` render's track, never 130 (promo), must outlast the video by 3 s (ffprobed after download; never `-stream_loop`).
+- **One render at a time, at nice 10** (Chromium via a `nice` wrapper, ffmpeg via `setPriority`): the box serves the fleet. ~7.5 min for 90 s on a Mac. A restart re-queues renders younger than 6 h on boot (after `listen`), fails older ones RENDER_INTERRUPTED.
+- The masthead weekday is computed from `date` (the Mac run of 2026-10-12 hand-typed "Sunday" for a Monday).
+- Local render, no DB/upload: `npx tsx scripts/render-debrief.ts tests/fixtures/industry-debrief-2026-10-12.json out.mp4 [previousTrackId]`.
+- Not here: picking stories, captions, tags, posting (workflow + social-service). Our study's motion-design example (skill: abstract finding) is not supported: our news is a story with its post card.
 
 ## Brand transfer (`POST /internal/transfer-brand`)
 

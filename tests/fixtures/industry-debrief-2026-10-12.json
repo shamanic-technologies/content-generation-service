@@ -1,0 +1,37 @@
+{
+  "date": "2026-10-12",
+  "scan": { "postsRead": 589, "windowHours": 36 },
+  "stories": [
+    {
+      "post": { "platform": "linkedin", "activityId": "7515370513691697153" },
+      "spotlight": ["In 2024, 30 people ran our outbound research by hand."],
+      "kicker": "SalesCaptain",
+      "headline": "SalesCaptain replaced 30 outbound researchers with 5 people and Clay",
+      "poster": { "relation": "own", "role": "CEO, SalesCaptain", "about": "SalesCaptain runs outbound campaigns for B2B companies." },
+      "why": "AI handles research and prep. Humans earn the conversation.",
+      "note": "Per his post: SDRs, AEs and GTM engineers now split the work that 30 did.",
+      "take": "The team that automates research first will outprice every agency that still does it by hand."
+    },
+    {
+      "post": { "platform": "x", "tweetId": "2109289938692784499" },
+      "spotlight": ["Never let your AI SDR send its first 1,000 emails without manually reviewing every single one."],
+      "kicker": "AI SDR quality",
+      "headline": "Jason Lemkin: read every one of your AI SDR’s first 1,000 emails",
+      "poster": { "relation": "own", "role": "Founder, SaaStr", "about": "SaaStr runs the largest SaaS community and annual conference." },
+      "why": "Spot-checking misses pricing errors, hallucinated features and wrong segments.",
+      "note": "Per his post: after 1,000 reviews, 20 to 30 minutes of daily checks is enough.",
+      "take": "Trust is built in the first thousand. Skip them and your brand pays the price."
+    },
+    {
+      "post": { "platform": "x", "tweetId": "2109251921337074037" },
+      "spotlight": ["Sending from Google gets us 4.1X the replies."],
+      "kicker": "Outbound data",
+      "headline": "After 10 million cold emails: Google inboxes get 4.1x the replies",
+      "poster": { "relation": "own", "role": "Head of GTM, Pipeline", "about": "Pipeline helps companies build and run outbound sales systems." },
+      "why": "The sender infrastructure matters as much as the copy.",
+      "note": "Per his post: calls booked 62% of meetings from 44% of touches. 10M+ emails, 700k+ calls.",
+      "take": "Google inbox, clean list, then call. Three moves that still beat any prompt trick."
+    }
+  ],
+  "idempotencyKey": "industry-debrief-2026-10-12"
+}

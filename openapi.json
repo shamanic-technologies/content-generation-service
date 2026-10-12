@@ -1537,6 +1537,293 @@
           "updatedTables"
         ]
       },
+      "DebriefVideoRequest": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "The bulletin's day (YYYY-MM-DD), shown in the masthead as `Sunday, Oct 12`."
+          },
+          "scan": {
+            "type": "object",
+            "properties": {
+              "postsRead": {
+                "type": "integer",
+                "minimum": 0,
+                "exclusiveMinimum": true,
+                "description": "How many posts the day's scan read (the intro counts up to it)."
+              },
+              "windowHours": {
+                "type": "integer",
+                "minimum": 0,
+                "exclusiveMinimum": true,
+                "maximum": 168,
+                "description": "How far back the scan read, in hours (`from the last 36 hours`)."
+              }
+            },
+            "required": [
+              "postsRead",
+              "windowHours"
+            ]
+          },
+          "stories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DebriefStory"
+            },
+            "minItems": 2,
+            "maxItems": 4,
+            "description": "The day's stories in screen order (2 to 4; our own news, when there is one, is a story like the others, last)."
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Same key + same org → the existing render is returned (no second render). Use e.g. `industry-debrief-<date>`."
+          }
+        },
+        "required": [
+          "date",
+          "scan",
+          "stories"
+        ]
+      },
+      "DebriefStory": {
+        "type": "object",
+        "properties": {
+          "post": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "platform": {
+                    "type": "string",
+                    "enum": [
+                      "linkedin"
+                    ]
+                  },
+                  "activityId": {
+                    "type": "string",
+                    "pattern": "^\\d{10,25}$",
+                    "description": "LinkedIn activity id: the digits of `urn:li:activity:<id>` / `activity-<id>` in the post URL."
+                  }
+                },
+                "required": [
+                  "platform",
+                  "activityId"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "platform": {
+                    "type": "string",
+                    "enum": [
+                      "x"
+                    ]
+                  },
+                  "tweetId": {
+                    "type": "string",
+                    "pattern": "^\\d{5,25}$",
+                    "description": "The status id in https://x.com/<user>/status/<id>."
+                  }
+                },
+                "required": [
+                  "platform",
+                  "tweetId"
+                ]
+              }
+            ],
+            "description": "The original post shown on screen, captured from its PUBLIC embed (no login)."
+          },
+          "spotlight": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 3
+            },
+            "minItems": 1,
+            "maxItems": 2,
+            "description": "The sentence(s) to spotlight, VERBATIM from the post (straight vs curly apostrophes are matched either way). One per story; two only if both are essential. On an X post, one short line. Not verbatim → the render fails SPOTLIGHT_NOT_FOUND."
+          },
+          "cropFrom": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional: start the card at this verbatim phrase, hiding everything above it (e.g. a figure we never show)."
+          },
+          "kicker": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "description": "Short label above the headline, usually the company in the news (`SalesCaptain`). Also used on the badge."
+          },
+          "headline": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 140,
+            "description": "The news in one line."
+          },
+          "poster": {
+            "type": "object",
+            "properties": {
+              "relation": {
+                "type": "string",
+                "enum": [
+                  "official",
+                  "own",
+                  "third"
+                ],
+                "description": "official: the poster speaks for the company in the news. own: the news IS the poster's own test/experience. third: comments on someone else's news."
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Overrides the name read from the embed (when the embed shows a noisy display name)."
+              },
+              "role": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60,
+                "description": "Short role, e.g. `CEO, SalesCaptain`."
+              },
+              "about": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "description": "What the poster's company does, one line, from their own headline or post."
+              }
+            },
+            "required": [
+              "relation",
+              "role",
+              "about"
+            ]
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 140,
+            "description": "Why it matters: one market observation, max ~15 words."
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160,
+            "description": "The note shown under `why` once it is read (attribution, sample size)."
+          },
+          "take": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 140,
+            "description": "What we think: our conviction, optimistic, max ~14 words, no figures."
+          }
+        },
+        "required": [
+          "post",
+          "spotlight",
+          "kicker",
+          "headline",
+          "poster",
+          "why",
+          "note",
+          "take"
+        ]
+      },
+      "DebriefVideo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "rendering",
+              "done",
+              "failed"
+            ]
+          },
+          "stage": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "capturing",
+              "rendering",
+              "mixing",
+              "checking",
+              "uploading",
+              null
+            ],
+            "description": "What a `rendering` job is doing now."
+          },
+          "videoUrl": {
+            "type": "string",
+            "nullable": true,
+            "format": "uri",
+            "description": "Public MP4 URL (R2) once `done`: 1080x1350 (4:5), H.264 yuv420p, AAC, faststart."
+          },
+          "durationSeconds": {
+            "type": "number",
+            "nullable": true,
+            "description": "The video's length = the scene's sum of screen times."
+          },
+          "musicTrackId": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Mixkit track id used (rotates, never the previous render's)."
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "EMBED_UNREACHABLE",
+              "SPOTLIGHT_NOT_FOUND",
+              "CROP_PHRASE_NOT_FOUND",
+              "FONT_NOT_LOADED",
+              "MUSIC_UNAVAILABLE",
+              "RENDER_FAILED",
+              "OUTPUT_INVALID",
+              "UPLOAD_FAILED",
+              "RENDER_INTERRUPTED",
+              null
+            ],
+            "description": "Why a `failed` job failed. Nothing is uploaded on failure."
+          },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Human-readable failure detail, naming the story and phrase when relevant."
+          },
+          "runId": {
+            "type": "string",
+            "nullable": true,
+            "description": "This render's runs-service run."
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "stage",
+          "videoUrl",
+          "durationSeconds",
+          "musicTrackId",
+          "errorCode",
+          "error",
+          "runId",
+          "createdAt",
+          "finishedAt"
+        ]
+      },
       "OrgId": {
         "type": "string"
       },
@@ -3654,6 +3941,139 @@
           },
           "400": {
             "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/industry-debrief-videos": {
+      "post": {
+        "tags": [
+          "Industry debrief video"
+        ],
+        "summary": "Start rendering the daily industry debrief news-bulletin video (async)",
+        "description": "Queues a render of the 4:5 news bulletin defined by the industry-debrief-video skill: per story the headline, the real post captured from its public embed with the sentence spotlit under a header saying who wrote it, why it matters + its note, what we think; reading time per screen from word count; house chrome; sign-off; music longer than the video (rotating Mixkit tracks, never looped). Answers 202 at once: a render takes several minutes, poll `GET /industry-debrief-videos/{id}?waitSeconds=240`. Renders run one at a time on the service's own CPU (no metered vendor); the R2 upload is declared by cloudflare-service on this run.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DebriefVideoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Queued (or the existing render for this idempotencyKey)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DebriefVideo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/industry-debrief-videos/{id}": {
+      "get": {
+        "tags": [
+          "Industry debrief video"
+        ],
+        "summary": "A debrief render's status; optionally wait for it to finish",
+        "description": "With `waitSeconds` (1-240) the call holds until the render is `done`/`failed` or the wait elapses, then answers the current state (always 200): one call stays under the platform's 300 s client timeout. A workflow polls it with `validateResponse: { field: \"status\", equals: \"done\" }` and retries.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "waitSeconds",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The render",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DebriefVideo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No render with this id for this org",
             "content": {
               "application/json": {
                 "schema": {
