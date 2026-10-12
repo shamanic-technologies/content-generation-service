@@ -1,5 +1,6 @@
-const STORAGE_SERVICE_URL = process.env.CLOUDFLARE_STORAGE_SERVICE_URL;
-const STORAGE_SERVICE_API_KEY = process.env.CLOUDFLARE_STORAGE_SERVICE_API_KEY;
+// cloudflare-service (R2). Fleet-wide env names, shared with brand/chat/human/lead/workflow-service.
+const STORAGE_SERVICE_URL = process.env.CLOUDFLARE_SERVICE_URL;
+const STORAGE_SERVICE_API_KEY = process.env.CLOUDFLARE_SERVICE_API_KEY;
 
 export interface UploadRequest {
   sourceUrl: string;
@@ -30,7 +31,7 @@ export async function uploadToStorage(
   identity: StorageIdentity,
 ): Promise<UploadResponse> {
   if (!STORAGE_SERVICE_URL || !STORAGE_SERVICE_API_KEY) {
-    throw new Error("CLOUDFLARE_STORAGE_SERVICE_URL and CLOUDFLARE_STORAGE_SERVICE_API_KEY must be set");
+    throw new Error("CLOUDFLARE_SERVICE_URL and CLOUDFLARE_SERVICE_API_KEY must be set");
   }
 
   const headers: Record<string, string> = {
@@ -57,5 +58,44 @@ export async function uploadToStorage(
     throw new Error(`Storage upload failed (${response.status}): ${body}`);
   }
 
+  return response.json() as Promise<UploadResponse>;
+}
+
+/**
+ * Uploads bytes (base64 in JSON, cloudflare-service accepts up to 100 MB) under the
+ * caller's identity: cloudflare-service declares the R2 cost on `identity.runId`.
+ */
+export async function uploadBase64ToStorage(
+  params: { content: Buffer; folder?: string; filename?: string; contentType?: string },
+  identity: StorageIdentity,
+): Promise<UploadResponse> {
+  if (!STORAGE_SERVICE_URL || !STORAGE_SERVICE_API_KEY) {
+    throw new Error("CLOUDFLARE_SERVICE_URL and CLOUDFLARE_SERVICE_API_KEY must be set");
+  }
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Api-Key": STORAGE_SERVICE_API_KEY,
+    "x-org-id": identity.orgId,
+    "x-user-id": identity.userId,
+    "x-run-id": identity.runId,
+  };
+  if (identity.campaignId) headers["x-campaign-id"] = identity.campaignId;
+  if (identity.brandId) headers["x-brand-id"] = identity.brandId;
+  if (identity.workflowSlug) headers["x-workflow-slug"] = identity.workflowSlug;
+  if (identity.featureSlug) headers["x-feature-slug"] = identity.featureSlug;
+
+  const response = await fetch(`${STORAGE_SERVICE_URL}/upload/base64`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      contentBase64: params.content.toString("base64"),
+      folder: params.folder,
+      filename: params.filename,
+      contentType: params.contentType,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Storage upload failed (${response.status}): ${await response.text()}`);
+  }
   return response.json() as Promise<UploadResponse>;
 }

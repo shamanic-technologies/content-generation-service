@@ -225,6 +225,13 @@
       "when": 1779777600000,
       "tag": "0031_template_neutrality_judgments",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1779864000000,
+      "tag": "0032_industry_debrief_videos",
+      "breakpoints": true
     }
   ]
 }
