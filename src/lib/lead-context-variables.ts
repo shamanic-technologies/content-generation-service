@@ -23,6 +23,8 @@
 // variable mapping discovers the whole accepted set live rather than from a
 // document.
 
+import { LEAD_RELATIONSHIP_PUBLISHED } from "./lead-relationship.js";
+
 export interface PromptContextVariable {
   name: string;
   /** Human label used as the bullet key when the value is rendered into the prompt. */
@@ -248,5 +250,8 @@ export const LEAD_CONTEXT_VARIABLES: PromptContextVariable[] = LEAD_CONTEXT_GROU
  * The catalog as published on prompt reads: `{ name, description }` only, the
  * same self-describing shape as a template's own declared `variables`.
  */
-export const LEAD_CONTEXT_VARIABLES_PUBLISHED: Array<{ name: string; description: string }> =
-  LEAD_CONTEXT_VARIABLES.map(({ name, description }) => ({ name, description }));
+export const LEAD_CONTEXT_VARIABLES_PUBLISHED: Array<{ name: string; description: string }> = [
+  ...LEAD_CONTEXT_VARIABLES.map(({ name, description }) => ({ name, description })),
+  // Rendered by its own section + system-prompt rule, not by the context block.
+  LEAD_RELATIONSHIP_PUBLISHED,
+];

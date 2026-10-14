@@ -4,6 +4,12 @@ import { withoutUnquotableBuyingSignal } from "./lead-context-variables.js";
 import { type OfferGiveLists, buildGiveListsDirective } from "./offer-give-lists.js";
 import { buildCampaignInstructionDirective } from "./campaign-instruction.js";
 import {
+  LEAD_RELATIONSHIP_VARIABLE,
+  buildLeadRelationshipBlock,
+  buildLeadRelationshipDirective,
+  normalizeLeadRelationship,
+} from "./lead-relationship.js";
+import {
   type ChatModel,
   type ChatProvider,
   MODEL_TO_PROVIDER,
@@ -438,6 +444,19 @@ export async function generateFromTemplate(
     prompt = `${leadContext}\n\n${prompt}`;
   }
 
+  // Who the recipient already is to the brand, and the thread so far
+  // (lead-relationship.ts). Absent = byte-identical. A template that consumes
+  // `{{leadRelationship}}` itself keeps its own rendering; the strategy below
+  // still applies.
+  const relationship = normalizeLeadRelationship(variables[LEAD_RELATIONSHIP_VARIABLE]);
+  const relationshipConsumed = extractTemplateVariableNames(params.promptTemplate).includes(
+    LEAD_RELATIONSHIP_VARIABLE
+  );
+  const relationshipBlock = relationshipConsumed ? "" : buildLeadRelationshipBlock(relationship);
+  if (relationshipBlock) {
+    prompt = `${relationshipBlock}\n\n${prompt}`;
+  }
+
   // Inject campaign featureInputs as additional context
   if (params.campaignContext && Object.keys(params.campaignContext).length > 0) {
     const contextBlock = formatCampaignContext(params.campaignContext);
@@ -465,6 +484,12 @@ export async function generateFromTemplate(
   const instructionDirective = buildCampaignInstructionDirective(params.instruction);
   if (instructionDirective) {
     systemPrompt = `${systemPrompt}\n${instructionDirective}`;
+  }
+  // LAST: who they already are to us wins over the template and an instruction
+  // that assumes a first contact.
+  const relationshipDirective = buildLeadRelationshipDirective(relationship);
+  if (relationshipDirective) {
+    systemPrompt = `${systemPrompt}\n${relationshipDirective}`;
   }
 
   const model = params.model ?? DEFAULT_MODEL;
