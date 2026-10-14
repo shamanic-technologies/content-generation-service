@@ -19,7 +19,11 @@ function block(variables: Record<string, unknown>, template = TEMPLATE): string 
 
 describe("lead context catalog", () => {
   it("publishes every variable as a self-describing { name, description }", () => {
-    expect(LEAD_CONTEXT_VARIABLES_PUBLISHED.length).toBe(LEAD_CONTEXT_VARIABLES.length);
+    // Every catalog entry, plus leadRelationship (rendered by its own section).
+    expect(LEAD_CONTEXT_VARIABLES_PUBLISHED.map((v) => v.name)).toEqual([
+      ...LEAD_CONTEXT_VARIABLES.map((v) => v.name),
+      "leadRelationship",
+    ]);
     for (const v of LEAD_CONTEXT_VARIABLES_PUBLISHED) {
       expect(typeof v.name).toBe("string");
       expect(v.name.length).toBeGreaterThan(0);
