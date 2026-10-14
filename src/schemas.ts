@@ -526,6 +526,7 @@ export const GenerateRequestSchema = registry.register(
         "Multibrand is the default in this platform, so brand-related variables typically receive arrays or objects, not scalars. " +
         "Per-template input expectations are published via GET /platform-prompts?type=<type> (.variables: Array<{ name, description }>), " +
         "alongside .contextVariables: optional lead and organization inputs every template accepts (person, employment history, organization industries, funding, location, and more). " +
+        "One of them, leadRelationship, says who the recipient already is to the brand (relationship, thread, strategy): it is rendered as its own section and its strategy wins over a template written as a first contact. " +
         "When values are string-typed, recognised keys may also populate dedicated dashboard columns: " +
         "leadFirstName, leadLastName, leadTitle, leadCompanyName, leadCompanyIndustry, organizationDomain, clientCompanyName."
       ),
