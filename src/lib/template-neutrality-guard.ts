@@ -15,8 +15,9 @@ import {
   TemplateNotNeutralError,
   buildNeutralityQuestions,
   interpretNeutralityAnswers,
-  splitTemplatePassages,
+  passagesToJudge,
   templateNeutralityKey,
+  type InheritedTemplate,
   type JudgedPassage,
   type NeutralityVerdict,
   type TemplateVariable,
@@ -25,9 +26,12 @@ import {
 async function judgeTemplate(
   prompt: string,
   variables: ReadonlyArray<TemplateVariable>,
+  inherited: InheritedTemplate | undefined,
   caller: JudgmentCaller,
 ): Promise<{ verdict: NeutralityVerdict; model: string; inputTokens: number }> {
-  const passages = splitTemplatePassages(prompt, variables);
+  // The whole template stays the judgment's state (context); only the passages
+  // this write adds are questions.
+  const passages = passagesToJudge(prompt, variables, inherited);
   const answers: Record<string, unknown> = {};
   let model = "none";
   let inputTokens = 0;
@@ -49,14 +53,17 @@ async function judgeTemplate(
  * specific to one company/offer/person. Judged once per distinct content: the
  * verdict is persisted and a resubmission of the same content reads it back.
  * A chat-service failure propagates (JudgmentsError) — nothing is stored unjudged.
+ * `inherited` = the template a new version derives from: its unchanged passages
+ * are not judged, so an edit is refused only for text it adds.
  */
 export async function assertTemplateNeutral(params: {
   prompt: string;
   variables: ReadonlyArray<TemplateVariable>;
+  inherited?: InheritedTemplate;
   caller: JudgmentCaller;
 }): Promise<void> {
-  const { prompt, variables, caller } = params;
-  const contentKey = templateNeutralityKey(prompt, variables);
+  const { prompt, variables, inherited, caller } = params;
+  const contentKey = templateNeutralityKey(prompt, variables, inherited);
 
   const stored = await db.query.templateNeutralityJudgments.findFirst({
     where: eq(templateNeutralityJudgments.contentKey, contentKey),
@@ -68,7 +75,7 @@ export async function assertTemplateNeutral(params: {
       (p) => p.probability >= SPECIFIC_PROBABILITY_THRESHOLD,
     );
   } else {
-    const { verdict, model, inputTokens } = await judgeTemplate(prompt, variables, caller);
+    const { verdict, model, inputTokens } = await judgeTemplate(prompt, variables, inherited, caller);
     await db
       .insert(templateNeutralityJudgments)
       .values({
