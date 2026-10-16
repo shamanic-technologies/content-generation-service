@@ -97,6 +97,11 @@ vi.mock("../../src/lib/chat-service-client.js", () => {
   };
 });
 
+const mockAnnotate = vi.fn();
+vi.mock("../../src/lib/preview-annotate-client.js", () => ({
+  annotatePreviewEmail: (...a: unknown[]) => mockAnnotate(...a),
+}));
+
 vi.mock("../../src/lib/trace-event.js", () => ({
   traceEvent: vi.fn().mockResolvedValue(undefined),
 }));
@@ -190,10 +195,15 @@ beforeEach(() => {
     model: "gemini-3.1-pro-preview",
     promptRaw: "p",
     responseRaw: {},
+  });
+  mockAnnotate.mockResolvedValue({
     highlights: [
       { text: "Hello.", source: "recipient.title", reason: "She runs sales." },
       { text: "Invented.", source: "recipient.title", reason: "not in the body" },
     ],
+    tokensInput: 10,
+    tokensOutput: 5,
+    model: "claude-sonnet-5-5",
   });
   mockReturning.mockImplementation(async () => [storedRow({ runId: "run-1" })]);
 });
@@ -344,17 +354,18 @@ describe("POST /preview-email", () => {
 
     const [params] = mockGenerate.mock.calls[0];
     expect(params.giveLists).toEqual(lists);
-    const source = params.annotate.sources.find((s: { id: string }) => s.id === "offer.giveForFree");
+    const [annotateInput] = mockAnnotate.mock.calls[0];
+    const source = annotateInput.sources.find((s: { id: string }) => s.id === "offer.giveForFree");
     expect(source).toBeDefined();
     // The won't-give list is never something an email rests on.
-    expect(params.annotate.sources.map((s: { id: string }) => s.id).join(" ")).not.toContain("neverGive");
+    expect(annotateInput.sources.map((s: { id: string }) => s.id).join(" ")).not.toContain("neverGive");
   });
 
   it("offers no free-give highlight source when the lists are empty", async () => {
     await request(app).post("/preview-email").send(BODY);
     const [params] = mockGenerate.mock.calls[0];
     expect(params.giveLists).toEqual({ giveForFree: [], neverGive: [] });
-    expect(params.annotate.sources.map((s: { id: string }) => s.id)).not.toContain("offer.giveForFree");
+    expect(mockAnnotate.mock.calls[0][0].sources.map((s: { id: string }) => s.id)).not.toContain("offer.giveForFree");
   });
 
   it("stores a different preview once the give lists change, and the same one while they are empty", async () => {
@@ -385,14 +396,22 @@ describe("POST /preview-email", () => {
     expect(res.body.cached).toBe(true);
   });
 
-  it("asks the same completion for highlights over the inputs actually sent, and stores + returns only the verified ones", async () => {
+  it("writes with the plain /generate call, then asks a second call for highlights on the finished email, storing only the verified ones", async () => {
     mockReturning.mockImplementation(async () => [storedRow({ runId: "run-1", highlights: mockValues.mock.calls[0][0].highlights })]);
     const res = await request(app).post("/preview-email").send(BODY);
     expect(res.status).toBe(200);
     expect(mockGenerate).toHaveBeenCalledTimes(1);
+    expect(mockAnnotate).toHaveBeenCalledTimes(1);
 
+    // Nothing preview-specific reaches the writing call.
     const [params] = mockGenerate.mock.calls[0];
-    const ids = params.annotate.sources.map((s: { id: string }) => s.id);
+    expect(Object.keys(params).sort()).toEqual(["campaignContext", "giveLists", "model", "promptTemplate", "variables"]);
+
+    const [annotateInput, annotateIdentity] = mockAnnotate.mock.calls[0];
+    expect(annotateInput.bodyText).toBe("Hi Jane,\n\nHello.");
+    expect(annotateIdentity.orgId).toBe("11111111-1111-1111-1111-111111111111");
+    expect(annotateIdentity.runId).toBe("run-1");
+    const ids = annotateInput.sources.map((s: { id: string }) => s.id);
     expect(ids).toEqual(expect.arrayContaining(["recipient.title", "recipient.companyDomain", "audience", "brand.name", "brand.companyOverview", "instruction"]));
     expect(ids).not.toContain("recipient.headline");
 
@@ -410,6 +429,19 @@ describe("POST /preview-email", () => {
       },
     ]);
     expect(res.body.highlights).toEqual(stored);
+  });
+
+  it("serves the email without highlights when the annotate call fails, never blocking it", async () => {
+    mockAnnotate.mockRejectedValueOnce(new Error("chat-service /complete failed (preview annotate): 402"));
+    mockReturning.mockImplementation(async () => [storedRow({ runId: "run-1", highlights: mockValues.mock.calls[0][0].highlights })]);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await request(app).post("/preview-email").send(BODY);
+    expect(res.status).toBe(200);
+    expect(res.body.bodyText).toBe("Hi Jane,\n\nHello.");
+    expect(mockValues.mock.calls[0][0].highlights).toBeNull();
+    expect(res.body.highlights).toBeNull();
+    expect(errSpy.mock.calls.some((c) => String(c[0]).includes("annotate FAILED"))).toBe(true);
+    errSpy.mockRestore();
   });
 
   it("returns highlights: null for a preview stored before highlights existed", async () => {

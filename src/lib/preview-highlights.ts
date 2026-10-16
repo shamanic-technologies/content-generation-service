@@ -1,9 +1,10 @@
 /**
  * Why each sentence of the signed-out preview email exists.
  *
- * The reasons are reported by the SAME completion that writes the email (see
- * `annotate` in chat-service-client.ts): no second call, no post-hoc guess. What
- * this module adds is the part a model cannot be trusted with:
+ * The reasons are reported by a SECOND completion that reads the finished first
+ * email (preview-annotate-client.ts); the writing completion is the exact call a
+ * real /generate run makes and is never asked about its own writing. What this
+ * module adds is the part a model cannot be trusted with:
  *  - the list of sources is built HERE from the inputs actually sent, so the model
  *    can only name something it was really given;
  *  - every highlight is checked: its text must appear verbatim in the email body
@@ -20,7 +21,16 @@ import { stripDashes } from "./dashes.js";
 import type { PreviewRecipient } from "./preview-email.js";
 
 /** Bump when the annotation contract changes, so stored previews are rewritten. */
-export const PREVIEW_ANNOTATION_VERSION = "highlights-v1";
+// v2: the email is written by the plain /generate call and annotated by a second one,
+// so a preview written under v1 (annotated in the writing call) is rewritten.
+export const PREVIEW_ANNOTATION_VERSION = "highlights-v2";
+
+/** One highlight exactly as the annotate model reported it; validated by `resolveHighlights`. */
+export interface RawHighlight {
+  text: unknown;
+  source: unknown;
+  reason: unknown;
+}
 
 /**
  * - `prospect`: a fact about the recipient or their company (the data the caller sent).
