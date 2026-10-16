@@ -768,10 +768,10 @@ const PreviewEmailResponseSchema = registry.register(
         .array(PreviewHighlightSchema)
         .nullable()
         .describe(
-          "Why each sentence of bodyText exists and which input it rests on, in body order, non-overlapping. Reported by the SAME " +
-            "completion that wrote the email (no second call), then checked here: every text is verbatim in bodyText and every source " +
-            "is an input actually sent; anything failing a check is dropped, so a sentence may carry no highlight. null only for a " +
-            "preview stored before highlights existed."
+          "Why each sentence of bodyText exists and which input it rests on, in body order, non-overlapping. Reported by a SECOND " +
+            "completion that reads the finished email (the writing call is the plain /generate call), then checked here: every text is " +
+            "verbatim in bodyText and every source is an input actually sent; anything failing a check is dropped, so a sentence may " +
+            "carry no highlight. null when that second call failed (the email is served anyway) or for a preview stored before highlights existed."
         ),
       cached: z.boolean().describe("true when this brand + recipient was already written and the stored email is returned (nothing billed)."),
       createdAt: z.string(),
