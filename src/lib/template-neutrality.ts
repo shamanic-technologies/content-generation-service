@@ -100,14 +100,60 @@ export function splitTemplatePassages(
   return out;
 }
 
-/** sha256 over everything that shapes the verdict: rule version, body, variables. */
+/**
+ * The template a new version is derived from (PUT /prompts, PUT
+ * /prompt-assignments). Its passages were stored before this write and are not
+ * what the write adds, so they are not judged again.
+ */
+export interface InheritedTemplate {
+  prompt: string;
+  variables: ReadonlyArray<TemplateVariable>;
+}
+
+function passageKey(p: TemplatePassage): string {
+  return `${p.location}\u0000${p.text}`;
+}
+
+/**
+ * The passages this write ADDS: those not present, same text at the same kind
+ * of location, in the template it derives from. An edit is judged on what it
+ * changes: a sentence carried over unchanged from the source is not cited (the
+ * source predates the check or already passed it), while a new or reworded
+ * sentence is judged exactly like a brand-new template's. No source = every
+ * passage, unchanged behaviour.
+ */
+export function passagesToJudge(
+  prompt: string,
+  variables: ReadonlyArray<TemplateVariable>,
+  inherited?: InheritedTemplate,
+): TemplatePassage[] {
+  const passages = splitTemplatePassages(prompt, variables);
+  if (!inherited) return passages;
+  const carried = new Set(
+    splitTemplatePassages(inherited.prompt, inherited.variables).map(passageKey),
+  );
+  return passages.filter((p) => !carried.has(passageKey(p)));
+}
+
+/**
+ * sha256 over everything that shapes the verdict: rule version, body, variables,
+ * and (for a derived version) the source's passages, since those are not judged.
+ * Without a source the key is the one used before derivation existed, so stored
+ * verdicts stay valid; with one it differs, so a verdict that skipped inherited
+ * passages is never served to a non-derived write of the same text.
+ */
 export function templateNeutralityKey(
   prompt: string,
   variables: ReadonlyArray<TemplateVariable>,
+  inherited?: InheritedTemplate,
 ): string {
-  return createHash("sha256")
-    .update(JSON.stringify([TEMPLATE_NEUTRALITY_VERSION, prompt, variables]))
-    .digest("hex");
+  const parts: unknown[] = [TEMPLATE_NEUTRALITY_VERSION, prompt, variables];
+  if (inherited) {
+    parts.push({
+      inherited: [...new Set(splitTemplatePassages(inherited.prompt, inherited.variables).map(passageKey))].sort(),
+    });
+  }
+  return createHash("sha256").update(JSON.stringify(parts)).digest("hex");
 }
 
 export interface NoulQuestion {

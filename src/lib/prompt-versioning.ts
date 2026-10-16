@@ -74,7 +74,16 @@ export async function createPromptVersion(
     return { row: source, created: false };
   }
 
-  await assertTemplateNeutral({ prompt, variables, caller: neutralityCaller });
+  // Judged on what it changes: passages carried over unchanged from the source
+  // are not re-judged (the source may predate the check).
+  await assertTemplateNeutral({
+    prompt,
+    variables,
+    inherited: source
+      ? { prompt: source.prompt, variables: (source.variables ?? []) as Array<{ name: string; description: string }> }
+      : undefined,
+    caller: neutralityCaller,
+  });
 
   const newType = source ? await findNextVersionType(sourceType) : sourceType;
 
