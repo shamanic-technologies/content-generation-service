@@ -22,8 +22,10 @@ import {
   PREVIEW_ANNOTATION_VERSION,
   buildHighlightSources,
   resolveHighlights,
+  type HighlightSource,
   type PreviewHighlight,
 } from "../lib/preview-highlights.js";
+import { annotatePreviewEmail } from "../lib/preview-annotate-client.js";
 import { PreviewEmailRequestSchema, PreviewEmailPrepareRequestSchema } from "../schemas.js";
 
 const router = Router();
@@ -49,6 +51,33 @@ function toPreviewResponse(row: PreviewRow, cached: boolean) {
     cached,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
   };
+}
+
+/**
+ * The "why" per sentence, from a SECOND completion on the finished first email. The
+ * email never depends on it: any failure (402 included) is logged loud and answered
+ * `null`, so the preview is served without highlights and a later repeat retries.
+ */
+async function annotateFirstEmail(
+  bodyText: string,
+  sources: HighlightSource[],
+  identity: Parameters<typeof annotatePreviewEmail>[1],
+  req: AuthenticatedRequest
+): Promise<PreviewHighlight[] | null> {
+  try {
+    const annotation = await annotatePreviewEmail({ bodyText, sources }, identity);
+    const highlights = resolveHighlights(annotation.highlights, bodyText, sources);
+    if (highlights.length < annotation.highlights.length) {
+      console.warn(`[content-generation-service] /preview-email dropped ${annotation.highlights.length - highlights.length}/${annotation.highlights.length} highlights that were not verbatim in the body or named an input that was not sent (brandId=${identity.brandId})`);
+    }
+    traceEvent(identity.runId, { service: "content-generation-service", event: "preview-email-annotated", detail: `model=${annotation.model}, highlights=${highlights.length}/${annotation.highlights.length}, tokensIn=${annotation.tokensInput}, tokensOut=${annotation.tokensOutput}` }, req.headers).catch(() => {});
+    return highlights;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[content-generation-service] /preview-email annotate FAILED, serving the email without highlights (brandId=${identity.brandId}): ${message}`);
+    traceEvent(identity.runId, { service: "content-generation-service", event: "preview-email-annotate-error", detail: message, level: "error" }, req.headers).catch(() => {});
+    return null;
+  }
 }
 
 function isPreviewDuplicateError(err: unknown): boolean {
@@ -140,8 +169,8 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
       extractTemplateVariableNames(storedPrompt.prompt)
     );
 
-    // Everything the email could rest on, from the inputs actually sent. The same
-    // completion reports which of these each sentence uses; no second call.
+    // Everything the email could rest on, from the inputs actually sent. A second
+    // completion, after the email is written, reports which of these each sentence uses.
     const sources = buildHighlightSources({ recipient, audience, brandName, brandFields: intel.fields ?? {}, giveForFree: giveLists?.giveForFree });
 
     traceEvent(runId, { service: "content-generation-service", event: "preview-email-start", detail: `brandId=${brandId}, workflow=${plan.workflowSlug}, type=${plan.promptType}, model=${model}` }, req.headers).catch(() => {});
@@ -152,9 +181,8 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
         campaignContext: buildPreviewContext(audience),
         model,
         giveLists,
-        annotate: { sources: sources.map((s) => ({ id: s.id, label: s.label })) },
-        // No reasoning override: /generate sends none, so the preview writes exactly as a
-        // campaign run does. Latency is not a constraint here (owner 2026-10-06).
+        // Nothing preview-specific in the writing call: no annotation, no reasoning
+        // override. The email is written exactly as a campaign run writes it.
       },
       identity
     );
@@ -164,11 +192,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
       throw new Error(`Model returned no email body for preview (brandId=${brandId})`);
     }
 
-    const rawHighlights = result.highlights ?? [];
-    const highlights = resolveHighlights(rawHighlights, first.bodyText, sources);
-    if (highlights.length < rawHighlights.length) {
-      console.warn(`[content-generation-service] /preview-email dropped ${rawHighlights.length - highlights.length}/${rawHighlights.length} highlights that were not verbatim in the body or named an input that was not sent (brandId=${brandId})`);
-    }
+    const highlights = await annotateFirstEmail(first.bodyText, sources, identity, req);
 
     let row: PreviewRow;
     try {
@@ -204,7 +228,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
       return res.json(toPreviewResponse(winner, true));
     }
 
-    traceEvent(runId, { service: "content-generation-service", event: "preview-email-done", detail: `previewId=${row.id}, model=${result.model}, highlights=${highlights.length}/${rawHighlights.length}, tokensIn=${result.tokensInput}, tokensOut=${result.tokensOutput}` }, req.headers).catch(() => {});
+    traceEvent(runId, { service: "content-generation-service", event: "preview-email-done", detail: `previewId=${row.id}, model=${result.model}, highlights=${highlights === null ? "failed" : highlights.length}, tokensIn=${result.tokensInput}, tokensOut=${result.tokensOutput}` }, req.headers).catch(() => {});
     res.json(toPreviewResponse(row, false));
   } catch (error) {
     if (error instanceof InsufficientCreditsError) {
