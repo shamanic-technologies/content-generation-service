@@ -112,7 +112,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     if (req.body && typeof req.body === "object" && "model" in req.body) {
       return res.status(400).json({ error: "model: not accepted; the preview writes with the model of the best mature cold-email workflow" });
     }
-    const { brandId, recipient, audience, offerId, qualification } = parsed.data;
+    const { brandId, recipient, audience, offerId, qualification, strategyId } = parsed.data;
     const orgId = req.orgId!;
     const identity = { orgId, userId: req.userId!, runId, brandId, offerId };
 
@@ -123,7 +123,9 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
 
     // The best mature cold-email workflow's template + model (cached a few minutes). Part
     // of the stored preview's identity, so a new best workflow writes a new preview.
-    const plan = await resolvePreviewWorkflow(identity);
+    // With `strategyId`, the workflow a campaign running that play would write with
+    // (e.g. `blind-emails-only`), so the example matches the kind of email it will send.
+    const plan = await resolvePreviewWorkflow(identity, strategyId);
     const model = plan.model;
 
     const recipientKey = previewRecipientKey({ recipient, audience, offerId, promptType: plan.promptType, model, workflowSlug: plan.workflowSlug, annotationVersion: PREVIEW_ANNOTATION_VERSION, giveLists, qualification });
@@ -248,7 +250,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
       // template or model, so the preview is refused rather than written by anything else.
       console.error("[content-generation-service] /preview-email workflow error:", error.message);
       traceEvent(runId, { service: "content-generation-service", event: "preview-email-error", detail: error.message, level: "error" }, req.headers).catch(() => {});
-      return res.status(error.status).json({ error: error.message });
+      return res.status(error.status).json({ error: error.message, ...(error.code ? { code: error.code } : {}) });
     }
     if (error instanceof BrandIntelError || error instanceof BrandRowsError || error instanceof OfferGiveListsError) {
       // brand-service's own verdict on the brand (not found, several offers, bad
