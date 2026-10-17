@@ -4,9 +4,10 @@
 //
 // The templates in use contradicted their own type: "never reveal the client name or
 // URL" next to "the client name if recognizable" in the subject, the URL "lightly" in
-// the body, "you can name the agency now". The writer-side check (blind-template.ts)
-// keeps every email anonymous whatever the template says; this one stops a new
-// blind-type template from being STORED with a passage that licenses naming the client.
+// the body, "you can name the agency now". The template text is the only guarantee
+// (no per-email check at run time: owner 2026-10-17, no extra spend, some noise
+// accepted), so this check stops a new blind-type template from being STORED with a
+// passage that licenses naming the client: one judgment per new template, never per email.
 //
 // Every passage is judged, inherited ones included: unlike neutrality, a licensing
 // passage carried over from an older version is exactly the defect to remove, so an
@@ -17,7 +18,6 @@
 // pass at ≤ 0.12.
 
 import { createHash } from "node:crypto";
-import { isBlindTemplateType } from "./blind-template.js";
 import {
   splitTemplatePassages,
   type JudgedPassage,
@@ -29,7 +29,16 @@ import {
 /** Part of the persisted verdict key: bump when the wording, splitting or threshold changes. */
 export const BLIND_TEMPLATE_RULE_VERSION = "blind-1";
 
-export { isBlindTemplateType };
+/**
+ * A template TYPE starting with one of these promises the prospect never learns who the
+ * client is from the email (features-service tags "Blind angle" on the type alone).
+ */
+export const BLIND_TEMPLATE_TYPE_PREFIXES = ["blind-discovery-email", "feedback-request-blind-email"] as const;
+
+/** True for every version of a blind-type template (`blind-discovery-email-v34`, `-v9-landing-v3`, ...). */
+export function isBlindTemplateType(type: string): boolean {
+  return BLIND_TEMPLATE_TYPE_PREFIXES.some((p) => type === p || type.startsWith(`${p}-`));
+}
 
 /** Every passage of the template and of its variable descriptions. */
 export function blindPassagesToJudge(

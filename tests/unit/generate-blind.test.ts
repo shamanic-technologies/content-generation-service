@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
-import { BlindClientNamedError } from "../../src/lib/blind-template";
+
+// BLIND-WRITER-REVERT-1017 (owner 2026-10-17: « We dont want to spend extra money!!! The
+// template instructions should be enough, we are ok with some NOISE »): a blind-type email
+// is written like any other, one completion from the template's own text. No brand read,
+// no anonymity rule, no check, no rewrite. The guarantee is the template, checked at SAVE.
 
 vi.mock("../../src/lib/runs-client.js", () => ({
   createRun: vi.fn().mockResolvedValue({ id: "run-456" }),
@@ -40,10 +44,11 @@ vi.mock("../../src/lib/campaign-client.js", () => ({ getCampaignFeatureInputs: v
 vi.mock("../../src/lib/lead-client.js", () => ({ getLeadBusinessLanguages: vi.fn().mockResolvedValue(null) }));
 vi.mock("../../src/lib/offer-give-lists-client.js", () => ({ fetchOfferGiveLists: vi.fn().mockResolvedValue(null) }));
 
-const mockBrandRows = vi.fn();
+const mockExtractBrandFields = vi.fn();
+// Only the brand-fields read the template asks for: any other brand-client export used by
+// the route would be undefined here and fail the test.
 vi.mock("../../src/lib/brand-client.js", () => ({
-  extractBrandFields: vi.fn().mockResolvedValue(new Map()),
-  fetchBrandIdentityRows: (...a: unknown[]) => mockBrandRows(...a),
+  extractBrandFields: (...a: unknown[]) => mockExtractBrandFields(...a),
 }));
 
 const mockGenerate = vi.fn();
@@ -58,7 +63,7 @@ vi.mock("../../src/lib/chat-service-client.js", () => ({
 
 const body = (type: string, variables: Record<string, unknown> = {}) => ({ type, variables, campaignId: "camp-1", brandIds: ["brand-1"] });
 
-describe("POST /generate — blind templates keep the client anonymous", () => {
+describe("POST /generate — a blind template is written like any other", () => {
   let app: express.Express;
 
   beforeEach(async () => {
@@ -66,7 +71,7 @@ describe("POST /generate — blind templates keep the client anonymous", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     mockPromptFindFirst.mockImplementation(async () => ({ id: "p", type: "t", prompt: "Write.", variables: [] }));
     mockValues.mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "gen-1" }]) });
-    mockBrandRows.mockResolvedValue([{ id: "brand-1", name: "Doc Dinners", domain: "docdinners.com", url: "https://docdinners.com" }]);
+    mockExtractBrandFields.mockResolvedValue(new Map());
     mockGenerate.mockResolvedValue({ subject: "s", sequence: [], tokensInput: 1, tokensOutput: 1, model: "m", promptRaw: "p", responseRaw: {} });
     app = express();
     app.use(express.json());
@@ -74,40 +79,46 @@ describe("POST /generate — blind templates keep the client anonymous", () => {
     app.use(routes);
   });
 
-  it("hands the writer the brand's name and domain to keep out, for every blind version", async () => {
-    for (const type of ["blind-discovery-email-v34", "blind-discovery-email-v15", "feedback-request-blind-email-v1"]) {
+  it("makes one writing call, with no anonymity parameter and no brand read, for every blind version", async () => {
+    for (const type of ["blind-discovery-email-v34", "blind-discovery-email-v47", "feedback-request-blind-email-v1"]) {
       mockGenerate.mockClear();
       await request(app).post("/generate").send(body(type)).expect(200);
-      expect(mockGenerate.mock.calls[0][0].blind).toEqual({ names: ["Doc Dinners", "DocDinners"], domains: ["docdinners.com"] });
+      expect(mockGenerate).toHaveBeenCalledTimes(1);
+      const params = mockGenerate.mock.calls[0][0];
+      expect(params).not.toHaveProperty("blind");
+      expect(params).not.toHaveProperty("onBlindRewrite");
     }
-    expect(mockBrandRows.mock.calls[0][0]).toEqual(["brand-1"]);
+    // The template asks for no brand field: nothing is read from brand-service.
+    expect(mockExtractBrandFields).not.toHaveBeenCalled();
   });
 
-  it("leaves named and offer templates untouched", async () => {
+  it("sends a blind and a named template the same writing parameters", async () => {
+    await request(app).post("/generate").send(body("blind-discovery-email-v34")).expect(200);
     await request(app).post("/generate").send(body("cold-email-v49")).expect(200);
-    expect(mockBrandRows).not.toHaveBeenCalled();
-    expect(mockGenerate.mock.calls[0][0].blind).toBeNull();
+    expect(Object.keys(mockGenerate.mock.calls[0][0]).sort()).toEqual(Object.keys(mockGenerate.mock.calls[1][0]).sort());
+  });
+});
+
+describe("generateFromTemplate — a blind-type answer is served as written", () => {
+  const mockFetch = vi.fn();
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", mockFetch);
+    mockFetch.mockReset();
   });
 
-  it("does not hide the brand from someone who already knows it (warm re-engagement)", async () => {
-    await request(app)
-      .post("/generate")
-      .send(body("blind-discovery-email-v34", { leadRelationship: { state: "not_known", tags: ["prospect"] } }))
-      .expect(200);
-    expect(mockGenerate.mock.calls[0][0].blind).toBeNull();
-  });
-
-  it("refuses to write when the brand cannot be read (502, nothing billed)", async () => {
-    mockBrandRows.mockRejectedValue(new Error("brand-service GET /internal/brands failed: 503 - down"));
-    const res = await request(app).post("/generate").send(body("blind-discovery-email-v34")).expect(502);
-    expect(res.body.code).toBe("BLIND_BRAND_UNREADABLE");
-    expect(mockGenerate).not.toHaveBeenCalled();
-  });
-
-  it("answers 502 and stores nothing when the email still names the client", async () => {
-    mockGenerate.mockRejectedValue(new BlindClientNamedError([{ where: "subject", terms: ["Doc Dinners"] }], 3));
-    const res = await request(app).post("/generate").send(body("blind-discovery-email-v34")).expect(502);
-    expect(res.body.code).toBe("BLIND_CLIENT_NAMED");
-    expect(mockValues).not.toHaveBeenCalled();
+  it("makes exactly one completion even when the answer names the client", async () => {
+    const { generateFromTemplate } = await vi.importActual<typeof import("../../src/lib/chat-service-client")>(
+      "../../src/lib/chat-service-client"
+    );
+    const json = { subject: "Living Vital for your clinic", emails: [{ body: "Hi Ann,\n\nWir von Living Vital...", daysSinceLastStep: 0 }] };
+    mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ content: "", json, tokensInput: 10, tokensOutput: 10, model: "gemini" }) });
+    const result = await generateFromTemplate(
+      { promptTemplate: "Blind email. {{brandExtractedFields}}", variables: { brandExtractedFields: "Living Vital (livingvital.ch)" }, model: "pro" },
+      { orgId: "org-1", userId: "user-1", runId: "run-1" }
+    );
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body).systemPrompt).not.toMatch(/anonymous/);
+    expect(result.subject).toBe("Living Vital for your clinic");
   });
 });
