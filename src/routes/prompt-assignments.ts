@@ -12,6 +12,7 @@ import {
 } from "../lib/prompt-assignment.js";
 import { createPromptVersion } from "../lib/prompt-versioning.js";
 import { templateWriteErrorResponse, TemplateNotNeutralError } from "../lib/template-neutrality.js";
+import { BlindTemplateRevealsClientError } from "../lib/blind-template-rule.js";
 import { createRun, updateRun } from "../lib/runs-client.js";
 
 const router = Router();
@@ -103,7 +104,7 @@ router.put("/prompt-assignments", serviceAuthRunOptional, async (req: Authentica
     } catch (err) {
       // A neutrality refusal is the judgment doing its job: the run completed.
       if (ownRun) {
-        await updateRun(ownRun.id, err instanceof TemplateNotNeutralError ? "completed" : "failed", identity);
+        await updateRun(ownRun.id, err instanceof TemplateNotNeutralError || err instanceof BlindTemplateRevealsClientError ? "completed" : "failed", identity);
       }
       throw err;
     }

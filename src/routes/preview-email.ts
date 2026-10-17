@@ -8,6 +8,7 @@ import { fetchBrandIntel, fetchBrandRows, BrandIntelError, BrandRowsError } from
 import { fetchOfferGiveLists, OfferGiveListsError } from "../lib/offer-give-lists-client.js";
 import { extractTemplateVariableNames } from "../lib/template-vars.js";
 import { IncompleteSequenceError } from "../lib/sequence-delays.js";
+import { BlindClientNamedError, blindIdentityFromBrands, isBlindTemplateType } from "../lib/blind-template.js";
 import { traceEvent } from "../lib/trace-event.js";
 import { resolvePreviewWorkflow } from "../lib/preview-workflow-client.js";
 import { PreviewWorkflowError, planNeedsBrandRows, resolvePreviewVariables } from "../lib/preview-workflow.js";
@@ -188,6 +189,9 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
         campaignContext: buildPreviewContext(audience),
         model,
         giveLists,
+        // A blind template keeps the client anonymous, exactly as in a campaign run
+        // (the preview's sample recipient is a stranger to the brand).
+        blind: isBlindTemplateType(plan.promptType) ? blindIdentityFromBrands(intel.brands ?? []) : null,
         // Nothing preview-specific in the writing call: no annotation, no reasoning
         // override. The email is written exactly as a campaign run writes it.
       },
@@ -264,8 +268,8 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[content-generation-service] /preview-email error:", error);
     traceEvent(runId, { service: "content-generation-service", event: "preview-email-error", detail: message, level: "error" }, req.headers).catch(() => {});
-    const status = error instanceof IncompleteSequenceError || message.startsWith("chat-service") ? 502 : 500;
-    res.status(status).json({ error: message });
+    const status = error instanceof IncompleteSequenceError || error instanceof BlindClientNamedError || message.startsWith("chat-service") ? 502 : 500;
+    res.status(status).json({ error: message, ...(error instanceof BlindClientNamedError ? { code: error.code } : {}) });
   }
 });
 

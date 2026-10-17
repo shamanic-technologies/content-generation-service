@@ -150,6 +150,9 @@ describe("POST /generate (template-based)", () => {
         instruction: null,
         // Traces each regeneration of an unusable answer on the run.
         onRegenerate: expect.any(Function),
+        // Not a blind template: no anonymity rule.
+        blind: null,
+        onBlindRewrite: expect.any(Function),
       },
       expect.objectContaining({
         orgId: "org-internal-123",
