@@ -14,6 +14,7 @@
 
 import { createHash } from "node:crypto";
 import { JudgmentsError } from "./judgments-client.js";
+import { BlindTemplateRevealsClientError } from "./blind-template-rule.js";
 
 /**
  * Bump when the question wording, the splitting or the threshold changes: it is
@@ -258,7 +259,7 @@ export class TemplateNotNeutralError extends Error {
 export function templateWriteErrorResponse(
   error: unknown,
 ): { status: number; body: Record<string, unknown> } | null {
-  if (error instanceof TemplateNotNeutralError) {
+  if (error instanceof TemplateNotNeutralError || error instanceof BlindTemplateRevealsClientError) {
     return { status: 422, body: error.toResponseBody() };
   }
   if (error instanceof JudgmentsError) {

@@ -83,6 +83,8 @@ export async function createPromptVersion(
       ? { prompt: source.prompt, variables: (source.variables ?? []) as Array<{ name: string; description: string }> }
       : undefined,
     caller: neutralityCaller,
+    // A version of a blind template stays blind (same type family as its source).
+    type: sourceType,
   });
 
   const newType = source ? await findNextVersionType(sourceType) : sourceType;
