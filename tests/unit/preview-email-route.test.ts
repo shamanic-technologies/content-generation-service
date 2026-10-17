@@ -399,9 +399,7 @@ describe("POST /preview-email", () => {
     const [params] = mockGenerate.mock.calls[0];
     expect(params.variables.leadQualification).toEqual(QUALIFICATION);
     // Nothing else preview-specific reaches the writing call.
-    expect(Object.keys(params).sort()).toEqual(["blind", "campaignContext", "giveLists", "model", "promptTemplate", "variables"]);
-    // The plan's template is blind: the same anonymity rule as a campaign run, from the brand intel.
-    expect(params.blind).toEqual({ names: ["Brand Co", "BrandCo"], domains: ["brand.io"] });
+    expect(Object.keys(params).sort()).toEqual(["campaignContext", "giveLists", "model", "promptTemplate", "variables"]);
     const ids = mockAnnotate.mock.calls[0][0].sources.map((s: { id: string }) => s.id);
     expect(ids).toEqual(expect.arrayContaining(["check.1", "check.2"]));
   });
@@ -472,9 +470,7 @@ describe("POST /preview-email", () => {
 
     // Nothing preview-specific reaches the writing call.
     const [params] = mockGenerate.mock.calls[0];
-    expect(Object.keys(params).sort()).toEqual(["blind", "campaignContext", "giveLists", "model", "promptTemplate", "variables"]);
-    // The plan's template is blind: the same anonymity rule as a campaign run, from the brand intel.
-    expect(params.blind).toEqual({ names: ["Brand Co", "BrandCo"], domains: ["brand.io"] });
+    expect(Object.keys(params).sort()).toEqual(["campaignContext", "giveLists", "model", "promptTemplate", "variables"]);
 
     const [annotateInput, annotateIdentity] = mockAnnotate.mock.calls[0];
     expect(annotateInput.bodyText).toBe("Hi Jane,\n\nHello.");

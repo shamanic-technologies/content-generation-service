@@ -21,16 +21,6 @@ import { unescapeLineBreaks, collapseEscapedLineBreaks } from "./escaped-line-br
 import { textToHtml } from "./text-to-html.js";
 import { stripDashes } from "./dashes.js";
 import { withSequenceDelays, IncompleteSequenceError } from "./sequence-delays.js";
-import {
-  type BlindIdentity,
-  MAX_BLIND_REWRITES,
-  BlindClientNamedError,
-  buildBlindDirective,
-  buildBlindRewriteMessage,
-  describeMentions,
-  findSequenceClientMentions,
-  hasBlindIdentity,
-} from "./blind-template.js";
 
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
 const CHAT_SERVICE_API_KEY = process.env.CHAT_SERVICE_API_KEY || "";
@@ -64,17 +54,10 @@ export interface GenerateFromTemplateParams {
    */
   instruction?: string | null;
   /**
-   * Blind template: the client's name and domain(s), which no subject or email may
-   * contain. Absent, null or empty → no rule, no check, byte-identical. See blind-template.ts.
-   */
-  blind?: BlindIdentity | null;
-  /**
    * Called before each REGENERATION (never before the first attempt), with the
    * reason the previous answer was unusable. Lets the route trace it on the run.
    */
   onRegenerate?: (info: { attempt: number; reason: string }) => void;
-  /** Called before each blind rewrite, with what the previous answer named. */
-  onBlindRewrite?: (info: { rewrite: number; found: string }) => void;
 }
 
 export interface SequenceStep {
@@ -440,12 +423,6 @@ export async function generateFromTemplate(
   if (relationshipDirective) {
     systemPrompt = `${systemPrompt}\n${relationshipDirective}`;
   }
-  // A blind template keeps the client anonymous whatever came before: appended after
-  // everything, and checked on the answer below.
-  const blind = hasBlindIdentity(params.blind) ? params.blind : null;
-  if (blind) {
-    systemPrompt = `${systemPrompt}\n${buildBlindDirective(blind)}`;
-  }
 
   const model = params.model ?? DEFAULT_MODEL;
   const provider = MODEL_TO_PROVIDER[model];
@@ -468,32 +445,28 @@ export async function generateFromTemplate(
   let completion: ChatCompleteResponse | undefined;
   let sequence: ReturnType<typeof parseSequenceFromJson> | undefined;
 
-  const complete = async (body: string): Promise<ChatCompleteResponse> => {
-    const response = await fetchWithRetry(
-      `${CHAT_SERVICE_URL}/complete`,
-      { method: "POST", headers, body },
-      { label: "chat-service /complete" }
-    );
-
-    if (response.status === 402) {
-      const error = await response.json() as { balance_cents: number; required_cents: number };
-      throw new InsufficientCreditsError(error.balance_cents, error.required_cents);
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      const message = chatCompleteErrorMessage(response.status, provider, model, errorText);
-      throw isInvalidJsonAnswer(response.status, errorText)
-        ? new UnusableModelJsonError(message)
-        : new Error(message);
-    }
-
-    return await response.json() as ChatCompleteResponse;
-  };
-
   for (let attempt = 1; ; attempt++) {
     try {
-      completion = await complete(requestBody);
+      const response = await fetchWithRetry(
+        `${CHAT_SERVICE_URL}/complete`,
+        { method: "POST", headers, body: requestBody },
+        { label: "chat-service /complete" }
+      );
+
+      if (response.status === 402) {
+        const error = await response.json() as { balance_cents: number; required_cents: number };
+        throw new InsufficientCreditsError(error.balance_cents, error.required_cents);
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        const message = chatCompleteErrorMessage(response.status, provider, model, errorText);
+        throw isInvalidJsonAnswer(response.status, errorText)
+          ? new UnusableModelJsonError(message)
+          : new Error(message);
+      }
+
+      completion = await response.json() as ChatCompleteResponse;
       tokensInput += completion.tokensInput ?? 0;
       tokensOutput += completion.tokensOutput ?? 0;
       sequence = parseSequenceFromJson(completion.json);
@@ -509,39 +482,8 @@ export async function generateFromTemplate(
     }
   }
   // The loop only exits by `break` after both are set, or by throwing.
-  let data = completion!;
-  let parsed = sequence!;
-
-  // Blind: an answer naming the client is rewritten from that draft, never served.
-  if (blind) {
-    let mentions = findSequenceClientMentions(parsed, blind);
-    for (let rewrite = 1; mentions.length > 0; rewrite++) {
-      if (rewrite > MAX_BLIND_REWRITES) {
-        throw new BlindClientNamedError(mentions, MAX_BLIND_REWRITES + 1);
-      }
-      console.warn(
-        `[content-gen] blind template: answer names the client, rewriting ${rewrite}/${MAX_BLIND_REWRITES} runId=${identity.runId} model=${model} found=${describeMentions(mentions)}`
-      );
-      params.onBlindRewrite?.({ rewrite, found: describeMentions(mentions) });
-      const draft = {
-        subject: parsed.subject,
-        emails: parsed.sequence.map((s) => ({ body: s.bodyText, daysSinceLastStep: s.daysSinceLastStep })),
-      };
-      data = await complete(
-        JSON.stringify({
-          message: buildBlindRewriteMessage(draft, mentions, blind),
-          systemPrompt,
-          responseSchema,
-          provider,
-          model,
-        })
-      );
-      tokensInput += data.tokensInput ?? 0;
-      tokensOutput += data.tokensOutput ?? 0;
-      parsed = parseSequenceFromJson(data.json);
-      mentions = findSequenceClientMentions(parsed, blind);
-    }
-  }
+  const data = completion!;
+  const parsed = sequence!;
 
   return {
     ...parsed,
