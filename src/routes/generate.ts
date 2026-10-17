@@ -9,15 +9,7 @@ import { resolveAssignedPromptType } from "../lib/prompt-assignment.js";
 import { assertExpertQuotePitchVariables, ExpertQuotePitchInputError } from "../lib/expert-quote-pitch-template.js";
 import { createRun, updateRun } from "../lib/runs-client.js";
 import { getCampaignFeatureInputs } from "../lib/campaign-client.js";
-import { extractBrandFields, resolveBrandNames, fetchBrandIdentityRows } from "../lib/brand-client.js";
-import {
-  type BlindIdentity,
-  BlindClientNamedError,
-  BlindBrandUnreadableError,
-  blindIdentityFromBrands,
-  isBlindTemplateType,
-  recipientAlreadyKnowsBrand,
-} from "../lib/blind-template.js";
+import { extractBrandFields, resolveBrandNames } from "../lib/brand-client.js";
 import { fetchOfferGiveLists } from "../lib/offer-give-lists-client.js";
 import { type OfferGiveLists, hasGiveLists } from "../lib/offer-give-lists.js";
 import { fetchWorkflowExamples, toExampleEmail } from "../lib/examples-query.js";
@@ -251,19 +243,6 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       traceEvent(req.runId!, { service: "content-generation-service", event: "campaign-instruction-applied", detail: `Writing from the campaign's instruction (${instruction.length} chars)` }, req.headers).catch(() => {});
     }
 
-    // Blind template: the email must not name the client (blind-template.ts). The brand's
-    // name and domain are read here, fail loud: an email that cannot be checked is not
-    // written. Skipped for a recipient who already knows the brand (warm re-engagement).
-    let blind: BlindIdentity | null = null;
-    if (isBlindTemplateType(type) && brandIds.length > 0 && !recipientAlreadyKnowsBrand(variables.leadRelationship)) {
-      try {
-        blind = blindIdentityFromBrands(await fetchBrandIdentityRows(brandIds, serviceIdentity));
-      } catch (err) {
-        throw new BlindBrandUnreadableError(err instanceof Error ? err.message : String(err));
-      }
-      traceEvent(req.runId!, { service: "content-generation-service", event: "blind-client-anonymous", detail: `Keeping out of the email: ${[...blind.names, ...blind.domains].join(", ")}` }, req.headers).catch(() => {});
-    }
-
     // Generate using the stored prompt + variable substitution + campaign context
     // Chat-service handles key resolution, billing, and cost tracking internally
     traceEvent(req.runId!, { service: "content-generation-service", event: "llm-call-start", detail: `Calling chat-service with prompt type=${type}, variableCount=${Object.keys(variables).length}, hasCampaignContext=${!!campaignContext}, language=${language ?? "english"}` }, req.headers).catch(() => {});
@@ -276,12 +255,8 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         language,
         giveLists,
         instruction,
-        blind,
         onRegenerate: ({ attempt, reason }) => {
           traceEvent(req.runId!, { service: "content-generation-service", event: "llm-regenerate", detail: `Unusable sequence, regenerating (attempt ${attempt}): ${reason}`, level: "warn" }, req.headers).catch(() => {});
-        },
-        onBlindRewrite: ({ rewrite, found }) => {
-          traceEvent(req.runId!, { service: "content-generation-service", event: "blind-rewrite", detail: `Answer named the client (${found}), rewrite ${rewrite}`, level: "warn" }, req.headers).catch(() => {});
         },
       },
       { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug, audienceId, offerId }
@@ -396,17 +371,6 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         traceEvent(req.runId, { service: "content-generation-service", event: "incomplete-sequence", detail: error.message, level: "error" }, req.headers).catch(() => {});
       }
       return res.status(502).json({ error: error.message, steps: error.steps });
-    }
-    if (error instanceof BlindClientNamedError) {
-      console.error("Generate error:", error.message);
-      if (req.runId) {
-        traceEvent(req.runId, { service: "content-generation-service", event: "blind-client-named", detail: error.message, level: "error" }, req.headers).catch(() => {});
-      }
-      return res.status(502).json({ error: error.message, code: error.code });
-    }
-    if (error instanceof BlindBrandUnreadableError) {
-      console.error("Generate error:", error.message);
-      return res.status(502).json({ error: error.message, code: error.code });
     }
     console.error("Generate error:", error);
     if (req.runId) {

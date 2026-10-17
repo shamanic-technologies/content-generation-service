@@ -174,27 +174,3 @@ export async function fetchBrandRows(brandId: string, identity: ServiceIdentity)
   }
   return rows;
 }
-
-/**
- * The rows (`name`, `domain`, `url`) of every brand a blind email must keep anonymous.
- * Fail loud: without them the email cannot be checked, so it is not written.
- */
-export async function fetchBrandIdentityRows(
-  brandIds: ReadonlyArray<string>,
-  identity: ServiceIdentity
-): Promise<Array<Record<string, unknown>>> {
-  const ids = [...new Set(brandIds.filter(Boolean))];
-  const response = await fetch(`${BRAND_SERVICE_URL}/internal/brands?ids=${encodeURIComponent(ids.join(","))}`, {
-    headers: buildHeaders(identity),
-  });
-  if (!response.ok) {
-    throw new BrandRowsError(response.status, await response.text());
-  }
-  const data = (await response.json()) as { brands?: Array<Record<string, unknown>> };
-  const rows = (data.brands ?? []).filter((b) => ids.includes(b.id as string));
-  const missing = ids.filter((id) => !rows.some((r) => r.id === id));
-  if (missing.length > 0) {
-    throw new BrandRowsError(404, `brand(s) ${missing.join(",")} not found`);
-  }
-  return rows;
-}
