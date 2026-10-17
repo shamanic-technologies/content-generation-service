@@ -24,8 +24,16 @@ const workflows: Record<string, unknown> = {
   plain: { workflows: [{ workflowSlug: "plain-v3", workflowDynastySlug: "plain", dag: dag("cold-email-v55", "flash-lite", { "body.variables.leadFirstName": "$ref:fetch-lead.output.lead.data.firstName" }) }] },
 };
 
+const plays: Record<string, unknown> = {
+  "sales-cold-email-outreach|lead_found_to_conversation~plain-only": { allowedWorkflowDynastySlugs: ["plain"], bestWorkflowSlug: null },
+};
+
 function route(url: string) {
   if (url.includes("/public/stats/leg-workflow-ranking")) return json(ranking);
+  if (url.includes("/internal/catalogue/plays/")) {
+    const id = decodeURIComponent(url.split("/internal/catalogue/plays/")[1]);
+    return plays[id] ? json(plays[id]) : json({ error: "no play", reason: "play_not_found" }, 404);
+  }
   const slug = new URL(url).searchParams.get("workflowDynastySlug")!;
   return json(workflows[slug]);
 }
@@ -70,5 +78,21 @@ describe("resolvePreviewWorkflow", () => {
   it("fails loud when workflow-service does not list exactly one executable version", async () => {
     mockFetch.mockImplementation(async (url: string) => (url.includes("ranking") ? json(ranking) : json({ workflows: [] })));
     await expect(resolvePreviewWorkflow(IDENTITY)).rejects.toMatchObject({ status: 502 });
+  });
+
+  it("with a strategy, writes with a workflow that play allows, and caches per strategy", async () => {
+    const plan = await resolvePreviewWorkflow(IDENTITY, "plain-only");
+    expect(plan.workflowSlug).toBe("plain-v3");
+    expect(mockFetch.mock.calls.some(([u]) => String(u).includes("/internal/catalogue/plays/sales-cold-email-outreach%7Clead_found_to_conversation~plain-only"))).toBe(true);
+    const calls = mockFetch.mock.calls.length;
+    await resolvePreviewWorkflow(IDENTITY, "plain-only");
+    expect(mockFetch.mock.calls.length).toBe(calls);
+    // The default choice is its own cache entry.
+    await resolvePreviewWorkflow(IDENTITY);
+    expect(mockFetch.mock.calls.length).toBeGreaterThan(calls);
+  });
+
+  it("answers an unknown strategy 400 UNKNOWN_STRATEGY", async () => {
+    await expect(resolvePreviewWorkflow(IDENTITY, "nope")).rejects.toMatchObject({ status: 400, code: "UNKNOWN_STRATEGY" });
   });
 });

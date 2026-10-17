@@ -743,6 +743,18 @@ export const PreviewEmailRequestSchema = registry.register(
       qualification: PreviewQualificationSchema.optional().describe(
         "The offer's checks run on the recipient's company, exactly as lead-service serves them for that company (the same shape as a lead's `qualification`): { domain, checks: [{ question, mode ('must_pass' | 'mention'), verdict ('yes' | 'no' | 'unavailable' | 'not_checked'), evidence, reason, screenshotUrl, ... }] }. Forward it verbatim. Rendered to the model in the same \"Checks we ran on their company\" block as a campaign email (context only). Part of the stored preview's identity: changed results write a new email, the same results are answered from storage. Absent or `checks: []` = the preview is written exactly as without it."
       ),
+      strategyId: z
+        .string()
+        .trim()
+        .min(1)
+        .max(100)
+        .optional()
+        .describe(
+          "Write the example the way a campaign running this play of the cold-email pipe would: a features-service strategy id on `sales-cold-email-outreach|lead_found_to_conversation` " +
+            "(`offer-emails-only` = leads with something given for free, `named-emails-only` = names the brand and pitches it, `blind-emails-only` = never names the brand, asks about the problem first; any other play of the pipe works too). " +
+            "The email is written with the template + model of the workflow that play's campaign would run (its measured best, else the first workflow it allows in the leg ranking). " +
+            "Absent = the best mature cold-email workflow, as before. A strategy with no play on the pipe = 400 `code: UNKNOWN_STRATEGY`."
+        ),
     })
     .openapi("PreviewEmailRequest")
 );

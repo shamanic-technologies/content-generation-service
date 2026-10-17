@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   matureCandidates,
+  playCandidates,
+  previewPlayId,
   planPreviewWorkflow,
   planNeedsBrandRows,
   resolvePreviewVariables,
@@ -153,5 +155,29 @@ describe("resolvePreviewVariables", () => {
       currentDate: "2026-10-06",
       leadHeadline: "",
     });
+  });
+});
+
+describe("playCandidates", () => {
+  const row = (rank: number, slug: string, extra: Record<string, unknown> = {}) => ({ rank, workflowDynastySlug: slug, selectable: true, isMature: false, basis: "flash" as const, costPerOutcomeUsd: null, moneyGoesHere: false, ...extra });
+  const ranking = { computedAt: "2026-10-17T00:00:00Z", rows: [row(1, "a"), row(2, "b"), row(3, "c", { executable: false }), row(4, "d", { isMature: true, basis: "mature", costPerOutcomeUsd: 9, moneyGoesHere: true })] };
+
+  it("keeps only the play's workflows, in rank order, learning ones included", () => {
+    const out = playCandidates(ranking, { id: "p", allowedWorkflowDynastySlugs: ["b", "a"], bestWorkflowSlug: null });
+    expect(out.map((r) => r.workflowDynastySlug)).toEqual(["a", "b"]);
+  });
+
+  it("puts the play's measured best first and never a workflow the leg cannot execute", () => {
+    const out = playCandidates(ranking, { id: "p", allowedWorkflowDynastySlugs: ["a", "b", "c"], bestWorkflowSlug: "b" });
+    expect(out.map((r) => r.workflowDynastySlug)).toEqual(["b", "a"]);
+  });
+
+  it("never falls back to a workflow outside the play", () => {
+    expect(() => playCandidates(ranking, { id: "p", allowedWorkflowDynastySlugs: ["c", "zz"], bestWorkflowSlug: null })).toThrow(/allows no workflow/);
+    expect(() => playCandidates({ computedAt: null, rows: [] }, { id: "p", allowedWorkflowDynastySlugs: ["a"], bestWorkflowSlug: null })).toThrow(/computedAt/);
+  });
+
+  it("names the play on the cold-email pipe", () => {
+    expect(previewPlayId("blind-emails-only")).toBe("sales-cold-email-outreach|lead_found_to_conversation~blind-emails-only");
   });
 });
