@@ -15,6 +15,7 @@ import { awaitPreviewWarmup, startPreviewWarmup } from "../lib/preview-warmup.js
 import {
   buildPreviewContext,
   previewBrandIntelFields,
+  previewQualificationVariable,
   previewRecipientKey,
   type PreviewRecipient,
 } from "../lib/preview-email.js";
@@ -111,7 +112,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     if (req.body && typeof req.body === "object" && "model" in req.body) {
       return res.status(400).json({ error: "model: not accepted; the preview writes with the model of the best mature cold-email workflow" });
     }
-    const { brandId, recipient, audience, offerId } = parsed.data;
+    const { brandId, recipient, audience, offerId, qualification } = parsed.data;
     const orgId = req.orgId!;
     const identity = { orgId, userId: req.userId!, runId, brandId, offerId };
 
@@ -125,7 +126,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     const plan = await resolvePreviewWorkflow(identity);
     const model = plan.model;
 
-    const recipientKey = previewRecipientKey({ recipient, audience, offerId, promptType: plan.promptType, model, workflowSlug: plan.workflowSlug, annotationVersion: PREVIEW_ANNOTATION_VERSION, giveLists });
+    const recipientKey = previewRecipientKey({ recipient, audience, offerId, promptType: plan.promptType, model, workflowSlug: plan.workflowSlug, annotationVersion: PREVIEW_ANNOTATION_VERSION, giveLists, qualification });
     const findStored = () =>
       db.query.emailPreviews.findFirst({
         where: and(
@@ -168,12 +169,16 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
       { recipient, brandIntel: intel as unknown as Record<string, unknown>, brands, currentDate: new Date().toISOString().split("T")[0] },
       extractTemplateVariableNames(storedPrompt.prompt)
     );
+    // The recipient company's check results ride in `leadQualification`, exactly as
+    // workflow-service hands a campaign /generate its served lead's qualification.
+    const leadQualification = previewQualificationVariable(qualification);
+    if (leadQualification) variables.leadQualification = leadQualification;
 
     // Everything the email could rest on, from the inputs actually sent. A second
     // completion, after the email is written, reports which of these each sentence uses.
-    const sources = buildHighlightSources({ recipient, audience, brandName, brandFields: intel.fields ?? {}, giveForFree: giveLists?.giveForFree });
+    const sources = buildHighlightSources({ recipient, audience, brandName, brandFields: intel.fields ?? {}, giveForFree: giveLists?.giveForFree, qualification: leadQualification });
 
-    traceEvent(runId, { service: "content-generation-service", event: "preview-email-start", detail: `brandId=${brandId}, workflow=${plan.workflowSlug}, type=${plan.promptType}, model=${model}` }, req.headers).catch(() => {});
+    traceEvent(runId, { service: "content-generation-service", event: "preview-email-start", detail: `brandId=${brandId}, workflow=${plan.workflowSlug}, type=${plan.promptType}, model=${model}, checks=${leadQualification ? (leadQualification.checks as unknown[]).length : 0}` }, req.headers).catch(() => {});
     const result = await generateFromTemplate(
       {
         promptTemplate: storedPrompt.prompt,

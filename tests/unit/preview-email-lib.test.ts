@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildPreviewContext, previewRecipientKey } from "../../src/lib/preview-email.js";
+import { buildPreviewContext, previewQualificationVariable, previewRecipientKey } from "../../src/lib/preview-email.js";
+import { buildLeadContextBlock } from "../../src/lib/lead-context-block.js";
 
 const R = { firstName: "Jane", lastName: "Doe", title: "VP Sales", companyName: "Acme" };
 
@@ -25,6 +26,31 @@ describe("previewRecipientKey", () => {
     expect(previewRecipientKey({ ...base, offerId: "o" })).not.toBe(a);
     // A preview stored under an older annotation contract is rewritten, not served.
     expect(previewRecipientKey({ ...base, annotationVersion: "highlights-v2" })).not.toBe(a);
+  });
+});
+
+describe("previewQualificationVariable", () => {
+  const Q = { domain: "acme.com", checks: [{ question: "Do they sell to enterprises?", mode: "must_pass", verdict: "yes", evidence: "Enterprise plan on the pricing page." }] };
+  const render = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v));
+
+  it("renders the campaign's 'Checks we ran on their company' block when the company has checks", () => {
+    const variables = { leadFirstName: "Jane", leadQualification: previewQualificationVariable(Q) };
+    const block = buildLeadContextBlock("Hi {{leadFirstName}}", variables, render);
+    expect(block).toContain("Checks we ran on their company");
+    expect(block).toContain("1. Do they sell to enterprises?");
+    expect(block).toContain("outcome: pass");
+  });
+
+  it("adds nothing when there are no checks", () => {
+    expect(previewQualificationVariable(undefined)).toBeNull();
+    expect(previewQualificationVariable({ domain: "acme.com", checks: [] })).toBeNull();
+    expect(buildLeadContextBlock("Hi {{leadFirstName}}", { leadFirstName: "Jane" }, render)).toBe("");
+  });
+
+  it("keeps the key byte-identical without checks", () => {
+    const base = { recipient: R, promptType: "t", model: "m", workflowSlug: "w", annotationVersion: "v" };
+    expect(previewRecipientKey({ ...base, qualification: { checks: [] } })).toBe(previewRecipientKey(base));
+    expect(previewRecipientKey({ ...base, qualification: Q })).not.toBe(previewRecipientKey(base));
   });
 });
 

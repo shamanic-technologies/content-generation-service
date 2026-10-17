@@ -368,6 +368,53 @@ describe("POST /preview-email", () => {
     expect(mockAnnotate.mock.calls[0][0].sources.map((s: { id: string }) => s.id)).not.toContain("offer.giveForFree");
   });
 
+  const QUALIFICATION = {
+    domain: "acme.com",
+    checks: [
+      { criterionId: "c1", question: "Do they sell to enterprises?", mode: "must_pass", verdict: "yes", evidence: "Their pricing page lists an Enterprise plan.", checkedAt: "2026-10-17T10:00:00Z", yesProbability: 0.93 },
+      { criterionId: "c2", question: "Are they hiring SDRs?", mode: "mention", verdict: "no", evidence: "No open sales roles on their careers page.", checkedAt: "2026-10-17T10:00:00Z", yesProbability: 0.1 },
+    ],
+  };
+
+  it("hands the writer the company's check results as leadQualification, verbatim, like a campaign /generate", async () => {
+    await request(app).post("/preview-email").send({ ...BODY, qualification: QUALIFICATION });
+    const [params] = mockGenerate.mock.calls[0];
+    expect(params.variables.leadQualification).toEqual(QUALIFICATION);
+    // Nothing else preview-specific reaches the writing call.
+    expect(Object.keys(params).sort()).toEqual(["campaignContext", "giveLists", "model", "promptTemplate", "variables"]);
+    const ids = mockAnnotate.mock.calls[0][0].sources.map((s: { id: string }) => s.id);
+    expect(ids).toEqual(expect.arrayContaining(["check.1", "check.2"]));
+  });
+
+  it("writes exactly as without checks when there are none (absent or checks: [])", async () => {
+    await request(app).post("/preview-email").send(BODY);
+    await request(app).post("/preview-email").send({ ...BODY, qualification: { domain: "acme.com", checks: [] } });
+    for (const call of mockGenerate.mock.calls) {
+      expect("leadQualification" in call[0].variables).toBe(false);
+    }
+    expect(mockValues.mock.calls[1][0].recipientKey).toBe(mockValues.mock.calls[0][0].recipientKey);
+    expect(mockAnnotate.mock.calls[0][0].sources).toEqual(mockAnnotate.mock.calls[1][0].sources);
+  });
+
+  it("stores a new preview when the check results change, and the same one when only checkedAt moves", async () => {
+    await request(app).post("/preview-email").send(BODY);
+    await request(app).post("/preview-email").send({ ...BODY, qualification: QUALIFICATION });
+    const rerun = { ...QUALIFICATION, checks: QUALIFICATION.checks.map((c) => ({ ...c, checkedAt: "2026-10-18T09:00:00Z", yesProbability: 0.5 })) };
+    await request(app).post("/preview-email").send({ ...BODY, qualification: rerun });
+    const flipped = { ...QUALIFICATION, checks: [QUALIFICATION.checks[0], { ...QUALIFICATION.checks[1], verdict: "yes", evidence: "Two SDR roles open." }] };
+    await request(app).post("/preview-email").send({ ...BODY, qualification: flipped });
+    const keys = mockValues.mock.calls.map((c) => c[0].recipientKey);
+    expect(keys[1]).not.toBe(keys[0]);
+    expect(keys[2]).toBe(keys[1]);
+    expect(keys[3]).not.toBe(keys[1]);
+  });
+
+  it("rejects a qualification whose checks are not a list", async () => {
+    const res = await request(app).post("/preview-email").send({ ...BODY, qualification: { domain: "acme.com", checks: "yes" } });
+    expect(res.status).toBe(400);
+    expect(mockGenerate).not.toHaveBeenCalled();
+  });
+
   it("stores a different preview once the give lists change, and the same one while they are empty", async () => {
     await request(app).post("/preview-email").send(BODY);
     const emptyKey = mockValues.mock.calls[0][0].recipientKey;
