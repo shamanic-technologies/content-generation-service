@@ -713,6 +713,25 @@ const PreviewRecipientSchema = z
   })
   .openapi("PreviewRecipient");
 
+const PreviewQualificationCheckSchema = z
+  .object({
+    question: z.string().describe("The check's question, as the offer states it."),
+    mode: z.string().optional().describe("must_pass (Hard filter) or mention (Bonus)."),
+    verdict: z.string().optional().describe("yes | no | unavailable | not_checked"),
+    evidence: z.string().nullable().optional(),
+    reason: z.string().nullable().optional(),
+    screenshotUrl: z.string().nullable().optional(),
+  })
+  .passthrough();
+
+const PreviewQualificationSchema = z
+  .object({
+    domain: z.string().nullable().optional().describe("The company the checks ran on."),
+    checks: z.array(PreviewQualificationCheckSchema),
+  })
+  .passthrough()
+  .openapi("PreviewQualification");
+
 export const PreviewEmailRequestSchema = registry.register(
   "PreviewEmailRequest",
   z
@@ -721,6 +740,9 @@ export const PreviewEmailRequestSchema = registry.register(
       recipient: PreviewRecipientSchema,
       audience: z.string().trim().min(1).optional().describe("The audience / segment the sample recipient was found in, in plain English. Given to the model as context."),
       offerId: z.string().uuid().optional().describe("Which offer of the brand to pitch. Required by brand-service only when the brand sells several offers."),
+      qualification: PreviewQualificationSchema.optional().describe(
+        "The offer's checks run on the recipient's company, exactly as lead-service serves them for that company (the same shape as a lead's `qualification`): { domain, checks: [{ question, mode ('must_pass' | 'mention'), verdict ('yes' | 'no' | 'unavailable' | 'not_checked'), evidence, reason, screenshotUrl, ... }] }. Forward it verbatim. Rendered to the model in the same \"Checks we ran on their company\" block as a campaign email (context only). Part of the stored preview's identity: changed results write a new email, the same results are answered from storage. Absent or `checks: []` = the preview is written exactly as without it."
+      ),
     })
     .openapi("PreviewEmailRequest")
 );
@@ -739,7 +761,7 @@ const PreviewHighlightSchema = z
       ),
     source: z
       .string()
-      .describe("The exact input: `recipient.<field>`, `audience`, `brand.name`, `brand.<extracted field key>` (e.g. brand.customerPainPoints), or `instruction`."),
+      .describe("The exact input: `recipient.<field>`, `check.<n>` (the n-th check of `qualification`), `audience`, `brand.name`, `brand.<extracted field key>` (e.g. brand.customerPainPoints), or `instruction`."),
     sourceLabel: z.string().describe("Plain-English name of that input."),
     sourceValue: z.string().nullable().describe("The input's actual value as the model received it. null for instruction."),
     reason: z.string().describe("Why this text is there, in one sentence, as reported by the model that wrote the email."),
