@@ -593,6 +593,9 @@
             "type": "string",
             "format": "uuid",
             "description": "Which offer of the brand to pitch. Required by brand-service only when the brand sells several offers."
+          },
+          "qualification": {
+            "$ref": "#/components/schemas/PreviewQualification"
           }
         },
         "required": [
@@ -645,6 +648,61 @@
           "title",
           "companyName"
         ]
+      },
+      "PreviewQualification": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "nullable": true,
+            "description": "The company the checks ran on."
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "question": {
+                  "type": "string",
+                  "description": "The check's question, as the offer states it."
+                },
+                "mode": {
+                  "type": "string",
+                  "description": "must_pass (Hard filter) or mention (Bonus)."
+                },
+                "verdict": {
+                  "type": "string",
+                  "description": "yes | no | unavailable | not_checked"
+                },
+                "evidence": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "reason": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "screenshotUrl": {
+                  "type": "string",
+                  "nullable": true
+                }
+              },
+              "required": [
+                "question"
+              ],
+              "additionalProperties": {
+                "nullable": true
+              }
+            }
+          }
+        },
+        "required": [
+          "checks"
+        ],
+        "additionalProperties": {
+          "nullable": true
+        },
+        "description": "The offer's checks run on the recipient's company, exactly as lead-service serves them for that company (the same shape as a lead's `qualification`): { domain, checks: [{ question, mode ('must_pass' | 'mention'), verdict ('yes' | 'no' | 'unavailable' | 'not_checked'), evidence, reason, screenshotUrl, ... }] }. Forward it verbatim. Rendered to the model in the same \"Checks we ran on their company\" block as a campaign email (context only). Part of the stored preview's identity: changed results write a new email, the same results are answered from storage. Absent or `checks: []` = the preview is written exactly as without it."
       },
       "PreviewEmailResponse": {
         "type": "object",
@@ -750,7 +808,7 @@
           },
           "source": {
             "type": "string",
-            "description": "The exact input: `recipient.<field>`, `audience`, `brand.name`, `brand.<extracted field key>` (e.g. brand.customerPainPoints), or `instruction`."
+            "description": "The exact input: `recipient.<field>`, `check.<n>` (the n-th check of `qualification`), `audience`, `brand.name`, `brand.<extracted field key>` (e.g. brand.customerPainPoints), or `instruction`."
           },
           "sourceLabel": {
             "type": "string",

@@ -99,6 +99,8 @@ export function buildHighlightSources(input: {
   brandFields: Record<string, { value: unknown } | undefined>;
   /** The offer's confirmed free-give items; the email's ask may rest on them. */
   giveForFree?: readonly string[];
+  /** The recipient company's check results sent to the writer (`leadQualification`), if any. */
+  qualification?: Record<string, unknown> | null;
 }): HighlightSource[] {
   const sources: HighlightSource[] = [];
   for (const [key, label] of RECIPIENT_LABELS) {
@@ -120,6 +122,14 @@ export function buildHighlightSources(input: {
   if (giveForFree) {
     sources.push({ id: "offer.giveForFree", kind: "brand", label: "What the sender gives for free to a prospect who replies (stated by the sender)", value: giveForFree });
   }
+  const checks = Array.isArray(input.qualification?.checks) ? (input.qualification!.checks as unknown[]) : [];
+  checks.forEach((raw, i) => {
+    const check = (raw ?? {}) as Record<string, unknown>;
+    const question = valueToString(check.question);
+    if (!question) return;
+    const value = [valueToString(check.verdict), valueToString(check.evidence)].filter(Boolean).join(": ");
+    sources.push({ id: `check.${i + 1}`, kind: "prospect", label: `A check we ran on the prospect's company: ${question}`, value: value || null });
+  });
   sources.push({ id: "instruction", kind: "instruction", label: "A writing rule of the email template, not a fact", value: null });
   return sources;
 }

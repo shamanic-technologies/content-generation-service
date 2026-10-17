@@ -13,6 +13,7 @@
 import { createHash } from "node:crypto";
 import { type OfferGiveLists, giveListsFingerprint } from "./offer-give-lists.js";
 import type { PreviewPlan } from "./preview-workflow.js";
+import { formatQualificationChecks } from "./lead-context-variables.js";
 
 /**
  * The brand-extract-fields request the live cold-email workflows send, used ONLY when the
@@ -72,6 +73,33 @@ export function buildPreviewContext(audience?: string): Record<string, unknown> 
 }
 
 /**
+ * The recipient company's check results as the preview's writing call receives them:
+ * the `leadQualification` variable, exactly as workflow-service injects a served lead's
+ * `lead.qualification` into every campaign `/generate` (`{ domain, checks: [...] }`,
+ * verbatim, only when `checks` is non-empty). The recipient-context block then renders
+ * it under "Checks we ran on their company", the same block and rules as a campaign
+ * email. Absent or `checks: []` → null: nothing is added, the prompt is byte-identical.
+ */
+export function previewQualificationVariable(qualification: unknown): Record<string, unknown> | null {
+  if (qualification === null || typeof qualification !== "object" || Array.isArray(qualification)) return null;
+  const checks = (qualification as { checks?: unknown }).checks;
+  return Array.isArray(checks) && checks.length > 0 ? (qualification as Record<string, unknown>) : null;
+}
+
+/**
+ * What the model reads of the check results, as the key of "the same results": the
+ * rendered lines, so a changed verdict, evidence or question writes a new email while a
+ * re-run that only moves `checkedAt` / `yesProbability` is answered from storage.
+ * Nothing renderable → "" and the key is byte-identical to a preview without checks.
+ */
+export function qualificationFingerprint(qualification: unknown): string {
+  const variable = previewQualificationVariable(qualification);
+  if (!variable) return "";
+  const lines = formatQualificationChecks(variable);
+  return lines && lines.length > 0 ? JSON.stringify(lines) : "";
+}
+
+/**
  * Identity of "the same brand and recipient" for re-spend avoidance: every input
  * that changes the written email, normalized so casing and stray whitespace do not
  * count as a different person. The brand and org are the row's own columns.
@@ -91,6 +119,11 @@ export function previewRecipientKey(input: {
    * not part of the key, which stays byte-identical to what it was before the lists existed.
    */
   giveLists?: OfferGiveLists | null;
+  /**
+   * The recipient company's check results (`qualificationFingerprint`), so changed
+   * results write a new preview. None → not part of the key.
+   */
+  qualification?: unknown;
 }): string {
   const norm = (v: string | undefined) => (v ?? "").trim().toLowerCase().replace(/\s+/g, " ");
   const r = input.recipient;
@@ -112,5 +145,7 @@ export function previewRecipientKey(input: {
   ]);
   const lists = giveListsFingerprint(input.giveLists);
   if (lists) canonical = `${canonical}${lists}`;
+  const checks = qualificationFingerprint(input.qualification);
+  if (checks) canonical = `${canonical}|checks:${checks}`;
   return createHash("sha256").update(canonical).digest("hex");
 }
