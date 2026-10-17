@@ -37,6 +37,8 @@ export const PREVIEW_LEG_KEY = "lead_found_to_conversation";
 export interface LegRankingRow {
   rank: number;
   workflowDynastySlug: string;
+  /** False when the leg cannot run the workflow right now; absent = runnable. */
+  executable?: boolean;
   selectable: boolean;
   isMature: boolean | null;
   basis: "mature" | "flash";
@@ -67,6 +69,47 @@ export function matureCandidates(ranking: LegRanking): LegRankingRow[] {
     .filter((r) => r !== best && r.selectable && r.isMature === true && r.basis === "mature" && r.costPerOutcomeUsd != null)
     .sort((a, b) => a.rank - b.rank);
   return [best, ...others];
+}
+
+/**
+ * One play of the cold-email pipe, as far as the preview reads it (features-service
+ * `GET /internal/catalogue/plays/:id`): the workflows a campaign running it may run, and
+ * the play's own measured best when it has one.
+ */
+export interface PreviewPlay {
+  id: string;
+  allowedWorkflowDynastySlugs: string[];
+  bestWorkflowSlug: string | null;
+}
+
+/** The play id of a strategy on the preview's pipe (features-service `<pipe>~<strategy>`). */
+export function previewPlayId(strategyId: string): string {
+  return `${PREVIEW_FEATURE_SLUG}|${PREVIEW_LEG_KEY}~${strategyId}`;
+}
+
+/**
+ * The workflows a campaign restricted to `play` would write with, in the order it would
+ * reach for them: the play's own measured best first (when it has one), then every other
+ * workflow the play allows in the leg ranking's order (campaign-service seeds a campaign
+ * with features-service's first choice on the leg minus what its play rules out). Learning
+ * workflows are candidates here, unlike the default preview: a play that allows only
+ * learning workflows runs them, so they ARE what its campaign writes. A workflow the leg
+ * cannot execute is never a candidate. None left = 503, never another play's workflow.
+ */
+export function playCandidates(ranking: LegRanking, play: PreviewPlay): LegRankingRow[] {
+  if (!ranking.computedAt) {
+    throw new PreviewWorkflowError(503, "features-service has not computed the cold-email workflow ranking yet (computedAt is null)");
+  }
+  const allowed = new Set(play.allowedWorkflowDynastySlugs);
+  const rows = ranking.rows
+    .filter((r) => allowed.has(r.workflowDynastySlug) && r.executable !== false)
+    .sort((a, b) => a.rank - b.rank);
+  const best = play.bestWorkflowSlug ? rows.find((r) => r.workflowDynastySlug === play.bestWorkflowSlug) : undefined;
+  const ordered = best ? [best, ...rows.filter((r) => r !== best)] : rows;
+  if (ordered.length === 0) {
+    throw new PreviewWorkflowError(503, `play ${play.id} allows no workflow the cold-email leg ranking can run`);
+  }
+  return ordered;
 }
 
 /** Where one template input comes from, in terms of what a preview holds. */
@@ -277,7 +320,7 @@ export function resolvePreviewVariables(plan: PreviewPlan, values: PreviewSource
 
 /** A failure to pick the preview's workflow, carried with the status the route answers. */
 export class PreviewWorkflowError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public code?: string) {
     super(message);
     this.name = "PreviewWorkflowError";
   }

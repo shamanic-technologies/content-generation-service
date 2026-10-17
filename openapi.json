@@ -596,6 +596,12 @@
           },
           "qualification": {
             "$ref": "#/components/schemas/PreviewQualification"
+          },
+          "strategyId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Write the example the way a campaign running this play of the cold-email pipe would: a features-service strategy id on `sales-cold-email-outreach|lead_found_to_conversation` (`offer-emails-only` = leads with something given for free, `named-emails-only` = names the brand and pitches it, `blind-emails-only` = never names the brand, asks about the problem first; any other play of the pipe works too). The email is written with the template + model of the workflow that play's campaign would run (its measured best, else the first workflow it allows in the leg ranking). Absent = the best mature cold-email workflow, as before. A strategy with no play on the pipe = 400 `code: UNKNOWN_STRATEGY`."
           }
         },
         "required": [

@@ -15,8 +15,12 @@ import {
   PreviewWorkflowError,
   matureCandidates,
   planPreviewWorkflow,
+  playCandidates,
+  previewPlayId,
   type LegRanking,
+  type LegRankingRow,
   type PreviewPlan,
+  type PreviewPlay,
 } from "./preview-workflow.js";
 
 const FEATURES_SERVICE_URL = process.env.FEATURES_SERVICE_URL || "http://localhost:3050";
@@ -26,11 +30,12 @@ const WORKFLOW_SERVICE_API_KEY = process.env.WORKFLOW_SERVICE_API_KEY || "";
 
 export const PREVIEW_WORKFLOW_CACHE_MS = 5 * 60_000;
 
-let cached: { plan: PreviewPlan; at: number } | null = null;
+/** Keyed by strategy id ("" = no strategy: the best mature workflow). */
+const cached = new Map<string, { plan: PreviewPlan; at: number }>();
 
 /** Test seam. */
 export function __resetPreviewWorkflowCache(): void {
-  cached = null;
+  cached.clear();
 }
 
 async function readLegRanking(): Promise<LegRanking> {
@@ -49,6 +54,32 @@ async function readLegRanking(): Promise<LegRanking> {
     throw new PreviewWorkflowError(502, "features-service leg-workflow-ranking answered without rows");
   }
   return { computedAt: body.computedAt ?? null, rows: body.rows };
+}
+
+/**
+ * The play a strategy names on the cold-email pipe. features-service's 404 means no such
+ * play on the pipe: the caller named an unknown strategy, answered 400 UNKNOWN_STRATEGY.
+ */
+async function readPlay(strategyId: string): Promise<PreviewPlay> {
+  const id = previewPlayId(strategyId);
+  const url = `${FEATURES_SERVICE_URL}/internal/catalogue/plays/${encodeURIComponent(id)}`;
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { "X-Api-Key": FEATURES_SERVICE_API_KEY } });
+  } catch (err) {
+    throw new PreviewWorkflowError(502, `features-service play ${id} unreachable: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (res.status === 404) {
+    throw new PreviewWorkflowError(400, `strategyId: no play "${strategyId}" on the cold-email pipe (${PREVIEW_FEATURE_SLUG}|${PREVIEW_LEG_KEY})`, "UNKNOWN_STRATEGY");
+  }
+  if (!res.ok) {
+    throw new PreviewWorkflowError(502, `features-service play ${id} failed: ${res.status} - ${await res.text()}`);
+  }
+  const body = (await res.json()) as Partial<PreviewPlay>;
+  if (!Array.isArray(body.allowedWorkflowDynastySlugs)) {
+    throw new PreviewWorkflowError(502, `features-service play ${id} answered without allowedWorkflowDynastySlugs`);
+  }
+  return { id, allowedWorkflowDynastySlugs: body.allowedWorkflowDynastySlugs, bestWorkflowSlug: body.bestWorkflowSlug ?? null };
 }
 
 interface WorkflowRow {
@@ -78,14 +109,24 @@ async function readActiveWorkflow(dynastySlug: string, identity: Tracking): Prom
 }
 
 /**
- * The plan of the best mature cold-email workflow whose writing a preview can reproduce.
- * Walks the mature candidates best first; a workflow a preview cannot reproduce (see
- * `planPreviewWorkflow`) is skipped, loudly, for the next one.
+ * The plan of the cold-email workflow a preview writes with, whose writing it can reproduce.
+ * Without `strategyId`: the best MATURE workflow (mature candidates best first). With it:
+ * the workflow a campaign running that play would write with (`playCandidates`). A
+ * workflow a preview cannot reproduce (see `planPreviewWorkflow`) is skipped, loudly, for
+ * the next one.
  */
-export async function resolvePreviewWorkflow(identity: Tracking): Promise<PreviewPlan> {
-  if (cached && Date.now() - cached.at < PREVIEW_WORKFLOW_CACHE_MS) return cached.plan;
+export async function resolvePreviewWorkflow(identity: Tracking, strategyId?: string): Promise<PreviewPlan> {
+  const cacheKey = strategyId ?? "";
+  const hit = cached.get(cacheKey);
+  if (hit && Date.now() - hit.at < PREVIEW_WORKFLOW_CACHE_MS) return hit.plan;
 
-  const candidates = matureCandidates(await readLegRanking());
+  let candidates: LegRankingRow[];
+  if (strategyId === undefined) {
+    candidates = matureCandidates(await readLegRanking());
+  } else {
+    const [play, ranking] = await Promise.all([readPlay(strategyId), readLegRanking()]);
+    candidates = playCandidates(ranking, play);
+  }
   const skipped: string[] = [];
   for (const candidate of candidates) {
     const workflow = await readActiveWorkflow(candidate.workflowDynastySlug, identity);
@@ -94,11 +135,11 @@ export async function resolvePreviewWorkflow(identity: Tracking): Promise<Previe
       if (skipped.length > 0) {
         console.warn(`[content-generation-service] preview workflow: skipped ${skipped.length} better-ranked mature workflow(s): ${skipped.join(" | ")}`);
       }
-      console.log(`[content-generation-service] preview workflow: ${result.plan.workflowSlug} (rank ${candidate.rank}), type=${result.plan.promptType}, model=${result.plan.model}`);
-      cached = { plan: result.plan, at: Date.now() };
+      console.log(`[content-generation-service] preview workflow${strategyId ? ` for play ${strategyId}` : ""}: ${result.plan.workflowSlug} (rank ${candidate.rank}), type=${result.plan.promptType}, model=${result.plan.model}`);
+      cached.set(cacheKey, { plan: result.plan, at: Date.now() });
       return result.plan;
     }
     skipped.push(result.reason);
   }
-  throw new PreviewWorkflowError(503, `No mature cold-email workflow can be reproduced by a preview: ${skipped.join(" | ")}`);
+  throw new PreviewWorkflowError(503, `No ${strategyId ? `cold-email workflow of play ${strategyId}` : "mature cold-email workflow"} can be reproduced by a preview: ${skipped.join(" | ")}`);
 }

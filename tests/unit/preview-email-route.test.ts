@@ -293,6 +293,24 @@ describe("POST /preview-email", () => {
     expect(mockGenerate).not.toHaveBeenCalled();
   });
 
+  it("asks for the play a strategyId names, and passes none when the body has none", async () => {
+    await request(app).post("/preview-email").send(BODY);
+    expect(mockResolvePreviewWorkflow.mock.calls[0][1]).toBeUndefined();
+
+    await request(app).post("/preview-email").send({ ...BODY, strategyId: "blind-emails-only" });
+    expect(mockResolvePreviewWorkflow.mock.calls[1][1]).toBe("blind-emails-only");
+  });
+
+  it("answers an unknown strategy with a named 400, nothing billed", async () => {
+    mockResolvePreviewWorkflow.mockRejectedValue(new PreviewWorkflowError(400, 'strategyId: no play "nope" on the cold-email pipe', "UNKNOWN_STRATEGY"));
+    const res = await request(app).post("/preview-email").send({ ...BODY, strategyId: "nope" });
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ code: "UNKNOWN_STRATEGY" });
+    expect(mockGenerate).not.toHaveBeenCalled();
+
+    expect((await request(app).post("/preview-email").send({ ...BODY, strategyId: "" })).status).toBe(400);
+  });
+
   it("refuses a caller-chosen model", async () => {
     const res = await request(app).post("/preview-email").send({ ...BODY, model: "sonnet" });
     expect(res.status).toBe(400);
