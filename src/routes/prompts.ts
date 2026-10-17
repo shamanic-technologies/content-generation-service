@@ -107,7 +107,7 @@ router.post("/prompts", serviceAuth, async (req: AuthenticatedRequest, res) => {
       return res.status(200).json(formatPromptResponse(existing));
     }
 
-    await assertTemplateNeutral({ prompt, variables, caller: orgCaller(req) });
+    await assertTemplateNeutral({ type, prompt, variables, caller: orgCaller(req) });
 
     const [result] = await db
       .insert(prompts)
@@ -143,7 +143,7 @@ router.post("/platform-prompts", async (req, res) => {
       return res.status(200).json(formatPromptResponse(existing));
     }
 
-    await assertTemplateNeutral({ prompt, variables, caller: { mode: "platform" } });
+    await assertTemplateNeutral({ type, prompt, variables, caller: { mode: "platform" } });
 
     const [result] = await db
       .insert(prompts)

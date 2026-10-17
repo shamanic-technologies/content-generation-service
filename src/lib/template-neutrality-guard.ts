@@ -22,6 +22,14 @@ import {
   type NeutralityVerdict,
   type TemplateVariable,
 } from "./template-neutrality.js";
+import {
+  BLIND_TEMPLATE_RULE_VERSION,
+  BlindTemplateRevealsClientError,
+  blindPassagesToJudge,
+  blindTemplateRuleKey,
+  buildBlindRuleQuestions,
+  isBlindTemplateType,
+} from "./blind-template-rule.js";
 
 async function judgeTemplate(
   prompt: string,
@@ -61,6 +69,8 @@ export async function assertTemplateNeutral(params: {
   variables: ReadonlyArray<TemplateVariable>;
   inherited?: InheritedTemplate;
   caller: JudgmentCaller;
+  /** The type stored (or its family): a blind type is also judged by the blind rule, below. */
+  type?: string;
 }): Promise<void> {
   const { prompt, variables, inherited, caller } = params;
   const contentKey = templateNeutralityKey(prompt, variables, inherited);
@@ -97,5 +107,73 @@ export async function assertTemplateNeutral(params: {
       `[template-neutrality] refused template key=${contentKey.slice(0, 12)} specific=${specific.length} cached=${Boolean(stored)}`,
     );
     throw new TemplateNotNeutralError(specific);
+  }
+
+  if (params.type) {
+    await assertBlindTemplateKeepsClientAnonymous({ type: params.type, prompt, variables, caller });
+  }
+}
+
+/**
+ * Throws BlindTemplateRevealsClientError (→ 422) when a BLIND-type template tells or
+ * allows the writer to name the client, its website or a link to it (blind-template-rule.ts).
+ * Any other type returns at once. Every passage is judged, inherited ones included;
+ * the verdict is persisted beside the neutrality verdicts under its own key, so a
+ * resubmission of the same content costs nothing.
+ */
+export async function assertBlindTemplateKeepsClientAnonymous(params: {
+  type: string;
+  prompt: string;
+  variables: ReadonlyArray<TemplateVariable>;
+  caller: JudgmentCaller;
+}): Promise<void> {
+  const { type, prompt, variables, caller } = params;
+  if (!isBlindTemplateType(type)) return;
+  const contentKey = blindTemplateRuleKey(prompt, variables);
+
+  const stored = await db.query.templateNeutralityJudgments.findFirst({
+    where: eq(templateNeutralityJudgments.contentKey, contentKey),
+  });
+
+  let licensing: JudgedPassage[];
+  if (stored) {
+    licensing = (stored.passages as JudgedPassage[]).filter(
+      (p) => p.probability >= SPECIFIC_PROBABILITY_THRESHOLD,
+    );
+  } else {
+    const passages = blindPassagesToJudge(prompt, variables);
+    const answers: Record<string, unknown> = {};
+    let model = "none";
+    let inputTokens = 0;
+    for (let offset = 0; offset < passages.length; offset += QUESTIONS_PER_CALL) {
+      const chunk = passages.slice(offset, offset + QUESTIONS_PER_CALL);
+      const res = await askJudgments({ state: prompt, questions: buildBlindRuleQuestions(chunk, offset) }, caller);
+      Object.assign(answers, res.answers);
+      model = res.model;
+      inputTokens += res.usage.inputTokens;
+    }
+    // Same reading as neutrality: a missing answer fails loud, >= 0.5 is refused.
+    const verdict = interpretNeutralityAnswers(passages, answers);
+    await db
+      .insert(templateNeutralityJudgments)
+      .values({
+        contentKey,
+        ruleVersion: BLIND_TEMPLATE_RULE_VERSION,
+        neutral: verdict.neutral,
+        passages: verdict.passages,
+        model,
+        inputTokens,
+        orgId: caller.mode === "org" ? caller.tracking.orgId : null,
+        runId: caller.mode === "org" ? caller.tracking.runId : null,
+      })
+      .onConflictDoNothing();
+    licensing = verdict.specific;
+  }
+
+  if (licensing.length > 0) {
+    console.warn(
+      `[blind-template-rule] refused type=${type} key=${contentKey.slice(0, 12)} licensing=${licensing.length} cached=${Boolean(stored)}`,
+    );
+    throw new BlindTemplateRevealsClientError(type, licensing);
   }
 }
