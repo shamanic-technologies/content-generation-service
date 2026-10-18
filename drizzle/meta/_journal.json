@@ -232,6 +232,13 @@
       "when": 1779864000000,
       "tag": "0032_industry_debrief_videos",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1779950400000,
+      "tag": "0033_emailgen_feature_created_index",
+      "breakpoints": true
     }
   ]
 }

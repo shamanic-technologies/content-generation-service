@@ -70,6 +70,8 @@ export const emailGenerations = pgTable(
     index("idx_emailgen_brand_ids").using("gin", table.brandIds),
     index("idx_emailgen_workflow").on(table.workflowSlug),
     index("idx_emailgen_audience").on(table.audienceId),
+    // Keyset paging of GET /internal/sequences (drizzle/0033)
+    index("idx_emailgen_feature_created").on(table.featureSlug, table.createdAt, table.id),
     uniqueIndex("idx_emailgen_idempotency").on(table.orgId, table.idempotencyKey),
     uniqueIndex("idx_emailgen_lead").on(table.campaignId, table.leadId),
   ]
