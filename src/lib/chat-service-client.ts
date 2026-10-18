@@ -21,6 +21,7 @@ import { unescapeLineBreaks, collapseEscapedLineBreaks } from "./escaped-line-br
 import { textToHtml } from "./text-to-html.js";
 import { stripDashes } from "./dashes.js";
 import { withSequenceDelays, IncompleteSequenceError } from "./sequence-delays.js";
+import { readClientCommsVoice, buildClientCommsVoiceDirective } from "./client-comms-voice.js";
 
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
 const CHAT_SERVICE_API_KEY = process.env.CHAT_SERVICE_API_KEY || "";
@@ -405,10 +406,14 @@ export async function generateFromTemplate(
     ...buildTrackingHeaders(identity),
   };
 
-  // Absent language → the system prompt is byte-identical to before this existed.
+  // Our one voice, read live on every generation (client-comms-voice.ts); throws when unreadable.
+  // Right after the universal rules: it says HOW to write, every section after it says WHAT.
+  const voice = await readClientCommsVoice();
+  const baseSystemPrompt = `${GLOBAL_SYSTEM_PROMPT}\n${buildClientCommsVoiceDirective(voice)}`;
+  // Absent language → no language section.
   let systemPrompt = params.language
-    ? `${GLOBAL_SYSTEM_PROMPT}\n${buildLanguageDirective(params.language)}`
-    : GLOBAL_SYSTEM_PROMPT;
+    ? `${baseSystemPrompt}\n${buildLanguageDirective(params.language)}`
+    : baseSystemPrompt;
   const giveListsDirective = params.giveLists ? buildGiveListsDirective(params.giveLists) : "";
   if (giveListsDirective) {
     systemPrompt = `${systemPrompt}\n${giveListsDirective}`;

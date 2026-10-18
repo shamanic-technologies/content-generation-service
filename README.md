@@ -9,6 +9,7 @@ A microservice for generating personalized content (emails, calendar events, etc
 - BYOK (Bring Your Own Key) support for Anthropic API keys
 - Cost tracking integration with runs-service
 - Health endpoint for container orchestration
+- Every email is written in our one voice: chat-service's `client-comms` skill, read live on each generation (no copy; unreadable = 502, nothing written)
 
 ## Tech Stack
 
