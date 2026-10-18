@@ -31,3 +31,11 @@ beforeAll(async () => {
   console.log("Test suite starting...");
 });
 afterAll(() => console.log("Test suite complete."));
+
+// Our voice (client-comms) is read live from chat-service on every generation. Unit suites count
+// the `/complete` fetch calls, so the read is stubbed once here; the real module is exercised by
+// tests/unit/client-comms-voice.test.ts (vi.importActual).
+vi.mock("../src/lib/client-comms-voice.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/client-comms-voice.js")>();
+  return { ...actual, readClientCommsVoice: vi.fn(async () => "TEST VOICE: answer first, short, plain words.") };
+});

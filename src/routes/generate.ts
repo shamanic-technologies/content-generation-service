@@ -26,6 +26,7 @@ import { traceEvent } from "../lib/trace-event.js";
 import { findGenerationForLead } from "../lib/lead-generation-query.js";
 import { withResolvedBody } from "../lib/generation-body.js";
 import { withSequenceDelays, IncompleteSequenceError } from "../lib/sequence-delays.js";
+import { ClientCommsVoiceError } from "../lib/client-comms-voice.js";
 import { stripDashes, hasDashes } from "../lib/dashes.js";
 import { textToHtml } from "../lib/text-to-html.js";
 
@@ -371,6 +372,14 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         traceEvent(req.runId, { service: "content-generation-service", event: "incomplete-sequence", detail: error.message, level: "error" }, req.headers).catch(() => {});
       }
       return res.status(502).json({ error: error.message, steps: error.steps });
+    }
+    if (error instanceof ClientCommsVoiceError) {
+      // No default voice: the email is not written without our client-comms skill.
+      console.error("Generate error:", error.message);
+      if (req.runId) {
+        traceEvent(req.runId, { service: "content-generation-service", event: "client-comms-unavailable", detail: error.message, level: "error" }, req.headers).catch(() => {});
+      }
+      return res.status(502).json({ error: error.message, code: "CLIENT_COMMS_UNAVAILABLE" });
     }
     console.error("Generate error:", error);
     if (req.runId) {
