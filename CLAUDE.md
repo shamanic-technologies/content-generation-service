@@ -22,6 +22,7 @@ Microservice that generates personalized content (emails, calendar events, etc.)
 - `src/routes/stats.ts` — POST /stats and POST /stats/by-model endpoints
 - `src/routes/transfer-brand.ts` + `src/lib/transfer-brand.ts` — POST /internal/transfer-brand (fleet contract, see "Brand transfer" below)
 - `src/routes/industry-debrief-videos.ts` + `src/lib/debrief/` + `assets/industry-debrief/` — the daily industry debrief news-bulletin video (see "Industry debrief video" below)
+- `src/routes/sequences.ts` + `src/lib/sequence-feed-query.ts` + `src/lib/first-email-shape.ts` — GET /internal/sequences, the fleet-wide sequence feed (see "Fleet-wide sequence feed" below)
 - `src/routes/health.ts` — GET /health endpoint
 - `src/middleware/auth.ts` — Authentication middleware (X-Clerk-Org-Id header)
 - `src/lib/chat-service-client.ts` — Chat-service client + email template utilities (prompt substitution, JSON parsing)
@@ -288,6 +289,15 @@ The daily "industry update" bulletin (4:5, 2-4 stories, ~60-110 s) the Social po
 - The masthead weekday is computed from `date` (the Mac run of 2026-10-12 hand-typed "Sunday" for a Monday).
 - Local render, no DB/upload: `npx tsx scripts/render-debrief.ts tests/fixtures/industry-debrief-2026-10-12.json out.mp4 [previousTrackId]`.
 - Not here: picking stories, captions, tags, posting (workflow + social-service). Our study's motion-design example (skill: abstract finding) is not supported: our news is a story with its post card.
+
+## Fleet-wide sequence feed (`GET /internal/sequences`, LIVE-RESEARCH-1018)
+
+features-service serves the staff Research studies live and attributes each prospect's outcome to what wrote their emails. Only this service knows that: a DAG names a model ALIAS and most name no template. The feed gives, per stored generation (campaign x lead, every org, since inception): concrete `model`, `promptType` (version included), `workflowSlug`, `createdAt`, `runId` (the workflow run) + `generationRunId` (ours), and `firstEmail` = three deterministic classes of the first email's text.
+
+- **API key only**, no identity headers; `featureSlug` required (cold email = `sales-cold-email-outreach`). Rows without `lead_id` are not served.
+- **Incremental**: keyset on `(created_at, id)` with an opaque cursor, index `idx_emailgen_feature_created` (`drizzle/0033`). A consumer stores `nextCursor` and reads only what is new; never a full re-read. Rows younger than 60 s are held back (a row is stamped at insert START, so a later-stamped row can commit first; serving it would skip the earlier one forever).
+- **Selects only what it needs**, never `prompt_raw`/`response_raw`/`variables_raw`. Body resolved with `resolveGenerationBody` (same precedence as every other read).
+- **Classes** (`first-email-shape.ts`, port of distribute.you `apps/landing/scripts/blog-data/first-email-shape.mjs`): layout `one_block | single_line_breaks | double_line_breaks`; opening `greeting | first_name_alone | no_greeting` (first name = our stored `lead_first_name`, the name the writer was given); dash `em | en | both | none`. Sharpened on the port: own first name tested before the greeting list (6 of 59,445 prod emails moved: leads named Cara, Moin), HTML-entity dashes count. `null` = no copy. Changing a rule changes every served figure retroactively (computed on read, never stored): say so in the PR.
 
 ## Brand transfer (`POST /internal/transfer-brand`)
 
