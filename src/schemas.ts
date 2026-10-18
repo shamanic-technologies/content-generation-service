@@ -1558,6 +1558,125 @@ registry.registerPath({
   },
 });
 
+// ---------------------------------------------------------------------------
+// GET /internal/sequences — fleet-wide sequence feed (src/lib/sequence-feed-query.ts)
+// ---------------------------------------------------------------------------
+export const SEQUENCE_FEED_MAX_LIMIT = 1000;
+
+export const SequenceFeedQuerySchema = z
+  .object({
+    featureSlug: z
+      .string()
+      .min(1)
+      .describe("The feature whose sequences to read, e.g. `sales-cold-email-outreach` (cold email channel)."),
+    cursor: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Opaque cursor returned as `nextCursor` by the previous page. Omit to start at the first sequence ever written."
+      ),
+    limit: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(SEQUENCE_FEED_MAX_LIMIT)
+      .optional()
+      .describe(`Page size, 1..${SEQUENCE_FEED_MAX_LIMIT}. Omitted = 500.`),
+  })
+  .openapi("SequenceFeedQuery");
+
+const FirstEmailShapeSchema = z
+  .object({
+    layout: z
+      .enum(["one_block", "single_line_breaks", "double_line_breaks"])
+      .describe(
+        "How the first email's text is laid out: `double_line_breaks` = at least one blank line (paragraphs); " +
+          "`single_line_breaks` = line breaks but no blank line; `one_block` = no line break at all."
+      ),
+    opening: z
+      .enum(["greeting", "first_name_alone", "no_greeting"])
+      .describe(
+        "How the first email opens: `greeting` = a greeting word in any language we write in (Hi, Hello, Bonjour, Hallo, Hola, Ciao, Hej, ...), " +
+          "whatever follows it; `first_name_alone` = the recipient's first name (or a single capitalised name-like word) glued " +
+          "to the first sentence by a comma, colon, \"!\" or dash (\"Marie, I saw...\"); `no_greeting` = neither."
+      ),
+    dash: z
+      .enum(["em", "en", "both", "none"])
+      .describe(
+        "Which dashes the first email carries: em dash (U+2014), en dash (U+2013), both, or none. A plain hyphen is not a dash. " +
+          "HTML entities (&mdash; &ndash;) count as the dash they render."
+      ),
+  })
+  .describe(
+    "Deterministic classes of the FIRST email's stored text (no model involved). The stored text is the sent text. " +
+      "`null` when the generation carries no copy."
+  );
+
+const SequenceFeedEntrySchema = z.object({
+  generationId: z.string().uuid().describe("This service's generation id (one per sequence)."),
+  orgId: z.string().describe("Internal org UUID the sequence was written for."),
+  campaignId: z.string().describe("Platform campaign id. Unique with leadId: one sequence per campaign x lead."),
+  leadId: z.string().describe("lead-service lead id of the recipient."),
+  model: z
+    .string()
+    .describe(
+      "The CONCRETE model id that wrote the sequence, as resolved at generation time (e.g. `gemini-3.1-pro-preview`, `claude-sonnet-5-5`), " +
+        "never the workflow's alias."
+    ),
+  promptType: z
+    .string()
+    .nullable()
+    .describe(
+      "The template that wrote it: the prompt `type`, version included (e.g. `cold-email-v41`). Its text: GET /platform-prompts?type=<promptType>."
+    ),
+  workflowSlug: z.string().nullable().describe("The workflow VERSION slug whose run asked for the sequence. Null on rows written without one."),
+  createdAt: z.string().describe("When the sequence was written (ISO 8601)."),
+  runId: z.string().describe("The caller's run (the workflow run) that asked for the sequence."),
+  generationRunId: z.string().nullable().describe("This service's own runs-service run for the generation (child of runId)."),
+  firstEmail: FirstEmailShapeSchema.nullable(),
+});
+
+const SequenceFeedResponseSchema = registry.register(
+  "SequenceFeedResponse",
+  z
+    .object({
+      sequences: z.array(SequenceFeedEntrySchema).describe("Oldest first, in write order."),
+      nextCursor: z
+        .string()
+        .nullable()
+        .describe(
+          "Pass as `cursor` on the next call. Always set once anything was ever served; equals the input cursor when nothing new arrived. " +
+            "Null only when the feature has no sequence at all yet."
+        ),
+      hasMore: z.boolean().describe("true = another page is ready now; false = caught up (poll again later with nextCursor)."),
+    })
+    .openapi("SequenceFeedResponse")
+);
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/sequences",
+  tags: ["Internal"],
+  summary: "Fleet-wide feed of generated sequences: what wrote each one and how its first email reads",
+  description:
+    "One entry per sequence this service generated for the feature (campaign x lead, every org, since inception), oldest first, " +
+    "keyset-paged with an opaque cursor so a consumer follows it incrementally (resume from the last nextCursor, read only what is new). " +
+    "Staff/service read: API key only, no identity headers. Generations without a lead id are not served. " +
+    "A sequence becomes visible ~60 s after it is written (keeps the cursor from skipping a row still committing).",
+  request: { query: SequenceFeedQuerySchema },
+  responses: {
+    200: {
+      description: "A page of sequences",
+      content: { "application/json": { schema: SequenceFeedResponseSchema } },
+    },
+    400: {
+      description: "Missing featureSlug, bad limit, or a cursor this service did not issue",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // ─── Industry debrief video (src/lib/debrief/) ──────────────────────────────
 
 const DebriefPostSchema = z

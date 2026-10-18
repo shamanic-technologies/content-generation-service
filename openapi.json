@@ -1607,6 +1607,131 @@
           "updatedTables"
         ]
       },
+      "SequenceFeedResponse": {
+        "type": "object",
+        "properties": {
+          "sequences": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "generationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "This service's generation id (one per sequence)."
+                },
+                "orgId": {
+                  "type": "string",
+                  "description": "Internal org UUID the sequence was written for."
+                },
+                "campaignId": {
+                  "type": "string",
+                  "description": "Platform campaign id. Unique with leadId: one sequence per campaign x lead."
+                },
+                "leadId": {
+                  "type": "string",
+                  "description": "lead-service lead id of the recipient."
+                },
+                "model": {
+                  "type": "string",
+                  "description": "The CONCRETE model id that wrote the sequence, as resolved at generation time (e.g. `gemini-3.1-pro-preview`, `claude-sonnet-5-5`), never the workflow's alias."
+                },
+                "promptType": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "The template that wrote it: the prompt `type`, version included (e.g. `cold-email-v41`). Its text: GET /platform-prompts?type=<promptType>."
+                },
+                "workflowSlug": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "The workflow VERSION slug whose run asked for the sequence. Null on rows written without one."
+                },
+                "createdAt": {
+                  "type": "string",
+                  "description": "When the sequence was written (ISO 8601)."
+                },
+                "runId": {
+                  "type": "string",
+                  "description": "The caller's run (the workflow run) that asked for the sequence."
+                },
+                "generationRunId": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "This service's own runs-service run for the generation (child of runId)."
+                },
+                "firstEmail": {
+                  "type": "object",
+                  "nullable": true,
+                  "properties": {
+                    "layout": {
+                      "type": "string",
+                      "enum": [
+                        "one_block",
+                        "single_line_breaks",
+                        "double_line_breaks"
+                      ],
+                      "description": "How the first email's text is laid out: `double_line_breaks` = at least one blank line (paragraphs); `single_line_breaks` = line breaks but no blank line; `one_block` = no line break at all."
+                    },
+                    "opening": {
+                      "type": "string",
+                      "enum": [
+                        "greeting",
+                        "first_name_alone",
+                        "no_greeting"
+                      ],
+                      "description": "How the first email opens: `greeting` = a greeting word in any language we write in (Hi, Hello, Bonjour, Hallo, Hola, Ciao, Hej, ...), whatever follows it; `first_name_alone` = the recipient's first name (or a single capitalised name-like word) glued to the first sentence by a comma, colon, \"!\" or dash (\"Marie, I saw...\"); `no_greeting` = neither."
+                    },
+                    "dash": {
+                      "type": "string",
+                      "enum": [
+                        "em",
+                        "en",
+                        "both",
+                        "none"
+                      ],
+                      "description": "Which dashes the first email carries: em dash (U+2014), en dash (U+2013), both, or none. A plain hyphen is not a dash. HTML entities (&mdash; &ndash;) count as the dash they render."
+                    }
+                  },
+                  "required": [
+                    "layout",
+                    "opening",
+                    "dash"
+                  ],
+                  "description": "Deterministic classes of the FIRST email's stored text (no model involved). The stored text is the sent text. `null` when the generation carries no copy."
+                }
+              },
+              "required": [
+                "generationId",
+                "orgId",
+                "campaignId",
+                "leadId",
+                "model",
+                "promptType",
+                "workflowSlug",
+                "createdAt",
+                "runId",
+                "generationRunId",
+                "firstEmail"
+              ]
+            },
+            "description": "Oldest first, in write order."
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true,
+            "description": "Pass as `cursor` on the next call. Always set once anything was ever served; equals the input cursor when nothing new arrived. Null only when the feature has no sequence at all yet."
+          },
+          "hasMore": {
+            "type": "boolean",
+            "description": "true = another page is ready now; false = caught up (poll again later with nextCursor)."
+          }
+        },
+        "required": [
+          "sequences",
+          "nextCursor",
+          "hasMore"
+        ]
+      },
       "DebriefVideoRequest": {
         "type": "object",
         "properties": {
@@ -4011,6 +4136,73 @@
           },
           "400": {
             "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/sequences": {
+      "get": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Fleet-wide feed of generated sequences: what wrote each one and how its first email reads",
+        "description": "One entry per sequence this service generated for the feature (campaign x lead, every org, since inception), oldest first, keyset-paged with an opaque cursor so a consumer follows it incrementally (resume from the last nextCursor, read only what is new). Staff/service read: API key only, no identity headers. Generations without a lead id are not served. A sequence becomes visible ~60 s after it is written (keeps the cursor from skipping a row still committing).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The feature whose sequences to read, e.g. `sales-cold-email-outreach` (cold email channel)."
+            },
+            "required": true,
+            "description": "The feature whose sequences to read, e.g. `sales-cold-email-outreach` (cold email channel).",
+            "name": "featureSlug",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Opaque cursor returned as `nextCursor` by the previous page. Omit to start at the first sequence ever written."
+            },
+            "required": false,
+            "description": "Opaque cursor returned as `nextCursor` by the previous page. Omit to start at the first sequence ever written.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "description": "Page size, 1..1000. Omitted = 500."
+            },
+            "required": false,
+            "description": "Page size, 1..1000. Omitted = 500.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of sequences",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SequenceFeedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing featureSlug, bad limit, or a cursor this service did not issue",
             "content": {
               "application/json": {
                 "schema": {

@@ -17,6 +17,7 @@ import promptAssignmentRoutes from "./routes/prompt-assignments.js";
 import composeRoutes from "./routes/compose.js";
 import submagicRoutes from "./routes/submagic.js";
 import transferBrandRoutes from "./routes/transfer-brand.js";
+import sequenceRoutes from "./routes/sequences.js";
 import previewEmailRoutes from "./routes/preview-email.js";
 import industryDebriefVideoRoutes from "./routes/industry-debrief-videos.js";
 import { resumeDebriefJobs } from "./lib/debrief/jobs.js";
@@ -65,6 +66,7 @@ app.use(promptAssignmentRoutes);
 app.use(composeRoutes);
 app.use(submagicRoutes);
 app.use(transferBrandRoutes);
+app.use(sequenceRoutes);
 app.use(previewEmailRoutes);
 app.use(industryDebriefVideoRoutes);
 
