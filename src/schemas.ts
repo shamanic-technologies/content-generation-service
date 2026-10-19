@@ -5,6 +5,7 @@ import {
   OpenAPIRegistry,
 } from "@asteasolutions/zod-to-openapi";
 import { CHAT_MODELS } from "./lib/chat-models.js";
+import { CATALOGUE_STATUSES } from "./lib/catalogue-status.js";
 import { DEBRIEF_ERROR_CODES } from "./lib/debrief/errors.js";
 
 extendZodWithOpenApi(z);
@@ -26,8 +27,23 @@ const ModelField = z
       "that JSON-mode enforcement there is best-effort (fails loud rather than degrading), and " +
       "a vendor whose account is out of credit answers 429 — surfaced as an error naming the " +
       "provider, never silently rerouted to another vendor. " +
-      "Omit to use the default 'pro' (google) — unchanged from before this field existed."
+      "Omit to use the default 'pro' (google) — unchanged from before this field existed. " +
+      "Every alias stays accepted here whatever its staff status: a NEW workflow must not name one whose " +
+      "status is `deprecated` on GET /internal/models, but a stored workflow that does keeps generating."
   );
+
+// Staff catalogue status (src/lib/catalogue-status.ts). Read before the prompt schemas use it.
+const CatalogueStatusField = z
+  .enum(CATALOGUE_STATUSES)
+  .describe(
+    "Staff catalogue status. `active` (default) or `deprecated`: a NEW workflow must not name a deprecated " +
+      "template or model (workflow-service refuses it at write time). Never read by POST /generate: a stored " +
+      "workflow that names it keeps generating. Cross-org (no per-org or per-brand status)."
+  );
+const StatusChangedAtField = z
+  .string()
+  .nullable()
+  .describe("When staff last changed the status (ISO 8601). Null = never changed (active since creation).");
 
 export const registry = new OpenAPIRegistry();
 
@@ -228,6 +244,8 @@ const PromptResponseSchema = registry.register(
         "Sending none of them leaves the prompt byte-identical to what it was before this field existed. " +
         "The same list is returned for every prompt type."
       ),
+      status: CatalogueStatusField,
+      statusChangedAt: StatusChangedAtField,
       createdAt: z.string(),
       updatedAt: z.string(),
     })
@@ -413,6 +431,7 @@ export const PromptAssignmentResponseSchema = registry.register(
       prompt: z.string(),
       variables: z.array(PromptVariableSchema),
       isDefault: z.boolean().describe("true when the feature resolves to the platform default (no override)."),
+      status: CatalogueStatusField,
     })
     .openapi("PromptAssignmentResponse")
 );
@@ -1808,5 +1827,163 @@ registry.registerPath({
   responses: {
     200: { description: "The render", content: { "application/json": { schema: DebriefVideoSchema } } },
     404: { description: "No render with this id for this org", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+// ─── Staff catalogue status: templates + writer models (TEMPLATE-MODEL-STATUS-1019) ──
+
+export const SetCatalogueStatusRequestSchema = registry.register(
+  "SetCatalogueStatusRequest",
+  z.object({ status: CatalogueStatusField }).openapi("SetCatalogueStatusRequest")
+);
+
+const ModelStatusEntrySchema = registry.register(
+  "ModelStatusEntry",
+  z
+    .object({
+      model: z.enum(CHAT_MODELS).describe("Writer model alias, as accepted in `model` on POST /generate."),
+      provider: z.string().describe("Provider the alias is served by (derived, never sent by a caller)."),
+      status: CatalogueStatusField,
+      statusChangedAt: StatusChangedAtField,
+    })
+    .openapi("ModelStatusEntry")
+);
+
+const ModelStatusListResponseSchema = registry.register(
+  "ModelStatusListResponse",
+  z
+    .object({
+      models: z
+        .array(ModelStatusEntrySchema)
+        .describe("Every alias POST /generate accepts, each with its status. Only `active` ones may be named by a NEW workflow."),
+    })
+    .openapi("ModelStatusListResponse")
+);
+
+const TemplateStatusEntrySchema = registry.register(
+  "TemplateStatusEntry",
+  z
+    .object({
+      type: z.string().describe("Template type, version included (e.g. `cold-email-v59`)."),
+      status: CatalogueStatusField,
+      statusChangedAt: StatusChangedAtField,
+    })
+    .openapi("TemplateStatusEntry")
+);
+
+const TemplateStatusListResponseSchema = registry.register(
+  "TemplateStatusListResponse",
+  z
+    .object({ templates: z.array(TemplateStatusEntrySchema).describe("Every stored template, by type (A to Z). Bodies: GET /platform-prompts?type=.") })
+    .openapi("TemplateStatusListResponse")
+);
+
+export const TemplateOutputsQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(20).optional().describe("How many outputs, 1..20. Omitted = 5."),
+  })
+  .openapi("TemplateOutputsQuery");
+
+const TemplateOutputSchema = z.object({
+  generationId: z.string().uuid().describe("This service's generation id."),
+  createdAt: z.string().describe("When it was written (ISO 8601)."),
+  workflowSlug: z.string().nullable().describe("The workflow VERSION slug whose run asked for it. Null when written without one."),
+  model: z.string().describe("The concrete model id that wrote it (e.g. `gemini-3.1-pro-preview`)."),
+  subject: z.string().nullable().describe("Subject line of the sequence."),
+  emails: z
+    .array(
+      z.object({
+        step: z.number().int().describe("1 = the first email, then each follow-up."),
+        bodyText: z.string().describe("The email's text as stored (= as sent)."),
+        daysSinceLastStep: z.number().nullable().describe("Days after the previous email. Null when the stored step carries none."),
+      })
+    )
+    .describe("Each email of the sequence, in order. Empty when the generation stored no copy."),
+});
+
+const TemplateOutputsResponseSchema = registry.register(
+  "TemplateOutputsResponse",
+  z
+    .object({
+      type: z.string(),
+      outputs: z.array(TemplateOutputSchema).describe("Newest first, every org."),
+    })
+    .openapi("TemplateOutputsResponse")
+);
+
+const staffNote = "Staff/service route: API key only, no identity headers. Cross-org catalogue object.";
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/models",
+  tags: ["Internal"],
+  summary: "Every writer model alias with its staff status",
+  description: `${staffNote} workflow-service reads it at workflow write time and refuses a deprecated model.`,
+  responses: {
+    200: { description: "All aliases", content: { "application/json": { schema: ModelStatusListResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/internal/models/{model}/status",
+  tags: ["Internal"],
+  summary: "Set a writer model's staff status (active or deprecated)",
+  description: `${staffNote} Changes the status only; POST /generate keeps accepting the alias.`,
+  request: {
+    params: z.object({ model: z.string().describe("Model alias, e.g. `glm-pro`") }),
+    body: { content: { "application/json": { schema: SetCatalogueStatusRequestSchema } } },
+  },
+  responses: {
+    200: { description: "Status set", content: { "application/json": { schema: ModelStatusEntrySchema } } },
+    400: { description: "Missing or unknown status", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "Not an alias this service accepts", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/templates",
+  tags: ["Internal"],
+  summary: "Every stored template type with its staff status",
+  description: `${staffNote} The same status is on GET /prompts and GET /platform-prompts.`,
+  responses: {
+    200: { description: "All templates", content: { "application/json": { schema: TemplateStatusListResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/internal/templates/{type}/status",
+  tags: ["Internal"],
+  summary: "Set a template's staff status (active or deprecated)",
+  description: `${staffNote} Changes the status only: the template text, variables and updatedAt are untouched, and POST /generate keeps rendering it.`,
+  request: {
+    params: z.object({ type: z.string().describe("Template type, e.g. `cold-email-v59`") }),
+    body: { content: { "application/json": { schema: SetCatalogueStatusRequestSchema } } },
+  },
+  responses: {
+    200: { description: "Status set", content: { "application/json": { schema: TemplateStatusEntrySchema } } },
+    400: { description: "Missing or unknown status", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "No template of that type", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/templates/{type}/outputs",
+  tags: ["Internal"],
+  summary: "The last outputs written with a template (subject + each email), newest first",
+  description:
+    `${staffNote} Every org. Serves only subject, each email's text, when, workflow and model: ` +
+    "never org/lead ids, recipient fields, the raw prompt, the raw response or the variables.",
+  request: {
+    params: z.object({ type: z.string().describe("Template type, e.g. `cold-email-v59`") }),
+    query: TemplateOutputsQuerySchema,
+  },
+  responses: {
+    200: { description: "Outputs", content: { "application/json": { schema: TemplateOutputsResponseSchema } } },
+    400: { description: "Bad limit", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "No template of that type", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });

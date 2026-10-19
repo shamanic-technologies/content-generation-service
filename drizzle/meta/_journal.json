@@ -239,6 +239,13 @@
       "when": 1779950400000,
       "tag": "0033_emailgen_feature_created_index",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1780036800000,
+      "tag": "0034_catalogue_status",
+      "breakpoints": true
     }
   ]
 }

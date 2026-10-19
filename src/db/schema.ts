@@ -72,6 +72,8 @@ export const emailGenerations = pgTable(
     index("idx_emailgen_audience").on(table.audienceId),
     // Keyset paging of GET /internal/sequences (drizzle/0033)
     index("idx_emailgen_feature_created").on(table.featureSlug, table.createdAt, table.id),
+    // Last outputs of a template, GET /internal/templates/:type/outputs (drizzle/0034)
+    index("idx_emailgen_prompt_type_created").on(table.promptType, table.createdAt),
     uniqueIndex("idx_emailgen_idempotency").on(table.orgId, table.idempotencyKey),
     uniqueIndex("idx_emailgen_lead").on(table.campaignId, table.leadId),
   ]
@@ -155,6 +157,11 @@ export const prompts = pgTable(
     type: text("type").notNull(),
     prompt: text("prompt").notNull(), // template text with {{variables}}
     variables: jsonb("variables").$type<Array<{ name: string; description: string }>>().notNull().default([]),
+    // Staff catalogue status (src/lib/catalogue-status.ts): `active` | `deprecated`. A
+    // deprecated template is one no NEW workflow may name; generation never reads it.
+    // Cross-org like the row itself. Changing it never touches the body or updated_at.
+    status: text("status").$type<"active" | "deprecated">().notNull().default("active"),
+    statusChangedAt: timestamp("status_changed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -162,6 +169,14 @@ export const prompts = pgTable(
     uniqueIndex("idx_prompts_type").on(table.type),
   ]
 );
+
+// Staff catalogue status of a writer model alias (CHAT_MODELS). A row exists only once
+// staff changed it: an alias with no row is `active`. Cross-org.
+export const modelStatuses = pgTable("model_statuses", {
+  model: text("model").primaryKey(),
+  status: text("status").$type<"active" | "deprecated">().notNull(),
+  statusChangedAt: timestamp("status_changed_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // Brand/offer neutrality verdicts (src/lib/template-neutrality*.ts). One row per
 // distinct template content (rule version + body + variables): a template is judged
