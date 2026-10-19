@@ -23,6 +23,7 @@ Microservice that generates personalized content (emails, calendar events, etc.)
 - `src/routes/transfer-brand.ts` + `src/lib/transfer-brand.ts` — POST /internal/transfer-brand (fleet contract, see "Brand transfer" below)
 - `src/routes/industry-debrief-videos.ts` + `src/lib/debrief/` + `assets/industry-debrief/` — the daily industry debrief news-bulletin video (see "Industry debrief video" below)
 - `src/routes/sequences.ts` + `src/lib/sequence-feed-query.ts` + `src/lib/first-email-shape.ts` — GET /internal/sequences, the fleet-wide sequence feed (see "Fleet-wide sequence feed" below)
+- `src/routes/catalogue-status.ts` + `src/lib/catalogue-status*.ts` — staff status of templates and writer models + a template's last outputs (see "Catalogue status" below)
 - `src/routes/health.ts` — GET /health endpoint
 - `src/middleware/auth.ts` — Authentication middleware (X-Clerk-Org-Id header)
 - `src/lib/chat-service-client.ts` — Chat-service client + email template utilities (prompt substitution, JSON parsing)
@@ -299,6 +300,14 @@ features-service serves the staff Research studies live and attributes each pros
 - **Incremental**: keyset on `(created_at, id)` with an opaque cursor, index `idx_emailgen_feature_created` (`drizzle/0033`). A consumer stores `nextCursor` and reads only what is new; never a full re-read. Rows younger than 60 s are held back (a row is stamped at insert START, so a later-stamped row can commit first; serving it would skip the earlier one forever).
 - **Selects only what it needs**, never `prompt_raw`/`response_raw`/`variables_raw`. Body resolved with `resolveGenerationBody` (same precedence as every other read).
 - **Classes** (`first-email-shape.ts`, port of distribute.you `apps/landing/scripts/blog-data/first-email-shape.mjs`): layout `one_block | single_line_breaks | double_line_breaks`; opening `greeting | first_name_alone | no_greeting` (first name = our stored `lead_first_name`, the name the writer was given); dash `em | en | both | none`. Sharpened on the port: own first name tested before the greeting list (6 of 59,445 prod emails moved: leads named Cara, Moin), HTML-entity dashes count. `null` = no copy. Changing a rule changes every served figure retroactively (computed on read, never stored): say so in the PR.
+
+## Catalogue status of templates and models (TEMPLATE-MODEL-STATUS-1019)
+
+The owner retires cold-email workflows by TEMPLATE or by MODEL. Each template (`prompts.status`) and each writer alias (`model_statuses`, no row = active) is `active` (default, every existing one) or `deprecated`. Cross-org, never per org/brand.
+
+- **Staff routes, API key only** (the api-service staff gateway decides who is staff): `GET /internal/models`, `PUT /internal/models/{model}/status`, `GET /internal/templates`, `PUT /internal/templates/{type}/status` (`{ status }`, both directions; 404 unknown alias/type), `GET /internal/templates/{type}/outputs?limit=` (default 5, max 20, newest first, every org: subject + each email's text + when + workflow + model, never org/lead ids, recipient fields or raw prompt/response; index `idx_emailgen_prompt_type_created`, `drizzle/0034`).
+- **Published for workflow-service's write-time validator**: `status` on `GET /prompts` / `GET /platform-prompts` (and `GET /prompt-assignments`), `status` per alias on `GET /internal/models`. The `model` enum on `/generate` stays the FULL accepted set: it is static and stored workflows naming a deprecated model must keep generating.
+- **Generation never reads a status.** `/generate` and `/preview-email` render a deprecated template / model exactly as before; refusing a NEW workflow and retiring the old ones is workflow-service's. A status change touches nothing else (body, variables, `updated_at` untouched).
 
 ## Brand transfer (`POST /internal/transfer-brand`)
 

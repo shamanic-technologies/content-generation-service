@@ -27,6 +27,10 @@ function formatPromptResponse(row: typeof prompts.$inferSelect) {
     // its body declares a {{token}} for them. Published here so a caller builds
     // its variable mapping from the live contract rather than from a document.
     contextVariables: LEAD_CONTEXT_VARIABLES_PUBLISHED,
+    // Staff catalogue status (src/lib/catalogue-status.ts): a NEW workflow must not name a
+    // deprecated template. Read here by workflow-service's validator; never by /generate.
+    status: row.status,
+    statusChangedAt: row.statusChangedAt ? row.statusChangedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
