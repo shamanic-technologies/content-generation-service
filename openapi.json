@@ -219,6 +219,19 @@
             },
             "description": "Optional lead and organization inputs EVERY template accepts, whether or not its body declares a {{token}} for them. Send any subset on POST /generate: values not consumed by a {{token}} are rendered into a 'Recipient context' block ahead of the template. Sending none of them leaves the prompt byte-identical to what it was before this field existed. The same list is returned for every prompt type."
           },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deprecated"
+            ],
+            "description": "Staff catalogue status. `active` (default) or `deprecated`: a NEW workflow must not name a deprecated template or model (workflow-service refuses it at write time). Never read by POST /generate: a stored workflow that names it keeps generating. Cross-org (no per-org or per-brand status)."
+          },
+          "statusChangedAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "When staff last changed the status (ISO 8601). Null = never changed (active since creation)."
+          },
           "createdAt": {
             "type": "string"
           },
@@ -232,6 +245,8 @@
           "prompt",
           "variables",
           "contextVariables",
+          "status",
+          "statusChangedAt",
           "createdAt",
           "updatedAt"
         ]
@@ -258,6 +273,14 @@
           "isDefault": {
             "type": "boolean",
             "description": "true when the feature resolves to the platform default (no override)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deprecated"
+            ],
+            "description": "Staff catalogue status. `active` (default) or `deprecated`: a NEW workflow must not name a deprecated template or model (workflow-service refuses it at write time). Never read by POST /generate: a stored workflow that names it keeps generating. Cross-org (no per-org or per-brand status)."
           }
         },
         "required": [
@@ -265,7 +288,8 @@
           "promptType",
           "prompt",
           "variables",
-          "isDefault"
+          "isDefault",
+          "status"
         ]
       },
       "PutPromptAssignmentRequest": {
@@ -355,7 +379,7 @@
               "gpt-sol",
               "gpt-terra"
             ],
-            "description": "LLM model to generate with (version-free alias). Provider is derived automatically: anthropic → haiku | sonnet | opus; google → flash-lite | flash | flash-pro | pro; deepseek → deepseek-flash (DeepSeek V4 Flash) | deepseek-pro (DeepSeek V4 Pro); zai → glm-flash (glm-4.7-flashx) | glm-pro (glm-5.2); moonshot → kimi-flash (kimi-k2.6) | kimi-pro (kimi-k3). The six deepseek/zai/moonshot aliases are called directly on each vendor's OpenAI-compatible API. That path is text-only, which this service never exceeds; note that JSON-mode enforcement there is best-effort (fails loud rather than degrading), and a vendor whose account is out of credit answers 429 — surfaced as an error naming the provider, never silently rerouted to another vendor. Omit to use the default 'pro' (google) — unchanged from before this field existed."
+            "description": "LLM model to generate with (version-free alias). Provider is derived automatically: anthropic → haiku | sonnet | opus; google → flash-lite | flash | flash-pro | pro; deepseek → deepseek-flash (DeepSeek V4 Flash) | deepseek-pro (DeepSeek V4 Pro); zai → glm-flash (glm-4.7-flashx) | glm-pro (glm-5.2); moonshot → kimi-flash (kimi-k2.6) | kimi-pro (kimi-k3). The six deepseek/zai/moonshot aliases are called directly on each vendor's OpenAI-compatible API. That path is text-only, which this service never exceeds; note that JSON-mode enforcement there is best-effort (fails loud rather than degrading), and a vendor whose account is out of credit answers 429 — surfaced as an error naming the provider, never silently rerouted to another vendor. Omit to use the default 'pro' (google) — unchanged from before this field existed. Every alias stays accepted here whatever its staff status: a NEW workflow must not name one whose status is `deprecated` on GET /internal/models, but a stored workflow that does keeps generating."
           },
           "brandIds": {
             "type": "array",
@@ -489,7 +513,7 @@
               "gpt-sol",
               "gpt-terra"
             ],
-            "description": "LLM model to generate with (version-free alias). Provider is derived automatically: anthropic → haiku | sonnet | opus; google → flash-lite | flash | flash-pro | pro; deepseek → deepseek-flash (DeepSeek V4 Flash) | deepseek-pro (DeepSeek V4 Pro); zai → glm-flash (glm-4.7-flashx) | glm-pro (glm-5.2); moonshot → kimi-flash (kimi-k2.6) | kimi-pro (kimi-k3). The six deepseek/zai/moonshot aliases are called directly on each vendor's OpenAI-compatible API. That path is text-only, which this service never exceeds; note that JSON-mode enforcement there is best-effort (fails loud rather than degrading), and a vendor whose account is out of credit answers 429 — surfaced as an error naming the provider, never silently rerouted to another vendor. Omit to use the default 'pro' (google) — unchanged from before this field existed."
+            "description": "LLM model to generate with (version-free alias). Provider is derived automatically: anthropic → haiku | sonnet | opus; google → flash-lite | flash | flash-pro | pro; deepseek → deepseek-flash (DeepSeek V4 Flash) | deepseek-pro (DeepSeek V4 Pro); zai → glm-flash (glm-4.7-flashx) | glm-pro (glm-5.2); moonshot → kimi-flash (kimi-k2.6) | kimi-pro (kimi-k3). The six deepseek/zai/moonshot aliases are called directly on each vendor's OpenAI-compatible API. That path is text-only, which this service never exceeds; note that JSON-mode enforcement there is best-effort (fails loud rather than degrading), and a vendor whose account is out of credit answers 429 — surfaced as an error naming the provider, never silently rerouted to another vendor. Omit to use the default 'pro' (google) — unchanged from before this field existed. Every alias stays accepted here whatever its staff status: a NEW workflow must not name one whose status is `deprecated` on GET /internal/models, but a stored workflow that does keeps generating."
           },
           "brandIds": {
             "type": "array",
@@ -2017,6 +2041,209 @@
           "runId",
           "createdAt",
           "finishedAt"
+        ]
+      },
+      "SetCatalogueStatusRequest": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deprecated"
+            ],
+            "description": "Staff catalogue status. `active` (default) or `deprecated`: a NEW workflow must not name a deprecated template or model (workflow-service refuses it at write time). Never read by POST /generate: a stored workflow that names it keeps generating. Cross-org (no per-org or per-brand status)."
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "ModelStatusEntry": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "enum": [
+              "haiku",
+              "sonnet",
+              "opus",
+              "flash-lite",
+              "flash",
+              "flash-pro",
+              "pro",
+              "deepseek-flash",
+              "deepseek-pro",
+              "glm-flash",
+              "glm-pro",
+              "kimi-flash",
+              "kimi-pro",
+              "fable",
+              "gpt-pro",
+              "gpt-sol",
+              "gpt-terra"
+            ],
+            "description": "Writer model alias, as accepted in `model` on POST /generate."
+          },
+          "provider": {
+            "type": "string",
+            "description": "Provider the alias is served by (derived, never sent by a caller)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deprecated"
+            ],
+            "description": "Staff catalogue status. `active` (default) or `deprecated`: a NEW workflow must not name a deprecated template or model (workflow-service refuses it at write time). Never read by POST /generate: a stored workflow that names it keeps generating. Cross-org (no per-org or per-brand status)."
+          },
+          "statusChangedAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "When staff last changed the status (ISO 8601). Null = never changed (active since creation)."
+          }
+        },
+        "required": [
+          "model",
+          "provider",
+          "status",
+          "statusChangedAt"
+        ]
+      },
+      "ModelStatusListResponse": {
+        "type": "object",
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelStatusEntry"
+            },
+            "description": "Every alias POST /generate accepts, each with its status. Only `active` ones may be named by a NEW workflow."
+          }
+        },
+        "required": [
+          "models"
+        ]
+      },
+      "TemplateStatusEntry": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Template type, version included (e.g. `cold-email-v59`)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deprecated"
+            ],
+            "description": "Staff catalogue status. `active` (default) or `deprecated`: a NEW workflow must not name a deprecated template or model (workflow-service refuses it at write time). Never read by POST /generate: a stored workflow that names it keeps generating. Cross-org (no per-org or per-brand status)."
+          },
+          "statusChangedAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "When staff last changed the status (ISO 8601). Null = never changed (active since creation)."
+          }
+        },
+        "required": [
+          "type",
+          "status",
+          "statusChangedAt"
+        ]
+      },
+      "TemplateStatusListResponse": {
+        "type": "object",
+        "properties": {
+          "templates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateStatusEntry"
+            },
+            "description": "Every stored template, by type (A to Z). Bodies: GET /platform-prompts?type=."
+          }
+        },
+        "required": [
+          "templates"
+        ]
+      },
+      "TemplateOutputsResponse": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "generationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "This service's generation id."
+                },
+                "createdAt": {
+                  "type": "string",
+                  "description": "When it was written (ISO 8601)."
+                },
+                "workflowSlug": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "The workflow VERSION slug whose run asked for it. Null when written without one."
+                },
+                "model": {
+                  "type": "string",
+                  "description": "The concrete model id that wrote it (e.g. `gemini-3.1-pro-preview`)."
+                },
+                "subject": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Subject line of the sequence."
+                },
+                "emails": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "step": {
+                        "type": "integer",
+                        "description": "1 = the first email, then each follow-up."
+                      },
+                      "bodyText": {
+                        "type": "string",
+                        "description": "The email's text as stored (= as sent)."
+                      },
+                      "daysSinceLastStep": {
+                        "type": "number",
+                        "nullable": true,
+                        "description": "Days after the previous email. Null when the stored step carries none."
+                      }
+                    },
+                    "required": [
+                      "step",
+                      "bodyText",
+                      "daysSinceLastStep"
+                    ]
+                  },
+                  "description": "Each email of the sequence, in order. Empty when the generation stored no copy."
+                }
+              },
+              "required": [
+                "generationId",
+                "createdAt",
+                "workflowSlug",
+                "model",
+                "subject",
+                "emails"
+              ]
+            },
+            "description": "Newest first, every org."
+          }
+        },
+        "required": [
+          "type",
+          "outputs"
         ]
       },
       "OrgId": {
@@ -4336,6 +4563,237 @@
           },
           "404": {
             "description": "No render with this id for this org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/models": {
+      "get": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Every writer model alias with its staff status",
+        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. workflow-service reads it at workflow write time and refuses a deprecated model.",
+        "responses": {
+          "200": {
+            "description": "All aliases",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelStatusListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/models/{model}/status": {
+      "put": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Set a writer model's staff status (active or deprecated)",
+        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. Changes the status only; POST /generate keeps accepting the alias.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Model alias, e.g. `glm-pro`"
+            },
+            "required": true,
+            "description": "Model alias, e.g. `glm-pro`",
+            "name": "model",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetCatalogueStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Status set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelStatusEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or unknown status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not an alias this service accepts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/templates": {
+      "get": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Every stored template type with its staff status",
+        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. The same status is on GET /prompts and GET /platform-prompts.",
+        "responses": {
+          "200": {
+            "description": "All templates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateStatusListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/templates/{type}/status": {
+      "put": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Set a template's staff status (active or deprecated)",
+        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. Changes the status only: the template text, variables and updatedAt are untouched, and POST /generate keeps rendering it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Template type, e.g. `cold-email-v59`"
+            },
+            "required": true,
+            "description": "Template type, e.g. `cold-email-v59`",
+            "name": "type",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetCatalogueStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Status set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateStatusEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or unknown status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No template of that type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/templates/{type}/outputs": {
+      "get": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "The last outputs written with a template (subject + each email), newest first",
+        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. Every org. Serves only subject, each email's text, when, workflow and model: never org/lead ids, recipient fields, the raw prompt, the raw response or the variables.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Template type, e.g. `cold-email-v59`"
+            },
+            "required": true,
+            "description": "Template type, e.g. `cold-email-v59`",
+            "name": "type",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "description": "How many outputs, 1..20. Omitted = 5."
+            },
+            "required": false,
+            "description": "How many outputs, 1..20. Omitted = 5.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Outputs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateOutputsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No template of that type",
             "content": {
               "application/json": {
                 "schema": {

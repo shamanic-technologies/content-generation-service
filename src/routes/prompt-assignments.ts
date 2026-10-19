@@ -45,6 +45,7 @@ router.get("/prompt-assignments", serviceAuthRunOptional, async (req: Authentica
       prompt: row.prompt,
       variables: row.variables,
       isDefault: promptType === PLATFORM_DEFAULT_PROMPT_TYPE,
+      status: row.status,
     });
   } catch (error) {
     console.error("[content-generation-service] Get prompt assignment error:", error);
