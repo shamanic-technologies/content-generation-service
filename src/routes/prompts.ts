@@ -2,6 +2,7 @@ import { Router } from "express";
 import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { prompts } from "../db/schema.js";
+import { servedStatus } from "../lib/catalogue-status.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { CreatePromptRequestSchema, VersionPromptRequestSchema } from "../schemas.js";
 import { createPromptVersion } from "../lib/prompt-versioning.js";
@@ -29,8 +30,7 @@ function formatPromptResponse(row: typeof prompts.$inferSelect) {
     contextVariables: LEAD_CONTEXT_VARIABLES_PUBLISHED,
     // Staff catalogue status (src/lib/catalogue-status.ts): a NEW workflow must not name a
     // deprecated template. Read here by workflow-service's validator; never by /generate.
-    status: row.status,
-    statusChangedAt: row.statusChangedAt ? row.statusChangedAt.toISOString() : null,
+    ...servedStatus(row),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

@@ -14,6 +14,8 @@ import { closeDb, randomId } from "../helpers/test-db.js";
 const TYPE = `catalogue-status-test-${randomId().slice(0, 8)}`;
 const OTHER_TYPE = `${TYPE}-other`;
 const MODEL = "kimi-flash";
+const DEPRECATE = { status: "deprecated" as const, reason: "Writes one block", changedBy: "kevin@distribute.you" };
+const ACTIVATE = { status: "active" as const, reason: null, changedBy: "kevin@distribute.you" };
 
 const cleanup = async () => {
   await db.delete(emailGenerations).where(inArray(emailGenerations.promptType, [TYPE, OTHER_TYPE]));
@@ -55,13 +57,13 @@ describe("catalogue status (templates + models)", () => {
     expect(before!.status).toBe("active");
     expect(before!.statusChangedAt).toBeNull();
 
-    const dep = await setTemplateStatus(TYPE, "deprecated");
-    expect(dep).toMatchObject({ type: TYPE, status: "deprecated" });
+    const dep = await setTemplateStatus(TYPE, DEPRECATE);
+    expect(dep).toMatchObject({ type: TYPE, status: "deprecated", statusReason: "Writes one block", statusChangedBy: "kevin@distribute.you" });
     expect(dep!.statusChangedAt).not.toBeNull();
     expect((await listTemplateStatuses()).find((t) => t.type === TYPE)!.status).toBe("deprecated");
 
-    const back = await setTemplateStatus(TYPE, "active");
-    expect(back!.status).toBe("active");
+    const back = await setTemplateStatus(TYPE, ACTIVATE);
+    expect(back).toMatchObject({ status: "active", statusReason: null });
 
     const after = await db.query.prompts.findFirst({ where: eq(prompts.type, TYPE) });
     expect(after!.prompt).toBe(before!.prompt);
@@ -69,17 +71,28 @@ describe("catalogue status (templates + models)", () => {
     expect(after!.updatedAt.toISOString()).toBe(before!.updatedAt.toISOString());
   });
 
+  it("a template deprecated before reasons existed reads Not specified, no author", async () => {
+    await db.update(prompts).set({ status: "deprecated", statusChangedAt: new Date() }).where(eq(prompts.type, TYPE));
+    expect((await listTemplateStatuses()).find((t) => t.type === TYPE)).toMatchObject({
+      status: "deprecated", statusReason: "Not specified", statusChangedBy: null,
+    });
+  });
+
   it("an unknown template type is null", async () => {
-    expect(await setTemplateStatus(`${TYPE}-missing`, "deprecated")).toBeNull();
+    expect(await setTemplateStatus(`${TYPE}-missing`, DEPRECATE)).toBeNull();
   });
 
   it("every model reads active until staff changes it, both ways", async () => {
     const initial = (await listModelStatuses()).find((m) => m.model === MODEL)!;
-    expect(initial).toEqual({ model: MODEL, provider: "moonshot", status: "active", statusChangedAt: null });
+    expect(initial).toEqual({
+      model: MODEL, provider: "moonshot", status: "active", statusChangedAt: null, statusReason: null, statusChangedBy: null,
+    });
 
-    expect((await setModelStatus(MODEL, "deprecated")).status).toBe("deprecated");
-    expect((await listModelStatuses()).find((m) => m.model === MODEL)!.status).toBe("deprecated");
-    expect((await setModelStatus(MODEL, "active")).status).toBe("active");
+    expect((await setModelStatus(MODEL, DEPRECATE)).statusReason).toBe("Writes one block");
+    expect((await listModelStatuses()).find((m) => m.model === MODEL)).toMatchObject({
+      status: "deprecated", statusReason: "Writes one block", statusChangedBy: "kevin@distribute.you",
+    });
+    expect((await setModelStatus(MODEL, ACTIVATE)).statusReason).toBeNull();
     expect((await listModelStatuses()).find((m) => m.model === MODEL)!.status).toBe("active");
   });
 

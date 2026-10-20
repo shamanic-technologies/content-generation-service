@@ -2,6 +2,7 @@ import { Router } from "express";
 import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { prompts, featurePromptAssignment } from "../db/schema.js";
+import { servedStatus } from "../lib/catalogue-status.js";
 import { serviceAuthRunOptional, AuthenticatedRequest } from "../middleware/auth.js";
 import { PutPromptAssignmentRequestSchema } from "../schemas.js";
 import {
@@ -45,7 +46,7 @@ router.get("/prompt-assignments", serviceAuthRunOptional, async (req: Authentica
       prompt: row.prompt,
       variables: row.variables,
       isDefault: promptType === PLATFORM_DEFAULT_PROMPT_TYPE,
-      status: row.status,
+      ...servedStatus(row),
     });
   } catch (error) {
     console.error("[content-generation-service] Get prompt assignment error:", error);

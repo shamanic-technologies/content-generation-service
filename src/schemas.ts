@@ -5,7 +5,7 @@ import {
   OpenAPIRegistry,
 } from "@asteasolutions/zod-to-openapi";
 import { CHAT_MODELS } from "./lib/chat-models.js";
-import { CATALOGUE_STATUSES } from "./lib/catalogue-status.js";
+import { CATALOGUE_STATUSES, MAX_STATUS_REASON_LENGTH, NOT_SPECIFIED, STAFF_EMAIL_HEADER } from "./lib/catalogue-status.js";
 import { DEBRIEF_ERROR_CODES } from "./lib/debrief/errors.js";
 
 extendZodWithOpenApi(z);
@@ -44,6 +44,19 @@ const StatusChangedAtField = z
   .string()
   .nullable()
   .describe("When staff last changed the status (ISO 8601). Null = never changed (active since creation).");
+// Why + who of a deprecation (DEPRECATION-REASON-1020). Spread into every read serving a status.
+const StatusReasonFields = {
+  statusReason: z
+    .string()
+    .nullable()
+    .describe(
+      `Why it is deprecated, in plain words, as staff wrote it. \`${NOT_SPECIFIED}\` = deprecated before a reason was required. Null when active.`
+    ),
+  statusChangedBy: z
+    .string()
+    .nullable()
+    .describe("Staff email of who last changed the status. Null = unknown (never changed, or changed before this was recorded)."),
+};
 
 export const registry = new OpenAPIRegistry();
 
@@ -246,6 +259,7 @@ const PromptResponseSchema = registry.register(
       ),
       status: CatalogueStatusField,
       statusChangedAt: StatusChangedAtField,
+      ...StatusReasonFields,
       createdAt: z.string(),
       updatedAt: z.string(),
     })
@@ -432,6 +446,8 @@ export const PromptAssignmentResponseSchema = registry.register(
       variables: z.array(PromptVariableSchema),
       isDefault: z.boolean().describe("true when the feature resolves to the platform default (no override)."),
       status: CatalogueStatusField,
+      statusChangedAt: StatusChangedAtField,
+      ...StatusReasonFields,
     })
     .openapi("PromptAssignmentResponse")
 );
@@ -1834,7 +1850,19 @@ registry.registerPath({
 
 export const SetCatalogueStatusRequestSchema = registry.register(
   "SetCatalogueStatusRequest",
-  z.object({ status: CatalogueStatusField }).openapi("SetCatalogueStatusRequest")
+  z
+    .object({
+      status: CatalogueStatusField,
+      reason: z
+        .string()
+        .max(MAX_STATUS_REASON_LENGTH)
+        .optional()
+        .describe(
+          "REQUIRED when `status` is `deprecated`: why, in plain words (served back as `statusReason`). " +
+            "Missing or blank → 400 `DEPRECATION_REASON_REQUIRED`. Ignored and cleared when re-activating."
+        ),
+    })
+    .openapi("SetCatalogueStatusRequest")
 );
 
 const ModelStatusEntrySchema = registry.register(
@@ -1845,6 +1873,7 @@ const ModelStatusEntrySchema = registry.register(
       provider: z.string().describe("Provider the alias is served by (derived, never sent by a caller)."),
       status: CatalogueStatusField,
       statusChangedAt: StatusChangedAtField,
+      ...StatusReasonFields,
     })
     .openapi("ModelStatusEntry")
 );
@@ -1867,6 +1896,7 @@ const TemplateStatusEntrySchema = registry.register(
       type: z.string().describe("Template type, version included (e.g. `cold-email-v59`)."),
       status: CatalogueStatusField,
       statusChangedAt: StatusChangedAtField,
+      ...StatusReasonFields,
     })
     .openapi("TemplateStatusEntry")
 );
@@ -1912,6 +1942,15 @@ const TemplateOutputsResponseSchema = registry.register(
 );
 
 const staffNote = "Staff/service route: API key only, no identity headers. Cross-org catalogue object.";
+const staffEmailHeader = z.object({
+  [STAFF_EMAIL_HEADER]: z
+    .string()
+    .optional()
+    .describe(
+      "Staff email of who changes the status, set by the staff gateway from the identity it verified. " +
+        "REQUIRED to deprecate (400 `DEPRECATED_BY_REQUIRED`); recorded when present on a re-activation."
+    ),
+});
 
 registry.registerPath({
   method: "get",
@@ -1932,11 +1971,12 @@ registry.registerPath({
   description: `${staffNote} Changes the status only; POST /generate keeps accepting the alias.`,
   request: {
     params: z.object({ model: z.string().describe("Model alias, e.g. `glm-pro`") }),
+    headers: staffEmailHeader,
     body: { content: { "application/json": { schema: SetCatalogueStatusRequestSchema } } },
   },
   responses: {
     200: { description: "Status set", content: { "application/json": { schema: ModelStatusEntrySchema } } },
-    400: { description: "Missing or unknown status", content: { "application/json": { schema: ErrorResponseSchema } } },
+    400: { description: "Missing or unknown status, or a deprecation without a reason (`DEPRECATION_REASON_REQUIRED`) or without who (`DEPRECATED_BY_REQUIRED`)", content: { "application/json": { schema: ErrorResponseSchema } } },
     404: { description: "Not an alias this service accepts", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });
@@ -1960,11 +2000,12 @@ registry.registerPath({
   description: `${staffNote} Changes the status only: the template text, variables and updatedAt are untouched, and POST /generate keeps rendering it.`,
   request: {
     params: z.object({ type: z.string().describe("Template type, e.g. `cold-email-v59`") }),
+    headers: staffEmailHeader,
     body: { content: { "application/json": { schema: SetCatalogueStatusRequestSchema } } },
   },
   responses: {
     200: { description: "Status set", content: { "application/json": { schema: TemplateStatusEntrySchema } } },
-    400: { description: "Missing or unknown status", content: { "application/json": { schema: ErrorResponseSchema } } },
+    400: { description: "Missing or unknown status, or a deprecation without a reason (`DEPRECATION_REASON_REQUIRED`) or without who (`DEPRECATED_BY_REQUIRED`)", content: { "application/json": { schema: ErrorResponseSchema } } },
     404: { description: "No template of that type", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });
