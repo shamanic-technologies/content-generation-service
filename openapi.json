@@ -232,6 +232,16 @@
             "nullable": true,
             "description": "When staff last changed the status (ISO 8601). Null = never changed (active since creation)."
           },
+          "statusReason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why it is deprecated, in plain words, as staff wrote it. `Not specified` = deprecated before a reason was required. Null when active."
+          },
+          "statusChangedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Staff email of who last changed the status. Null = unknown (never changed, or changed before this was recorded)."
+          },
           "createdAt": {
             "type": "string"
           },
@@ -247,6 +257,8 @@
           "contextVariables",
           "status",
           "statusChangedAt",
+          "statusReason",
+          "statusChangedBy",
           "createdAt",
           "updatedAt"
         ]
@@ -281,6 +293,21 @@
               "deprecated"
             ],
             "description": "Staff catalogue status. `active` (default) or `deprecated`: a NEW workflow must not name a deprecated template or model (workflow-service refuses it at write time). Never read by POST /generate: a stored workflow that names it keeps generating. Cross-org (no per-org or per-brand status)."
+          },
+          "statusChangedAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "When staff last changed the status (ISO 8601). Null = never changed (active since creation)."
+          },
+          "statusReason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why it is deprecated, in plain words, as staff wrote it. `Not specified` = deprecated before a reason was required. Null when active."
+          },
+          "statusChangedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Staff email of who last changed the status. Null = unknown (never changed, or changed before this was recorded)."
           }
         },
         "required": [
@@ -289,7 +316,10 @@
           "prompt",
           "variables",
           "isDefault",
-          "status"
+          "status",
+          "statusChangedAt",
+          "statusReason",
+          "statusChangedBy"
         ]
       },
       "PutPromptAssignmentRequest": {
@@ -2053,6 +2083,11 @@
               "deprecated"
             ],
             "description": "Staff catalogue status. `active` (default) or `deprecated`: a NEW workflow must not name a deprecated template or model (workflow-service refuses it at write time). Never read by POST /generate: a stored workflow that names it keeps generating. Cross-org (no per-org or per-brand status)."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "REQUIRED when `status` is `deprecated`: why, in plain words (served back as `statusReason`). Missing or blank → 400 `DEPRECATION_REASON_REQUIRED`. Ignored and cleared when re-activating."
           }
         },
         "required": [
@@ -2101,13 +2136,25 @@
             "type": "string",
             "nullable": true,
             "description": "When staff last changed the status (ISO 8601). Null = never changed (active since creation)."
+          },
+          "statusReason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why it is deprecated, in plain words, as staff wrote it. `Not specified` = deprecated before a reason was required. Null when active."
+          },
+          "statusChangedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Staff email of who last changed the status. Null = unknown (never changed, or changed before this was recorded)."
           }
         },
         "required": [
           "model",
           "provider",
           "status",
-          "statusChangedAt"
+          "statusChangedAt",
+          "statusReason",
+          "statusChangedBy"
         ]
       },
       "ModelStatusListResponse": {
@@ -2144,12 +2191,24 @@
             "type": "string",
             "nullable": true,
             "description": "When staff last changed the status (ISO 8601). Null = never changed (active since creation)."
+          },
+          "statusReason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why it is deprecated, in plain words, as staff wrote it. `Not specified` = deprecated before a reason was required. Null when active."
+          },
+          "statusChangedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Staff email of who last changed the status. Null = unknown (never changed, or changed before this was recorded)."
           }
         },
         "required": [
           "type",
           "status",
-          "statusChangedAt"
+          "statusChangedAt",
+          "statusReason",
+          "statusChangedBy"
         ]
       },
       "TemplateStatusListResponse": {
@@ -4612,6 +4671,16 @@
             "description": "Model alias, e.g. `glm-pro`",
             "name": "model",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Staff email of who changes the status, set by the staff gateway from the identity it verified. REQUIRED to deprecate (400 `DEPRECATED_BY_REQUIRED`); recorded when present on a re-activation."
+            },
+            "required": false,
+            "description": "Staff email of who changes the status, set by the staff gateway from the identity it verified. REQUIRED to deprecate (400 `DEPRECATED_BY_REQUIRED`); recorded when present on a re-activation.",
+            "name": "x-staff-email",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -4635,7 +4704,7 @@
             }
           },
           "400": {
-            "description": "Missing or unknown status",
+            "description": "Missing or unknown status, or a deprecation without a reason (`DEPRECATION_REASON_REQUIRED`) or without who (`DEPRECATED_BY_REQUIRED`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -4695,6 +4764,16 @@
             "description": "Template type, e.g. `cold-email-v59`",
             "name": "type",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Staff email of who changes the status, set by the staff gateway from the identity it verified. REQUIRED to deprecate (400 `DEPRECATED_BY_REQUIRED`); recorded when present on a re-activation."
+            },
+            "required": false,
+            "description": "Staff email of who changes the status, set by the staff gateway from the identity it verified. REQUIRED to deprecate (400 `DEPRECATED_BY_REQUIRED`); recorded when present on a re-activation.",
+            "name": "x-staff-email",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -4718,7 +4797,7 @@
             }
           },
           "400": {
-            "description": "Missing or unknown status",
+            "description": "Missing or unknown status, or a deprecation without a reason (`DEPRECATION_REASON_REQUIRED`) or without who (`DEPRECATED_BY_REQUIRED`)",
             "content": {
               "application/json": {
                 "schema": {

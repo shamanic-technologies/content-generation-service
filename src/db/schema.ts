@@ -162,6 +162,10 @@ export const prompts = pgTable(
     // Cross-org like the row itself. Changing it never touches the body or updated_at.
     status: text("status").$type<"active" | "deprecated">().notNull().default("active"),
     statusChangedAt: timestamp("status_changed_at", { withTimezone: true }),
+    // Why and who of the last status change (DEPRECATION-REASON-1020). A deprecation always
+    // carries both; NULL on a deprecated row = deprecated before reasons existed.
+    statusReason: text("status_reason"),
+    statusChangedBy: text("status_changed_by"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -176,6 +180,8 @@ export const modelStatuses = pgTable("model_statuses", {
   model: text("model").primaryKey(),
   status: text("status").$type<"active" | "deprecated">().notNull(),
   statusChangedAt: timestamp("status_changed_at", { withTimezone: true }).notNull().defaultNow(),
+  statusReason: text("status_reason"),
+  statusChangedBy: text("status_changed_by"),
 });
 
 // Brand/offer neutrality verdicts (src/lib/template-neutrality*.ts). One row per

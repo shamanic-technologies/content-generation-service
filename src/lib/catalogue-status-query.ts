@@ -2,7 +2,7 @@ import { asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, modelStatuses, prompts } from "../db/schema.js";
 import { CHAT_MODELS, MODEL_TO_PROVIDER, type ChatModel, type ChatProvider } from "./chat-models.js";
-import type { CatalogueStatus } from "./catalogue-status.js";
+import { servedStatus, type ServedStatus, type StatusChange } from "./catalogue-status.js";
 import { resolveGenerationBody } from "./generation-body.js";
 
 /**
@@ -10,11 +10,9 @@ import { resolveGenerationBody } from "./generation-body.js";
  * See src/lib/catalogue-status.ts for what a status means and who reads it.
  */
 
-export interface ModelStatusEntry {
+export interface ModelStatusEntry extends ServedStatus {
   model: ChatModel;
   provider: ChatProvider;
-  status: CatalogueStatus;
-  statusChangedAt: string | null;
 }
 
 /** Every alias this service accepts, in CHAT_MODELS order. No row = active (never changed). */
@@ -26,53 +24,51 @@ export async function listModelStatuses(): Promise<ModelStatusEntry[]> {
     return {
       model,
       provider: MODEL_TO_PROVIDER[model],
-      status: row ? row.status : "active",
-      statusChangedAt: row ? row.statusChangedAt.toISOString() : null,
+      ...servedStatus(row ?? { status: "active", statusReason: null, statusChangedBy: null, statusChangedAt: null }),
     };
   });
 }
 
-export async function setModelStatus(model: ChatModel, status: CatalogueStatus): Promise<ModelStatusEntry> {
+export async function setModelStatus(model: ChatModel, change: StatusChange): Promise<ModelStatusEntry> {
   const now = new Date();
+  const set = { status: change.status, statusReason: change.reason, statusChangedBy: change.changedBy, statusChangedAt: now };
   const [row] = await db
     .insert(modelStatuses)
-    .values({ model, status, statusChangedAt: now })
-    .onConflictDoUpdate({ target: modelStatuses.model, set: { status, statusChangedAt: now } })
+    .values({ model, ...set })
+    .onConflictDoUpdate({ target: modelStatuses.model, set })
     .returning();
-  return {
-    model,
-    provider: MODEL_TO_PROVIDER[model],
-    status: row.status,
-    statusChangedAt: row.statusChangedAt.toISOString(),
-  };
+  return { model, provider: MODEL_TO_PROVIDER[model], ...servedStatus(row) };
 }
 
-export interface TemplateStatusEntry {
+export interface TemplateStatusEntry extends ServedStatus {
   type: string;
-  status: CatalogueStatus;
-  statusChangedAt: string | null;
 }
 
-function toTemplateStatus(r: { type: string; status: CatalogueStatus; statusChangedAt: Date | null }): TemplateStatusEntry {
-  return { type: r.type, status: r.status, statusChangedAt: r.statusChangedAt ? r.statusChangedAt.toISOString() : null };
+const templateStatusColumns = () => ({
+  type: prompts.type,
+  status: prompts.status,
+  statusReason: prompts.statusReason,
+  statusChangedBy: prompts.statusChangedBy,
+  statusChangedAt: prompts.statusChangedAt,
+});
+
+function toTemplateStatus(r: { type: string } & Parameters<typeof servedStatus>[0]): TemplateStatusEntry {
+  return { type: r.type, ...servedStatus(r) };
 }
 
 /** Every stored template's status, by type. Bodies are not read. */
 export async function listTemplateStatuses(): Promise<TemplateStatusEntry[]> {
-  const rows = await db
-    .select({ type: prompts.type, status: prompts.status, statusChangedAt: prompts.statusChangedAt })
-    .from(prompts)
-    .orderBy(asc(prompts.type));
+  const rows = await db.select(templateStatusColumns()).from(prompts).orderBy(asc(prompts.type));
   return rows.map(toTemplateStatus);
 }
 
 /** Sets the status only (body, variables and updated_at untouched). `null` = no such type. */
-export async function setTemplateStatus(type: string, status: CatalogueStatus): Promise<TemplateStatusEntry | null> {
+export async function setTemplateStatus(type: string, change: StatusChange): Promise<TemplateStatusEntry | null> {
   const [row] = await db
     .update(prompts)
-    .set({ status, statusChangedAt: sql`now()` })
+    .set({ status: change.status, statusReason: change.reason, statusChangedBy: change.changedBy, statusChangedAt: sql`now()` })
     .where(eq(prompts.type, type))
-    .returning({ type: prompts.type, status: prompts.status, statusChangedAt: prompts.statusChangedAt });
+    .returning(templateStatusColumns());
   return row ? toTemplateStatus(row) : null;
 }
 
