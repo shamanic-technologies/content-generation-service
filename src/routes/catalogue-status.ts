@@ -8,6 +8,7 @@ import {
   setTemplateStatus,
   templateExists,
 } from "../lib/catalogue-status-query.js";
+import { resolveStatusChange, STAFF_EMAIL_HEADER, type StatusChange } from "../lib/catalogue-status.js";
 import { SetCatalogueStatusRequestSchema, TemplateOutputsQuerySchema } from "../schemas.js";
 
 /**
@@ -27,6 +28,21 @@ function handle(fn: (req: Request, res: Response) => Promise<unknown>) {
   };
 }
 
+/** Body + who → a valid change, or the 400 already sent. A deprecation must say why and who. */
+function parseStatusChange(req: Request, res: Response): StatusChange | null {
+  const parsed = SetCatalogueStatusRequestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
+    return null;
+  }
+  const change = resolveStatusChange(parsed.data.status, parsed.data.reason, req.header(STAFF_EMAIL_HEADER));
+  if ("code" in change) {
+    res.status(400).json(change);
+    return null;
+  }
+  return change;
+}
+
 function isChatModel(value: string): value is ChatModel {
   return (CHAT_MODELS as readonly string[]).includes(value);
 }
@@ -40,11 +56,9 @@ router.put("/internal/models/:model/status", handle(async (req: Request, res: Re
   if (!isChatModel(model)) {
     return res.status(404).json({ error: `Unknown model alias "${model}". Accepted: ${CHAT_MODELS.join(", ")}` });
   }
-  const parsed = SetCatalogueStatusRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
-  }
-  res.json(await setModelStatus(model, parsed.data.status));
+  const change = parseStatusChange(req, res);
+  if (!change) return;
+  res.json(await setModelStatus(model, change));
 }));
 
 router.get("/internal/templates", handle(async (_req: Request, res: Response) => {
@@ -52,11 +66,9 @@ router.get("/internal/templates", handle(async (_req: Request, res: Response) =>
 }));
 
 router.put("/internal/templates/:type/status", handle(async (req: Request, res: Response) => {
-  const parsed = SetCatalogueStatusRequestSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
-  }
-  const entry = await setTemplateStatus(req.params.type, parsed.data.status);
+  const change = parseStatusChange(req, res);
+  if (!change) return;
+  const entry = await setTemplateStatus(req.params.type, change);
   if (!entry) {
     return res.status(404).json({ error: `No template found for type=${req.params.type}` });
   }
