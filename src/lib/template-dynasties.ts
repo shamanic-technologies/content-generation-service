@@ -10,8 +10,11 @@ import { extractTemplateVariableNames } from "./template-vars.js";
  * as a new version reaches every workflow of that kind of email, and stats pool across the
  * versions. Every generation still records the exact version it rendered (`prompt_type`).
  *
- * A prompt type may sit in two dynasties (it ran on two pipes). A template in no dynasty is
- * simply unattached (old press/hiring/VC templates).
+ * A template belongs to ONE dynasty, never two (owner 2026-10-21: « complètement interdit, et doit
+ * être interdit en dur »): the database refuses it (unique prompt_type) and every write refuses it
+ * first (TEMPLATE_IN_OTHER_DYNASTY). The 21 texts that sat in two were split by drizzle/0038: the
+ * second dynasty holds a copy (`copiedFrom` = the original, whose name its pipe's past emails carry).
+ * A template in no dynasty is simply unattached (old press/hiring/VC templates).
  *
  * Only the head is Active (TPL-DYNASTY-1021-CG3, owner 2026-10-21): a version that is the head
  * of NO dynasty is deprecated with reason UPGRADED_REASON, when a new head is added (same write)
@@ -21,9 +24,8 @@ import { extractTemplateVariableNames } from "./template-vars.js";
  * One status rule per dynasty (TPL-DYNASTY-ROWS-1021-CG, owner 2026-10-21: « Toutes les versions
  * de la dynastie sauf la dernière sont deprecated. Si toutes les versions sont deprecated, alors la
  * dynastie est deprecated, et réciproquement. »):
- * - IN a dynasty, every version but the head is Deprecated (`statusInDynasty`), whatever the
- *   template's own status: a template heading a dynasty on another pipe stays Active as a template
- *   (that pipe writes with it) while it reads Deprecated "Upgraded" in this one.
+ * - IN a dynasty, every version but the head is Deprecated (`statusInDynasty`); with one dynasty
+ *   per template this equals the template's own status.
  * - The dynasty's own `status` is its head's: Deprecated exactly when every version is.
  *   Deprecating the head template deprecates the dynasty.
  * - A staff re-activation of a template that heads no dynasty it belongs to is refused
@@ -56,6 +58,8 @@ export interface DynastyVersion {
   statusInDynasty: VersionStatus;
   /** Why it is deprecated in this dynasty (null when active): the template's stated reason, else UPGRADED_REASON. */
   statusReasonInDynasty: string | null;
+  /** The template this version was copied from (a split shared text), else null. */
+  copiedFrom: string | null;
   addedAt: string;
 }
 
@@ -167,6 +171,7 @@ export function headOf(versions: ReadonlyArray<{ type: string; position: number 
 export interface StoredVersion {
   type: string;
   position: number;
+  copiedFrom?: string | null;
   addedAt: string;
   status: VersionStatus;
   statusReason: string | null;
@@ -189,6 +194,7 @@ export function applyDynastyStatus(stored: ReadonlyArray<StoredVersion>): { head
       status: v.status,
       statusInDynasty: inDynasty,
       statusReasonInDynasty: inDynasty === "active" ? null : v.status === "deprecated" ? v.statusReason : UPGRADED_REASON,
+      copiedFrom: v.copiedFrom ?? null,
       addedAt: v.addedAt,
     };
   });
@@ -208,6 +214,17 @@ export function notDynastyHead(type: string, heldBy: ReadonlyArray<{ slug: strin
     `"${type}" is an older version of ${where}: only a dynasty's latest version can be Active. ` +
       `Re-activate the head, or add this text to the dynasty as a new version.`,
     { dynasties: heldBy.map((d) => ({ slug: d.slug, head: d.head })) },
+  );
+}
+
+/** A template already in another dynasty: one template, one dynasty (owner 2026-10-21). */
+export function templateInOtherDynasty(type: string, dynastySlug: string): TemplateDynastyError {
+  return new TemplateDynastyError(
+    409,
+    "TEMPLATE_IN_OTHER_DYNASTY",
+    `"${type}" is already a version of the template dynasty "${dynastySlug}": a template belongs to one dynasty only. ` +
+      `Add a new text instead.`,
+    { dynastySlug },
   );
 }
 
