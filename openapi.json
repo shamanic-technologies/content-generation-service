@@ -2387,7 +2387,7 @@
                     "active",
                     "deprecated"
                   ],
-                  "description": "The template's own staff status (a template heading a dynasty on another pipe stays active there)."
+                  "description": "The template's own staff status. A template belongs to one dynasty, so it equals `statusInDynasty`."
                 },
                 "statusInDynasty": {
                   "type": "string",
@@ -2402,6 +2402,11 @@
                   "nullable": true,
                   "description": "Why it is deprecated in this dynasty: the template's stated reason, else `Upgraded`. Null when active."
                 },
+                "copiedFrom": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "The template this version was copied from when a text shared by two dynasties was split (2026-10-21). Emails this dynasty's pipe sent BEFORE the split are recorded under that original name. Null otherwise."
+                },
                 "addedAt": {
                   "type": "string"
                 }
@@ -2412,10 +2417,11 @@
                 "status",
                 "statusInDynasty",
                 "statusReasonInDynasty",
+                "copiedFrom",
                 "addedAt"
               ]
             },
-            "description": "Oldest first. A template type may also be a version of a dynasty on another pipe."
+            "description": "Oldest first. A template belongs to ONE dynasty: no type appears in two."
           },
           "createdAt": {
             "type": "string"
@@ -5387,7 +5393,7 @@
             }
           },
           "409": {
-            "description": "`DYNASTY_CONFLICT`: slug or description taken, or name/signature taken on the same pipe (`field`, `dynastySlug`); `TEMPLATE_TYPE_TAKEN` (`type`); `TEMPLATE_TWIN`: the new text is byte-identical to the stored template `twinType`",
+            "description": "`DYNASTY_CONFLICT`: slug or description taken, or name/signature taken on the same pipe (`field`, `dynastySlug`); `TEMPLATE_TYPE_TAKEN` (`type`); `TEMPLATE_TWIN`: the new text is byte-identical to the stored template `twinType`; `TEMPLATE_IN_OTHER_DYNASTY`: a listed template is already a version of `dynastySlug` (a template belongs to one dynasty)",
             "content": {
               "application/json": {
                 "schema": {
@@ -5780,7 +5786,7 @@
             }
           },
           "409": {
-            "description": "`TEMPLATE_TWIN`: the text is byte-identical to another stored template `twinType`; `ALREADY_IN_DYNASTY`; or `DYNASTY_HAS_NO_VERSION`",
+            "description": "`TEMPLATE_TWIN`: the text is byte-identical to another stored template `twinType`; `ALREADY_IN_DYNASTY`; `TEMPLATE_IN_OTHER_DYNASTY` (a template belongs to one dynasty); or `DYNASTY_HAS_NO_VERSION`",
             "content": {
               "application/json": {
                 "schema": {

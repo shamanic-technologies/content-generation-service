@@ -9,6 +9,8 @@ const guard = vi.hoisted(() => ({
   assertBlindTemplateKeepsClientAnonymous: vi.fn(async () => undefined),
 }));
 vi.mock("../../src/lib/template-neutrality-guard.js", () => guard);
+// tests/setup.ts stubs dynasty membership as "in no dynasty" for unit suites; this suite needs the real read.
+vi.mock("../../src/lib/dynasty-membership.js", async (importOriginal) => importOriginal());
 
 const { db } = await import("../../src/db/index.js");
 const { prompts, templateDynasties, templateDynastyVersions } = await import("../../src/db/schema.js");
@@ -143,19 +145,27 @@ describe("template dynasties", () => {
     await expect(getDynasty(`${TAG}-missing`)).rejects.toMatchObject({ status: 404, code: "DYNASTY_NOT_FOUND" });
   });
 
-  it("one template may sit in two dynasties (two pipes); create refuses clashes and unknown templates", async () => {
+  it("a template belongs to ONE dynasty: create and append refuse a template of another dynasty; clashes and unknown templates refused", async () => {
     await seedDynasty();
-    const other = await createDynasty({
-      slug: `${TAG}-other-pipe`, name: `Name ${SLUG}`, description: `Other ${SLUG}`, signature: `Signature ${SLUG}`,
-      identity: "named", featureSlug: PIPE.featureSlug, legKey: "lead_found_to_website_visit", versions: [`${FAMILY}-v2`],
-    });
-    expect(other.head).toBe(`${FAMILY}-v2`);
+    const otherPipe = { slug: `${TAG}-other-pipe`, name: `Name ${SLUG}`, description: `Other ${SLUG}`, signature: `Signature ${SLUG}`,
+      identity: "named" as const, featureSlug: PIPE.featureSlug, legKey: "lead_found_to_website_visit" };
+    await expect(createDynasty({ ...otherPipe, versions: [`${FAMILY}-v2`] }))
+      .rejects.toMatchObject({ status: 409, code: "TEMPLATE_IN_OTHER_DYNASTY", extra: { dynastySlug: SLUG } });
+    await db.insert(prompts).values({ type: `${TAG}-click-v1`, prompt: `${TAG} click {{leadFirstName}} {{brands}}`, variables: VARS });
+    await createDynasty({ ...otherPipe, versions: [`${TAG}-click-v1`] });
+    await expect(addDynastyVersion({ slug: `${TAG}-other-pipe`, version: { type: `${FAMILY}-v2` }, orgId: null, caller: CALLER, changedBy: BY }))
+      .rejects.toMatchObject({ status: 409, code: "TEMPLATE_IN_OTHER_DYNASTY", extra: { dynastySlug: SLUG } });
+    // The database refuses it too, whatever the write path.
+    await expect(db.insert(templateDynastyVersions).values({ dynastySlug: `${TAG}-other-pipe`, promptType: `${FAMILY}-v2`, position: 9 }))
+      .rejects.toThrow();
+    expect((await getDynasty(`${TAG}-other-pipe`)).versions.map((v) => [v.type, v.copiedFrom])).toEqual([[`${TAG}-click-v1`, null]]);
     await expect(createDynasty({
-      slug: `${TAG}-dup`, name: "x", description: `Description ${SLUG}`, signature: "y", identity: "named", ...PIPE, versions: [FAMILY],
-    })).rejects.toMatchObject({ code: "DYNASTY_CONFLICT", extra: { field: "description" } });
-    await expect(createDynasty({
-      slug: `${TAG}-unknown`, name: "x", description: "z", signature: "y", identity: "named", ...PIPE, versions: [`${TAG}-nope`],
+      slug: `${TAG}-dup`, name: "x", description: `Description ${SLUG}`, signature: "y", identity: "named", ...PIPE, versions: [`${TAG}-nope`],
     })).rejects.toMatchObject({ code: "UNKNOWN_TEMPLATE" });
+    await db.insert(prompts).values({ type: `${TAG}-free-v1`, prompt: `${TAG} free {{leadFirstName}}`, variables: [VARS[0]] });
+    await expect(createDynasty({
+      slug: `${TAG}-dup`, name: "x", description: `Description ${SLUG}`, signature: "y", identity: "named", ...PIPE, versions: [`${TAG}-free-v1`],
+    })).rejects.toMatchObject({ code: "DYNASTY_CONFLICT", extra: { field: "description" } });
   });
 
   it("creates a dynasty from a brand-new text: first version and head, judged in full, the dynasty's identity drives the blind rule", async () => {
@@ -216,40 +226,13 @@ describe("template dynasties", () => {
     expect(await statusOf(FAMILY)).toMatchObject({ status: "deprecated", reason: "Upgraded", by: "template-dynasty-upgrade" });
   });
 
-  it("a previous head that still heads another dynasty stays Active", async () => {
-    await seedDynasty();
-    await createDynasty({
-      slug: `${TAG}-other-pipe`, name: `Name ${SLUG}`, description: `Other ${SLUG}`, signature: `Signature ${SLUG}`,
-      identity: "named", featureSlug: PIPE.featureSlug, legKey: "lead_found_to_website_visit", versions: [`${FAMILY}-v2`],
-    });
-    await addDynastyVersion({
-      slug: SLUG, version: { prompt: `${TAG} v3 {{leadFirstName}}`, variables: [VARS[0]] }, orgId: null, caller: CALLER, changedBy: BY,
-    });
-    expect((await statusOf(`${FAMILY}-v2`)).status).toBe("active");
-    // Active as a template (it heads the other pipe's dynasty), Deprecated Upgraded in this one.
-    const d = await getDynasty(SLUG);
-    const v2 = d.versions.find((v) => v.type === `${FAMILY}-v2`)!;
-    expect([v2.status, v2.statusInDynasty, v2.statusReasonInDynasty]).toEqual(["active", "deprecated", "Upgraded"]);
-    expect(d.versions.filter((v) => v.statusInDynasty === "active").map((v) => v.type)).toEqual([`${FAMILY}-v3`]);
-    expect((await getDynasty(`${TAG}-other-pipe`)).status).toBe("active");
-  });
-
   it("the backfill deprecates every non-head version, never a head, keeps a stated reason, and is idempotent", async () => {
     await seedDynasty();
     const only = [FAMILY, `${FAMILY}-v2`, `${FAMILY}-v3`];
     await db.insert(prompts).values({ type: `${FAMILY}-v3`, prompt: `${TAG} v3 {{leadFirstName}} {{brands}}`, variables: VARS, status: "deprecated", statusReason: "Deceptive", statusChangedBy: "owner@distribute.you" });
     await db.insert(templateDynastyVersions).values({ dynastySlug: SLUG, promptType: `${FAMILY}-v3`, position: 3 });
-    // v2 also heads another pipe's dynasty: kept active.
-    await createDynasty({
-      slug: `${TAG}-other-pipe`, name: `Name ${SLUG}`, description: `Other ${SLUG}`, signature: `Signature ${SLUG}`,
-      identity: "named", featureSlug: PIPE.featureSlug, legKey: "lead_found_to_website_visit", versions: [FAMILY, `${FAMILY}-v2`],
-    });
-    // Data from before creation deprecated older versions: v1 still Active.
-    await db.execute(sql`UPDATE prompts SET status = 'active', status_reason = NULL, status_changed_by = NULL WHERE type = ${FAMILY}`);
-    expect(await deprecateUpgradedVersions(db, { changedBy: BY, onlyTypes: only, dryRun: true })).toEqual([FAMILY]);
-    await db.delete(templateDynastyVersions).where(inArray(templateDynastyVersions.dynastySlug, [`${TAG}-other-pipe`]));
-    await db.delete(templateDynasties).where(inArray(templateDynasties.slug, [`${TAG}-other-pipe`]));
-
+    // Data from before creation deprecated older versions: v1 and v2 still Active.
+    await db.execute(sql`UPDATE prompts SET status = 'active', status_reason = NULL, status_changed_by = NULL WHERE type IN (${FAMILY}, ${`${FAMILY}-v2`})`);
     expect(await deprecateUpgradedVersions(db, { changedBy: BY, onlyTypes: only, dryRun: true })).toEqual([FAMILY, `${FAMILY}-v2`]);
     expect((await statusOf(FAMILY)).status).toBe("active");
     expect(await deprecateUpgradedVersions(db, { changedBy: BY, onlyTypes: only })).toEqual([FAMILY, `${FAMILY}-v2`]);

@@ -3,6 +3,7 @@ import { db } from "../db/index.js";
 import { emailGenerations, prompts, templateDynasties, templateDynastyVersions } from "../db/schema.js";
 import { servedStatus } from "./catalogue-status.js";
 export { assertMayActivate, assertNotDynastySource } from "./dynasty-membership.js";
+import { dynastiesHolding } from "./dynasty-membership.js";
 import { outputEmails, type TemplateOutput } from "./catalogue-status-query.js";
 import { findNextVersionType } from "./prompt-versioning.js";
 import { assertBlindTemplateKeepsClientAnonymous, assertTemplateNeutral } from "./template-neutrality-guard.js";
@@ -19,6 +20,7 @@ import {
   type DynastyIdentity,
   type DynastyResponse,
   type TemplateVariable,
+  templateInOtherDynasty,
 } from "./template-dynasties.js";
 
 /** Reads and writes behind src/routes/template-dynasties.ts. Rules: template-dynasties.ts. */
@@ -29,8 +31,8 @@ type Executor = Pick<typeof db, "execute">;
 
 /**
  * Deprecate (reason UPGRADED_REASON) every ACTIVE template that is a version of some dynasty and
- * the head of none. `onlyTypes` narrows it (a new head: the previous head only). A template in
- * two dynasties stays active while it heads either. Returns the types deprecated.
+ * not its head. `onlyTypes` narrows it (a new head: the previous head only). Returns the types
+ * deprecated.
  */
 export async function deprecateUpgradedVersions(
   executor: Executor,
@@ -71,6 +73,7 @@ async function withVersions(rows: DynastyRow[]): Promise<DynastyResponse[]> {
       statusReason: prompts.statusReason,
       statusChangedBy: prompts.statusChangedBy,
       statusChangedAt: prompts.statusChangedAt,
+      copiedFrom: prompts.copiedFrom,
     })
     .from(templateDynastyVersions)
     .innerJoin(prompts, eq(prompts.type, templateDynastyVersions.promptType))
@@ -81,7 +84,7 @@ async function withVersions(rows: DynastyRow[]): Promise<DynastyResponse[]> {
     const { head, versions: own, status } = applyDynastyStatus(
       versions
         .filter((v) => v.dynastySlug === row.slug)
-        .map((v) => ({ type: v.type, position: v.position, addedAt: v.addedAt.toISOString(), ...servedStatus(v) })),
+        .map((v) => ({ type: v.type, position: v.position, addedAt: v.addedAt.toISOString(), copiedFrom: v.copiedFrom, ...servedStatus(v) })),
     );
     return {
       slug: row.slug,
@@ -174,6 +177,8 @@ export async function addDynastyVersion(params: {
     if (dynasty.versions.some((v) => v.type === version.type)) {
       throw new TemplateDynastyError(409, "ALREADY_IN_DYNASTY", `"${version.type}" is already a version of "${slug}"`);
     }
+    const [home] = await dynastiesHolding(version.type);
+    if (home) throw templateInOtherDynasty(version.type, home.slug);
   }
   const prompt = existing ? existing.prompt : (version as { prompt: string }).prompt;
   const variables = existing
@@ -256,6 +261,10 @@ export async function createDynasty(input: {
     if (missing.length > 0) {
       throw new TemplateDynastyError(400, "UNKNOWN_TEMPLATE", `No template of type ${missing.join(", ")}`, { missing });
     }
+    for (const type of listed) {
+      const [home] = await dynastiesHolding(type);
+      if (home) throw templateInOtherDynasty(type, home.slug);
+    }
   }
 
   const clash = await db
@@ -303,7 +312,7 @@ export async function createDynasty(input: {
     await tx.insert(templateDynastyVersions).values(
       versions.map((promptType, i) => ({ dynastySlug: input.slug, promptType, position: i + 1 })),
     );
-    // Only the head may be Active: the older versions listed are deprecated "Upgraded" (unless they head another dynasty).
+    // Only the head may be Active: the older versions listed are deprecated "Upgraded".
     const older = versions.slice(0, -1);
     if (older.length > 0) {
       const deprecated = await deprecateUpgradedVersions(tx, { changedBy: options.changedBy ?? UPGRADED_BY_SYSTEM, onlyTypes: older });
@@ -321,12 +330,12 @@ export interface DynastyOutput extends TemplateOutput {
 
 /**
  * The last `limit` generations written with ANY version of a dynasty, newest first, every org
- * (same fields as a template's outputs, plus the version). A version shared with a dynasty on
- * another pipe brings that pipe's generations too: a generation records no leg.
+ * (same fields as a template's outputs, plus the version). A version copied from a split shared text
+ * also brings what was written under the original name, on both pipes: a generation records no leg.
  */
 export async function readDynastyOutputs(slug: string, limit: number): Promise<{ dynasty: DynastyResponse; outputs: DynastyOutput[] }> {
   const dynasty = await getDynasty(slug);
-  const types = dynasty.versions.map((v) => v.type);
+  const types = [...new Set(dynasty.versions.flatMap((v) => (v.copiedFrom ? [v.type, v.copiedFrom] : [v.type])))];
   if (types.length === 0) return { dynasty, outputs: [] };
   const g = emailGenerations;
   const rows = await db
