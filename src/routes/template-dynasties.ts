@@ -3,6 +3,7 @@ import {
   AddTemplateDynastyVersionRequestSchema,
   CreateTemplateDynastyRequestSchema,
   ListTemplateDynastiesQuerySchema,
+  TemplateOutputsQuerySchema,
 } from "../schemas.js";
 import { TemplateDynastyError, UPGRADED_BY_SYSTEM } from "../lib/template-dynasties.js";
 import { STAFF_EMAIL_HEADER } from "../lib/catalogue-status.js";
@@ -11,6 +12,7 @@ import {
   createDynasty,
   getDynasty,
   listDynasties,
+  readDynastyOutputs,
   resolveDynastyHead,
 } from "../lib/template-dynasty-query.js";
 import { templateWriteErrorResponse } from "../lib/template-neutrality.js";
@@ -55,7 +57,12 @@ router.post("/internal/template-dynasties", handle(async (req, res) => {
   res.status(201).json(await createDynasty(
     template ? { ...fields, template } : { ...fields, versions: versions! },
     // A new text is judged, billed to the platform; orgId is traceability only, like every prompts row.
-    { orgId: orgId && /^[0-9a-f-]{36}$/i.test(orgId) ? orgId : null, caller: { mode: "platform" } },
+    {
+      orgId: orgId && /^[0-9a-f-]{36}$/i.test(orgId) ? orgId : null,
+      caller: { mode: "platform" },
+      // Older versions listed are deprecated "Upgraded" by whoever created the dynasty.
+      changedBy: req.header(STAFF_EMAIL_HEADER)?.trim().toLowerCase() || UPGRADED_BY_SYSTEM,
+    },
   ));
 }));
 
@@ -66,6 +73,13 @@ router.get("/internal/template-dynasties/:slug", handle(async (req, res) => {
 router.get("/internal/template-dynasties/:slug/head", handle(async (req, res) => {
   const { dynasty, template } = await resolveDynastyHead(req.params.slug);
   res.json({ dynasty, template: formatPromptResponse(template) });
+}));
+
+router.get("/internal/template-dynasties/:slug/outputs", handle(async (req, res) => {
+  const parsed = TemplateOutputsQuerySchema.safeParse(req.query);
+  if (!parsed.success) return badRequest(res, parsed.error.issues);
+  const { dynasty, outputs } = await readDynastyOutputs(req.params.slug, parsed.data.limit ?? 5);
+  res.json({ slug: dynasty.slug, outputs });
 }));
 
 router.post("/internal/template-dynasties/:slug/versions", handle(async (req, res) => {

@@ -17,6 +17,19 @@ import { extractTemplateVariableNames } from "./template-vars.js";
  * of NO dynasty is deprecated with reason UPGRADED_REASON, when a new head is added (same write)
  * and by the one-shot backfill (src/bin/deprecate-upgraded-dynasty-versions.ts). Never a head,
  * never a template already deprecated (its stated reason stays), never a re-activation.
+ *
+ * One status rule per dynasty (TPL-DYNASTY-ROWS-1021-CG, owner 2026-10-21: « Toutes les versions
+ * de la dynastie sauf la dernière sont deprecated. Si toutes les versions sont deprecated, alors la
+ * dynastie est deprecated, et réciproquement. »):
+ * - IN a dynasty, every version but the head is Deprecated (`statusInDynasty`), whatever the
+ *   template's own status: a template heading a dynasty on another pipe stays Active as a template
+ *   (that pipe writes with it) while it reads Deprecated "Upgraded" in this one.
+ * - The dynasty's own `status` is its head's: Deprecated exactly when every version is.
+ *   Deprecating the head template deprecates the dynasty.
+ * - A staff re-activation of a template that heads no dynasty it belongs to is refused
+ *   (NOT_DYNASTY_HEAD); creating a dynasty over stored templates deprecates its non-head versions;
+ *   a fork (`PUT /prompts`, `PUT /prompt-assignments`) of a dynasty version is refused
+ *   (SOURCE_IN_DYNASTY): a new version of a dynasty is added to the dynasty, never left orphan.
  */
 
 export const UPGRADED_REASON = "Upgraded";
@@ -32,15 +45,29 @@ export interface TemplateVariable {
   description: string;
 }
 
+export type VersionStatus = "active" | "deprecated";
+
 export interface DynastyVersion {
   type: string;
   position: number;
   /** The template's own staff status (catalogue-status.ts). */
-  status: "active" | "deprecated";
+  status: VersionStatus;
+  /** Its status IN this dynasty: the head's own status; every older version Deprecated. */
+  statusInDynasty: VersionStatus;
+  /** Why it is deprecated in this dynasty (null when active): the template's stated reason, else UPGRADED_REASON. */
+  statusReasonInDynasty: string | null;
   addedAt: string;
 }
 
-export interface DynastyResponse {
+/** The status block a dynasty serves: its head's. */
+export interface DynastyStatus {
+  status: VersionStatus;
+  statusReason: string | null;
+  statusChangedBy: string | null;
+  statusChangedAt: string | null;
+}
+
+export interface DynastyResponse extends DynastyStatus {
   slug: string;
   name: string;
   description: string;
@@ -134,4 +161,63 @@ export function headOf(versions: ReadonlyArray<{ type: string; position: number 
   let head: { type: string; position: number } | null = null;
   for (const v of versions) if (!head || v.position > head.position) head = v;
   return head?.type ?? null;
+}
+
+/** One version as stored, with its template's own status (served shape: catalogue-status servedStatus). */
+export interface StoredVersion {
+  type: string;
+  position: number;
+  addedAt: string;
+  status: VersionStatus;
+  statusReason: string | null;
+  statusChangedBy: string | null;
+  statusChangedAt: string | null;
+}
+
+/**
+ * The dynasty status rule (owner 2026-10-21): in a dynasty only the head may be Active; the dynasty
+ * is its head's status. A dynasty with no version (never in prod) reads Deprecated.
+ */
+export function applyDynastyStatus(stored: ReadonlyArray<StoredVersion>): { head: string | null; versions: DynastyVersion[]; status: DynastyStatus } {
+  const head = headOf(stored);
+  const versions = stored.map((v): DynastyVersion => {
+    const isHead = v.type === head;
+    const inDynasty: VersionStatus = isHead ? v.status : "deprecated";
+    return {
+      type: v.type,
+      position: v.position,
+      status: v.status,
+      statusInDynasty: inDynasty,
+      statusReasonInDynasty: inDynasty === "active" ? null : v.status === "deprecated" ? v.statusReason : UPGRADED_REASON,
+      addedAt: v.addedAt,
+    };
+  });
+  const headRow = stored.find((v) => v.type === head);
+  const status: DynastyStatus = headRow
+    ? { status: headRow.status, statusReason: headRow.status === "deprecated" ? headRow.statusReason : null, statusChangedBy: headRow.statusChangedBy, statusChangedAt: headRow.statusChangedAt }
+    : { status: "deprecated", statusReason: "No version", statusChangedBy: null, statusChangedAt: null };
+  return { head, versions, status };
+}
+
+/** A staff re-activation of a version that heads none of its dynasties (the rule would break). */
+export function notDynastyHead(type: string, heldBy: ReadonlyArray<{ slug: string; head: string | null }>): TemplateDynastyError {
+  const where = heldBy.map((d) => `"${d.slug}" (head ${d.head ?? "none"})`).join(", ");
+  return new TemplateDynastyError(
+    409,
+    "NOT_DYNASTY_HEAD",
+    `"${type}" is an older version of ${where}: only a dynasty's latest version can be Active. ` +
+      `Re-activate the head, or add this text to the dynasty as a new version.`,
+    { dynasties: heldBy.map((d) => ({ slug: d.slug, head: d.head })) },
+  );
+}
+
+/** A fork of a dynasty version outside its dynasty would land a version in no dynasty. */
+export function sourceInDynasty(type: string, slugs: ReadonlyArray<string>): TemplateDynastyError {
+  return new TemplateDynastyError(
+    409,
+    "SOURCE_IN_DYNASTY",
+    `"${type}" is a version of the template dynasty ${slugs.map((s) => `"${s}"`).join(", ")}: ` +
+      `add the new text to the dynasty (POST /internal/template-dynasties/{slug}/versions), never as a loose copy.`,
+    { dynasties: [...slugs] },
+  );
 }

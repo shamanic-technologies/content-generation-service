@@ -427,6 +427,10 @@ registry.registerPath({
       description: "New versioned prompt created",
       content: { "application/json": { schema: PromptResponseSchema } },
     },
+    409: {
+      description: "`SOURCE_IN_DYNASTY`: the source is a version of a template dynasty; add the new text to that dynasty (POST /internal/template-dynasties/{slug}/versions) instead. Nothing stored.",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
     400: {
       description: "Invalid request",
       content: { "application/json": { schema: ErrorResponseSchema } },
@@ -535,6 +539,10 @@ registry.registerPath({
     200: {
       description: "Feature reassigned to the forked prompt",
       content: { "application/json": { schema: PutPromptAssignmentResponseSchema } },
+    },
+    409: {
+      description: "`SOURCE_IN_DYNASTY`: the source is a version of a template dynasty; add the new text to that dynasty (POST /internal/template-dynasties/{slug}/versions) instead. Nothing stored.",
+      content: { "application/json": { schema: ErrorResponseSchema } },
     },
     400: {
       description: "Invalid request, or submitted variables do not match the source template",
@@ -2008,6 +2016,7 @@ registry.registerPath({
     200: { description: "Status set", content: { "application/json": { schema: TemplateStatusEntrySchema } } },
     400: { description: "Missing or unknown status, or a deprecation without a reason (`DEPRECATION_REASON_REQUIRED`) or without who (`DEPRECATED_BY_REQUIRED`)", content: { "application/json": { schema: ErrorResponseSchema } } },
     404: { description: "No template of that type", content: { "application/json": { schema: ErrorResponseSchema } } },
+    409: { description: "`NOT_DYNASTY_HEAD`: re-activating an older version of a template dynasty (only a dynasty's latest version can be Active); `dynasties` names each one and its head", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });
 
@@ -2057,13 +2066,26 @@ export const TemplateDynastySchema = registry.register(
   z
     .object({
       ...DynastyFields,
+      status: z
+        .enum(["active", "deprecated"])
+        .describe("The dynasty's status = its head's: `deprecated` exactly when every version is. Deprecating the head template deprecates the dynasty."),
+      statusReason: z.string().nullable().describe("The head's deprecation reason (`Not specified` when none was stated). Null when active."),
+      statusChangedBy: z.string().nullable().describe("Staff email (or `template-dynasty-upgrade`) of who last changed the head's status."),
+      statusChangedAt: z.string().nullable().describe("When the head's status last changed (ISO 8601)."),
       head: z.string().nullable().describe("Template type of the latest version: the one to write with. Null only for a dynasty with no version."),
       versions: z
         .array(
           z.object({
             type: z.string().describe("Template type (readable alone via GET /prompts?type=)."),
             position: z.number().int().describe("1 = oldest; the highest is the head."),
-            status: z.enum(["active", "deprecated"]).describe("The template's own staff status."),
+            status: z.enum(["active", "deprecated"]).describe("The template's own staff status (a template heading a dynasty on another pipe stays active there)."),
+            statusInDynasty: z
+              .enum(["active", "deprecated"])
+              .describe("Its status IN this dynasty: the head's own status; every older version `deprecated`. Show this on a dynasty's version list."),
+            statusReasonInDynasty: z
+              .string()
+              .nullable()
+              .describe("Why it is deprecated in this dynasty: the template's stated reason, else `Upgraded`. Null when active."),
             addedAt: z.string(),
           })
         )
@@ -2150,6 +2172,18 @@ const TemplateDynastyWithTemplateSchema = registry.register(
 
 const DynastyErrorSchema = z.object({ error: z.string(), code: z.string().optional() }).passthrough();
 
+const DynastyOutputsResponseSchema = registry.register(
+  "TemplateDynastyOutputsResponse",
+  z
+    .object({
+      slug: z.string(),
+      outputs: z
+        .array(TemplateOutputSchema.extend({ promptType: z.string().describe("The exact version that wrote it.") }))
+        .describe("Newest first, every org, across every version of the dynasty."),
+    })
+    .openapi("TemplateDynastyOutputsResponse")
+);
+
 registry.registerPath({
   method: "get",
   path: "/internal/template-dynasties",
@@ -2209,6 +2243,22 @@ registry.registerPath({
     200: { description: "Dynasty + head template", content: { "application/json": { schema: TemplateDynastyWithTemplateSchema } } },
     404: { description: "`DYNASTY_NOT_FOUND`", content: { "application/json": { schema: DynastyErrorSchema } } },
     409: { description: "`DYNASTY_HAS_NO_VERSION`", content: { "application/json": { schema: DynastyErrorSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/template-dynasties/{slug}/outputs",
+  tags: ["Template dynasties"],
+  summary: "The last outputs written with any version of a dynasty, newest first",
+  description:
+    `${dynastyNote} Same fields as GET /internal/templates/{type}/outputs plus \`promptType\` (the version). ` +
+    "A version shared with a dynasty on another pipe brings that pipe's outputs too (a generation records no leg).",
+  request: { params: DynastySlugParam, query: TemplateOutputsQuerySchema },
+  responses: {
+    200: { description: "Outputs", content: { "application/json": { schema: DynastyOutputsResponseSchema } } },
+    400: { description: "Bad limit", content: { "application/json": { schema: DynastyErrorSchema } } },
+    404: { description: "`DYNASTY_NOT_FOUND`", content: { "application/json": { schema: DynastyErrorSchema } } },
   },
 });
 

@@ -39,3 +39,17 @@ vi.mock("../src/lib/client-comms-voice.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/lib/client-comms-voice.js")>();
   return { ...actual, readClientCommsVoice: vi.fn(async () => "TEST VOICE: answer first, short, plain words.") };
 });
+
+// Which dynasties hold a template is a raw-SQL read (src/lib/dynasty-membership.ts), and most unit
+// suites hand-roll a db mock without `execute`. Stubbed once here as "in no dynasty"; the real
+// module is exercised by tests/unit/template-dynasty-rows.test.ts and the integration suite
+// (vi.importActual).
+vi.mock("../src/lib/dynasty-membership.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/dynasty-membership.js")>();
+  return {
+    ...actual,
+    dynastiesHolding: vi.fn(async () => []),
+    assertMayActivate: vi.fn(async () => undefined),
+    assertNotDynastySource: vi.fn(async () => undefined),
+  };
+});

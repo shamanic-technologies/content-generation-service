@@ -260,6 +260,13 @@
       "when": 1780209600000,
       "tag": "0036_template_dynasties",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1780296000000,
+      "tag": "0037_template_dynasty_cross_pipe_versions",
+      "breakpoints": true
     }
   ]
 }
