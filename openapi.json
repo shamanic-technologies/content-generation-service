@@ -2444,7 +2444,35 @@
               "minLength": 1
             },
             "minItems": 1,
-            "description": "Existing template types, oldest first; the last is the head."
+            "description": "Existing template types, oldest first; the last is the head. Exactly one of `versions` / `template`."
+          },
+          "template": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "description": "Type to store the new template under; default `<slug>-v1`. Later versions are `<family>-vN`."
+              },
+              "prompt": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The full text of a brand-new template. Must differ from every stored template."
+              },
+              "variables": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PromptVariable"
+                },
+                "description": "Exactly the {{tokens}} the text uses."
+              }
+            },
+            "required": [
+              "prompt",
+              "variables"
+            ],
+            "additionalProperties": false,
+            "description": "A brand-new template, stored as the dynasty's first version and head. Exactly one of `versions` / `template`."
           }
         },
         "required": [
@@ -2454,8 +2482,7 @@
           "signature",
           "identity",
           "featureSlug",
-          "legKey",
-          "versions"
+          "legKey"
         ]
       },
       "AddTemplateDynastyVersionRequest": {
@@ -5157,8 +5184,8 @@
         "tags": [
           "Template dynasties"
         ],
-        "summary": "Create a dynasty over existing templates",
-        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`). The versions must already be stored templates; the last listed is the head.",
+        "summary": "Create a dynasty, over existing templates or from a brand-new text",
+        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`). Either `versions` (already-stored templates, the last listed is the head) or `template` (a new text + its variables, stored as the first version and head, under `template.type` or `<slug>-v1`). A new text is judged like every stored template (brand/offer neutrality; the blind rule when the dynasty is blind), in full, billed to the platform. Nothing is stored on any refusal.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5180,7 +5207,7 @@
             }
           },
           "400": {
-            "description": "Invalid body, a template listed twice (`DUPLICATE_VERSION`) or unknown (`UNKNOWN_TEMPLATE`)",
+            "description": "Invalid body (neither or both of `versions` / `template`), a template listed twice (`DUPLICATE_VERSION`) or unknown (`UNKNOWN_TEMPLATE`), or `template.variables` not exactly the text's tokens (`VARIABLES_MISMATCH`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -5204,7 +5231,55 @@
             }
           },
           "409": {
-            "description": "`DYNASTY_CONFLICT`: slug or description taken, or name/signature taken on the same pipe (`field`, `dynastySlug`)",
+            "description": "`DYNASTY_CONFLICT`: slug or description taken, or name/signature taken on the same pipe (`field`, `dynastySlug`); `TEMPLATE_TYPE_TAKEN` (`type`); `TEMPLATE_TWIN`: the new text is byte-identical to the stored template `twinType`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`TEMPLATE_NOT_NEUTRAL` or `BLIND_TEMPLATE_REVEALS_CLIENT`, with the `passages` refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`TEMPLATE_NEUTRALITY_CHECK_FAILED`: the judgment could not run (402/429 kept); nothing stored",
             "content": {
               "application/json": {
                 "schema": {
