@@ -12,7 +12,17 @@ import { extractTemplateVariableNames } from "./template-vars.js";
  *
  * A prompt type may sit in two dynasties (it ran on two pipes). A template in no dynasty is
  * simply unattached (old press/hiring/VC templates).
+ *
+ * Only the head is Active (TPL-DYNASTY-1021-CG3, owner 2026-10-21): a version that is the head
+ * of NO dynasty is deprecated with reason UPGRADED_REASON, when a new head is added (same write)
+ * and by the one-shot backfill (src/bin/deprecate-upgraded-dynasty-versions.ts). Never a head,
+ * never a template already deprecated (its stated reason stays), never a re-activation.
  */
+
+export const UPGRADED_REASON = "Upgraded";
+
+/** Who a dynasty upgrade's deprecation is recorded as when no staff email came with the write. */
+export const UPGRADED_BY_SYSTEM = "template-dynasty-upgrade";
 
 export const DYNASTY_IDENTITIES = ["blind", "named"] as const;
 export type DynastyIdentity = (typeof DYNASTY_IDENTITIES)[number];

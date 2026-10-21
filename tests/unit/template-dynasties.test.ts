@@ -121,9 +121,20 @@ describe("template dynasty routes", () => {
       version: { prompt: ROW.prompt, variables: ROW.variables },
       orgId: "22222222-2222-2222-2222-222222222222",
       caller: { mode: "platform" },
+      changedBy: "template-dynasty-upgrade",
     });
     expect(res.body.dynasty.head).toBe(ROW.type);
     expect(res.body.template.type).toBe(ROW.type);
+  });
+
+  it("records the staff email as who deprecated the previous head", async () => {
+    q.addDynastyVersion.mockResolvedValue({ dynasty: { ...DYNASTY, head: ROW.type }, template: ROW });
+    await request(app())
+      .post(`/internal/template-dynasties/${DYNASTY.slug}/versions`)
+      .set("x-staff-email", " Kevin@Distribute.you ")
+      .send({ prompt: ROW.prompt, variables: ROW.variables })
+      .expect(201);
+    expect(q.addDynastyVersion).toHaveBeenCalledWith(expect.objectContaining({ changedBy: "kevin@distribute.you" }));
   });
 
   it("appends an already-stored template by type; refuses a body mixing both forms", async () => {
