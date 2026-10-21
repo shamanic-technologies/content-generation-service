@@ -151,6 +151,48 @@ describe("template dynasties", () => {
     })).rejects.toMatchObject({ code: "UNKNOWN_TEMPLATE" });
   });
 
+  it("creates a dynasty from a brand-new text: first version and head, judged in full, the dynasty's identity drives the blind rule", async () => {
+    const text = `${TAG} 8-second test {{leadFirstName}} {{brands}}`;
+    const fields = {
+      slug: `${TAG}-fresh`, name: "Fresh", description: `Fresh ${TAG}`, signature: `Fresh sig ${TAG}`,
+      identity: "blind" as const, ...PIPE,
+    };
+    const created = await createDynasty({ ...fields, template: { prompt: text, variables: VARS } }, { orgId: null, caller: CALLER });
+    expect(created.head).toBe(`${TAG}-fresh-v1`);
+    expect(created.versions.map((v) => [v.type, v.position, v.status])).toEqual([[`${TAG}-fresh-v1`, 1, "active"]]);
+    expect((await resolveDynastyHead(`${TAG}-fresh`)).template).toMatchObject({ prompt: text, variables: VARS });
+    expect(guard.assertTemplateNeutral).toHaveBeenCalledWith(expect.objectContaining({ prompt: text, variables: VARS }));
+    expect(guard.assertTemplateNeutral.mock.calls[0][0]).not.toHaveProperty("inherited");
+    expect(guard.assertBlindTemplateKeepsClientAnonymous).toHaveBeenCalledWith(expect.objectContaining({ blind: true }));
+
+    // The next version follows the new family.
+    const { template } = await addDynastyVersion({
+      slug: `${TAG}-fresh`, version: { prompt: `${TAG} 8-second v2 {{leadFirstName}}`, variables: [VARS[0]] }, orgId: null, caller: CALLER, changedBy: BY,
+    });
+    expect(template.type).toBe(`${TAG}-fresh-v2`);
+  });
+
+  it("a new text is refused before anything is stored: mismatch, twin, taken type, not neutral", async () => {
+    await seedDynasty();
+    const fields = { slug: `${TAG}-refused`, name: "R", description: `R ${TAG}`, signature: `R sig`, identity: "named" as const, ...PIPE };
+    const nothingStored = async () => {
+      expect(await db.select().from(templateDynasties).where(inArray(templateDynasties.slug, [`${TAG}-refused`]))).toEqual([]);
+      expect(await db.select().from(prompts).where(like(prompts.type, `${TAG}-refused%`))).toEqual([]);
+    };
+    await expect(createDynasty({ ...fields, template: { prompt: `${TAG} {{leadFirstName}} {{x}}`, variables: [VARS[0]] } }, { caller: CALLER }))
+      .rejects.toMatchObject({ status: 400, code: "VARIABLES_MISMATCH" });
+    await expect(createDynasty({ ...fields, template: { prompt: `${TAG} v1 {{leadFirstName}} {{brands}}`, variables: VARS } }, { caller: CALLER }))
+      .rejects.toMatchObject({ status: 409, code: "TEMPLATE_TWIN", extra: { twinType: FAMILY } });
+    await expect(createDynasty({ ...fields, template: { type: FAMILY, prompt: `${TAG} other {{leadFirstName}}`, variables: [VARS[0]] } }, { caller: CALLER }))
+      .rejects.toMatchObject({ status: 409, code: "TEMPLATE_TYPE_TAKEN" });
+    expect(guard.assertTemplateNeutral).not.toHaveBeenCalled();
+    const refusal = Object.assign(new Error("not neutral"), { status: 422 });
+    guard.assertTemplateNeutral.mockRejectedValueOnce(refusal);
+    await expect(createDynasty({ ...fields, template: { prompt: `${TAG} Acme saved $2M {{leadFirstName}}`, variables: [VARS[0]] } }, { caller: CALLER }))
+      .rejects.toBe(refusal);
+    await nothingStored();
+  });
+
   const statusOf = async (type: string) =>
     (await db.select({ status: prompts.status, reason: prompts.statusReason, by: prompts.statusChangedBy, at: prompts.statusChangedAt })
       .from(prompts).where(inArray(prompts.type, [type])))[0];

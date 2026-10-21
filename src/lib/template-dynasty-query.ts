@@ -7,6 +7,7 @@ import type { JudgmentCaller } from "./judgments-client.js";
 import {
   TemplateDynastyError,
   UPGRADED_REASON,
+  assertVariablesMatchText,
   assertVersionVariables,
   dynastyNotFound,
   headOf,
@@ -204,7 +205,23 @@ export async function addDynastyVersion(params: {
   return { dynasty: await getDynasty(slug), template: written.row };
 }
 
-/** Create a dynasty over existing templates (chronological; the last is the head). */
+/** A brand-new template to store as a new dynasty's first (and head) version. */
+export interface NewDynastyTemplate {
+  /** Defaults to `<dynasty slug>-v1`; later versions take `<family>-vN` from it. */
+  type?: string;
+  prompt: string;
+  variables: TemplateVariable[];
+}
+
+/**
+ * Create a dynasty, either over existing templates (`versions`, chronological; the last is the
+ * head) or from a brand-new text (`template`, stored as its first version and head,
+ * TPL-DYNASTY-FROM-TEXT-1021). A new text is refused like every stored template: variables not
+ * exactly its tokens (400), a type already taken (409 TEMPLATE_TYPE_TAKEN), a text byte-identical
+ * to a stored template (409 TEMPLATE_TWIN), brand/offer neutrality and, when the dynasty is
+ * blind, the blind rule (422), judged in full (no head to inherit from) and billed to `caller`.
+ * Every refusal happens before anything is written; the template and the dynasty land together.
+ */
 export async function createDynasty(input: {
   slug: string;
   name: string;
@@ -213,16 +230,22 @@ export async function createDynasty(input: {
   identity: DynastyIdentity;
   featureSlug: string;
   legKey: string;
-  versions: string[];
-}): Promise<DynastyResponse> {
-  const unique = new Set(input.versions);
-  if (unique.size !== input.versions.length) {
-    throw new TemplateDynastyError(400, "DUPLICATE_VERSION", "versions lists a template twice");
-  }
-  const found = await db.select({ type: prompts.type }).from(prompts).where(inArray(prompts.type, input.versions));
-  const missing = input.versions.filter((t) => !found.some((f) => f.type === t));
-  if (missing.length > 0) {
-    throw new TemplateDynastyError(400, "UNKNOWN_TEMPLATE", `No template of type ${missing.join(", ")}`, { missing });
+} & (
+  | { versions: string[]; template?: undefined }
+  | { template: NewDynastyTemplate; versions?: undefined }
+), options: { orgId?: string | null; caller?: JudgmentCaller } = {}): Promise<DynastyResponse> {
+  const { versions: listed, template, ...fields } = input;
+
+  if (listed) {
+    const unique = new Set(listed);
+    if (unique.size !== listed.length) {
+      throw new TemplateDynastyError(400, "DUPLICATE_VERSION", "versions lists a template twice");
+    }
+    const found = await db.select({ type: prompts.type }).from(prompts).where(inArray(prompts.type, listed));
+    const missing = listed.filter((t) => !found.some((f) => f.type === t));
+    if (missing.length > 0) {
+      throw new TemplateDynastyError(400, "UNKNOWN_TEMPLATE", `No template of type ${missing.join(", ")}`, { missing });
+    }
   }
 
   const clash = await db
@@ -241,12 +264,36 @@ export async function createDynasty(input: {
     }
   }
 
-  const { versions, ...fields } = input;
+  let newType: string | null = null;
+  if (template) {
+    if (!options.caller) throw new Error("createDynasty from a new text needs a judgment caller");
+    const { prompt, variables } = template;
+    newType = template.type ?? `${input.slug}-v1`;
+    assertVariablesMatchText(prompt, variables);
+    const taken = await db.query.prompts.findFirst({ where: eq(prompts.type, newType), columns: { type: true } });
+    if (taken) {
+      throw new TemplateDynastyError(409, "TEMPLATE_TYPE_TAKEN", `A template of type "${newType}" is already stored`, { type: newType });
+    }
+    const twin = await findTemplateTwin(prompt);
+    if (twin) throw templateTwin(twin);
+    await assertTemplateNeutral({ prompt, variables, caller: options.caller });
+    await assertBlindTemplateKeepsClientAnonymous({
+      type: newType, prompt, variables, caller: options.caller, blind: input.identity === "blind",
+    });
+  }
+
+  const versions = listed ?? [newType!];
   await db.transaction(async (tx) => {
+    if (template) {
+      await tx.insert(prompts).values({
+        orgId: options.orgId ?? null, type: newType!, prompt: template.prompt, variables: template.variables,
+      });
+    }
     await tx.insert(templateDynasties).values(fields);
     await tx.insert(templateDynastyVersions).values(
       versions.map((promptType, i) => ({ dynastySlug: input.slug, promptType, position: i + 1 })),
     );
   });
+  if (template) console.log(`[template-dynasty] ${input.slug}: created from a new text, head ${newType}`);
   return getDynasty(input.slug);
 }

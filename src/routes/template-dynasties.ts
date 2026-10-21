@@ -17,7 +17,8 @@ import { templateWriteErrorResponse } from "../lib/template-neutrality.js";
 import { formatPromptResponse } from "../lib/prompt-response.js";
 
 /**
- * Template dynasties (TPL-DYNASTY-1021-CG): list, read, resolve the head, add a version.
+ * Template dynasties (TPL-DYNASTY-1021-CG): list, read, resolve the head, add a version, create
+ * (over stored templates or from a new text).
  * API key only, no identity headers; cross-org catalogue. Rules: src/lib/template-dynasties.ts.
  */
 const router = Router();
@@ -49,7 +50,13 @@ router.get("/internal/template-dynasties", handle(async (req, res) => {
 router.post("/internal/template-dynasties", handle(async (req, res) => {
   const parsed = CreateTemplateDynastyRequestSchema.safeParse(req.body);
   if (!parsed.success) return badRequest(res, parsed.error.issues);
-  res.status(201).json(await createDynasty(parsed.data));
+  const { versions, template, ...fields } = parsed.data;
+  const orgId = req.header("x-org-id");
+  res.status(201).json(await createDynasty(
+    template ? { ...fields, template } : { ...fields, versions: versions! },
+    // A new text is judged, billed to the platform; orgId is traceability only, like every prompts row.
+    { orgId: orgId && /^[0-9a-f-]{36}$/i.test(orgId) ? orgId : null, caller: { mode: "platform" } },
+  ));
 }));
 
 router.get("/internal/template-dynasties/:slug", handle(async (req, res) => {

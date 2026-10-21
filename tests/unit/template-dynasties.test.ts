@@ -14,9 +14,10 @@ const q = vi.hoisted(() => ({
 vi.mock("../../src/lib/template-dynasty-query.js", () => q);
 
 const { default: routes } = await import("../../src/routes/template-dynasties.js");
-const { assertVersionVariables, headOf, templateTwin, dynastyNotFound, TemplateDynastyError } = await import(
+const { assertVersionVariables, assertVariablesMatchText, headOf, templateTwin, dynastyNotFound, TemplateDynastyError } = await import(
   "../../src/lib/template-dynasties.js"
 );
+const { TemplateNotNeutralError } = await import("../../src/lib/template-neutrality.js");
 
 function app() {
   const a = express();
@@ -73,6 +74,12 @@ describe("template dynasty rules", () => {
   it("declared variables must be exactly the tokens the text uses", () => {
     expect(() => assertVersionVariables("{{a}}", head.variables, head)).toThrow(/unused: b/);
     expect(() => assertVersionVariables("{{a}} {{b}}", [{ name: "a", description: "" }], head)).toThrow(/undeclared: b/);
+  });
+
+  it("a new dynasty's text: variables exactly its tokens, no head involved", () => {
+    expect(() => assertVariablesMatchText("{{x}} {{y}}", [{ name: "x", description: "" }, { name: "y", description: "" }])).not.toThrow();
+    expect(() => assertVariablesMatchText("{{x}}", [])).toThrow(/undeclared: x/);
+    expect(() => assertVariablesMatchText("plain", [{ name: "x", description: "" }])).toThrow(/unused: x/);
   });
 
   it("the head is the highest position, whatever the order", () => {
@@ -159,6 +166,43 @@ describe("template dynasty routes", () => {
       .expect(409);
     expect(res.body).toMatchObject({ code: "TEMPLATE_TWIN", twinType: "blind-discovery-email-v40" });
     expect(res.body.error).toContain("blind-discovery-email-v40");
+  });
+
+  it("creates a dynasty from a brand-new text (platform-billed judgment); existing-type creation unchanged", async () => {
+    q.createDynasty.mockResolvedValue({ ...DYNASTY, head: "eight-second-test-click-v1" });
+    const fields = { slug: "eight-second-test-click", name: "8-second test", description: "d2", signature: "s2", identity: "named", featureSlug: "sales-cold-email-outreach", legKey: "lead_found_to_website_visit" };
+    const template = { prompt: ROW.prompt, variables: ROW.variables };
+    const res = await request(app())
+      .post("/internal/template-dynasties")
+      .set("x-org-id", "22222222-2222-2222-2222-222222222222")
+      .send({ ...fields, template })
+      .expect(201);
+    expect(q.createDynasty).toHaveBeenLastCalledWith(
+      { ...fields, template },
+      { orgId: "22222222-2222-2222-2222-222222222222", caller: { mode: "platform" } },
+    );
+    expect(res.body.head).toBe("eight-second-test-click-v1");
+
+    await request(app()).post("/internal/template-dynasties").send({ ...fields, versions: ["cold-email-v68"] }).expect(201);
+    expect(q.createDynasty).toHaveBeenLastCalledWith({ ...fields, versions: ["cold-email-v68"] }, { orgId: null, caller: { mode: "platform" } });
+
+    for (const body of [fields, { ...fields, versions: ["x"], template }, { ...fields, template: { ...template, type: "Bad Type" } }]) {
+      const r = await request(app()).post("/internal/template-dynasties").send(body).expect(400);
+      expect(r.body.error).toBeTruthy();
+    }
+    expect(q.createDynasty).toHaveBeenCalledTimes(2);
+  });
+
+  it("a refused new text answers its reason: variables mismatch 400, not neutral 422", async () => {
+    const fields = { slug: "x-new", name: "n", description: "d", signature: "s", identity: "named", featureSlug: "f", legKey: "l" };
+    q.createDynasty.mockRejectedValueOnce(new TemplateDynastyError(400, "VARIABLES_MISMATCH", "variables must list exactly the {{tokens}} the text uses; undeclared: b"));
+    const r1 = await request(app()).post("/internal/template-dynasties").send({ ...fields, template: { prompt: "{{b}}", variables: [] } }).expect(400);
+    expect(r1.body).toMatchObject({ code: "VARIABLES_MISMATCH" });
+    expect(r1.body.error).toContain("undeclared: b");
+    q.createDynasty.mockRejectedValueOnce(new TemplateNotNeutralError([{ text: "We saved Acme $2M", location: "line 1", probability: 0.97 }]));
+    const r2 = await request(app()).post("/internal/template-dynasties").send({ ...fields, template: { prompt: "We saved Acme $2M", variables: [] } }).expect(422);
+    expect(r2.body).toMatchObject({ code: "TEMPLATE_NOT_NEUTRAL" });
+    expect(r2.body.passages[0].passage).toBe("We saved Acme $2M");
   });
 
   it("400s a body without text, before any read", async () => {
