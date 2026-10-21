@@ -2098,12 +2098,22 @@ export const CreateTemplateDynastyRequestSchema = registry.register(
 export const AddTemplateDynastyVersionRequestSchema = registry.register(
   "AddTemplateDynastyVersionRequest",
   z
-    .object({
-      prompt: z.string().min(1).describe("The new version's full text. Must differ from every stored template."),
-      variables: z.array(PromptVariableSchema).describe(
-        "Exactly the {{tokens}} the text uses, each one declared by the current head (the workflows on the dynasty send those)."
-      ),
-    })
+    .union([
+      z
+        .object({
+          prompt: z.string().min(1).describe("The new version's full text. Must differ from every stored template."),
+          variables: z.array(PromptVariableSchema).describe(
+            "Exactly the {{tokens}} the text uses, each one declared by the current head (the workflows on the dynasty send those)."
+          ),
+        })
+        .strict(),
+      z
+        .object({
+          type: z.string().min(1).describe("An ALREADY-STORED template to append as the head (same checks; refused if already a version of this dynasty)."),
+        })
+        .strict(),
+    ])
+    .describe("Either a new text (`prompt` + `variables`) or an existing template (`type`).")
     .openapi("AddTemplateDynastyVersionRequest")
 );
 
@@ -2189,9 +2199,9 @@ registry.registerPath({
   },
   responses: {
     201: { description: "Version added; `template` is the new head", content: { "application/json": { schema: TemplateDynastyWithTemplateSchema } } },
-    400: { description: "Invalid body, a token the head does not declare (`VARIABLE_NOT_IN_HEAD`), or variables not matching the text (`VARIABLES_MISMATCH`)", content: { "application/json": { schema: DynastyErrorSchema } } },
+    400: { description: "Invalid body, a token the head does not declare (`VARIABLE_NOT_IN_HEAD`), variables not matching the text (`VARIABLES_MISMATCH`), or an unknown `type` (`UNKNOWN_TEMPLATE`)", content: { "application/json": { schema: DynastyErrorSchema } } },
     404: { description: "`DYNASTY_NOT_FOUND`", content: { "application/json": { schema: DynastyErrorSchema } } },
-    409: { description: "`TEMPLATE_TWIN`: the text is byte-identical to the stored template `twinType`; or `DYNASTY_HAS_NO_VERSION`", content: { "application/json": { schema: DynastyErrorSchema } } },
+    409: { description: "`TEMPLATE_TWIN`: the text is byte-identical to another stored template `twinType`; `ALREADY_IN_DYNASTY`; or `DYNASTY_HAS_NO_VERSION`", content: { "application/json": { schema: DynastyErrorSchema } } },
     422: { description: "`TEMPLATE_NOT_NEUTRAL` or `BLIND_TEMPLATE_REVEALS_CLIENT`, with the passages", content: { "application/json": { schema: DynastyErrorSchema } } },
     502: { description: "`TEMPLATE_NEUTRALITY_CHECK_FAILED`: nothing stored", content: { "application/json": { schema: DynastyErrorSchema } } },
   },
