@@ -4,7 +4,8 @@ import {
   CreateTemplateDynastyRequestSchema,
   ListTemplateDynastiesQuerySchema,
 } from "../schemas.js";
-import { TemplateDynastyError } from "../lib/template-dynasties.js";
+import { TemplateDynastyError, UPGRADED_BY_SYSTEM } from "../lib/template-dynasties.js";
+import { STAFF_EMAIL_HEADER } from "../lib/catalogue-status.js";
 import {
   addDynastyVersion,
   createDynasty,
@@ -70,6 +71,8 @@ router.post("/internal/template-dynasties/:slug/versions", handle(async (req, re
     // Traceability only (who created the row), like every prompts row.
     orgId: orgId && /^[0-9a-f-]{36}$/i.test(orgId) ? orgId : null,
     caller: { mode: "platform" },
+    // The previous head is deprecated "Upgraded" by whoever added this one.
+    changedBy: req.header(STAFF_EMAIL_HEADER)?.trim().toLowerCase() || UPGRADED_BY_SYSTEM,
   });
   res.status(201).json({ dynasty, template: formatPromptResponse(template) });
 }));
