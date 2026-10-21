@@ -1,0 +1,427 @@
+[
+ {
+  "slug": "cold-click-website-click-named",
+  "name": "Website Click",
+  "description": "Gets a website visit by sending the prospect straight to your website, right after one sharp line about their problem.",
+  "signature": "Names the client. A sharp problem line, then the brand and its website URL as the ONLY call to action in every email. Aims for a click, never a reply or a call.",
+  "identity": "named",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_website_visit",
+  "versions": [
+   "cold-email-v12",
+   "cold-email-v14",
+   "cold-email-v16",
+   "cold-email-v31",
+   "cold-email-v35",
+   "cold-email-v42",
+   "cold-email-v43",
+   "cold-email-v44",
+   "cold-email-v51",
+   "cold-email-v52",
+   "cold-email-v53",
+   "cold-email-v65",
+   "cold-email-v66",
+   "cold-email-v67",
+   "cold-email-v68"
+  ],
+  "head": "cold-email-v68"
+ },
+ {
+  "slug": "cold-reply-free-offer-named",
+  "name": "Named Free Offer",
+  "description": "Gets a reply by offering the prospect something free from your list, made just for them, with your brand named.",
+  "signature": "Names the client. Offers something free from the client (its 'we give for free' list, else a made-for-them deliverable, audit or benchmark) and closes on a one-word yes/no or 'relevant for you?'.",
+  "identity": "named",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "blind-discovery-email-v9",
+   "blind-discovery-email-v10",
+   "blind-discovery-email-v9-landing",
+   "sample-offer-email-v1",
+   "blind-discovery-email-v32",
+   "blind-discovery-email-v9-landing-v2",
+   "sample-offer-email-v2",
+   "blind-discovery-email-v34",
+   "blind-discovery-email-v9-landing-v3",
+   "sample-offer-email-v3",
+   "blind-discovery-email-v36",
+   "blind-discovery-email-v37",
+   "blind-discovery-email-v38",
+   "blind-discovery-email-v39"
+  ],
+  "head": "blind-discovery-email-v39"
+ },
+ {
+  "slug": "cold-reply-intro-offer-blind",
+  "name": "Blind Intro Offer",
+  "description": "Gets a reply by offering the prospect an intro to your team, backed by one real result, while keeping your brand private.",
+  "signature": "Never names the client. The writer represents a team that has helped businesses like the prospect's, backs it with one real proof point, and asks if they want an intro. No deliverable promised.",
+  "identity": "blind",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "blind-discovery-email-v13",
+   "blind-discovery-email-v14",
+   "blind-discovery-email-v15",
+   "blind-discovery-email-v18",
+   "blind-discovery-email-v20",
+   "blind-discovery-email-v26",
+   "blind-discovery-email-v26-landing",
+   "blind-discovery-email-v31",
+   "blind-discovery-email-v26-landing-v2",
+   "blind-discovery-email-v33",
+   "blind-discovery-email-v26-landing-v3",
+   "blind-discovery-email-v33-no-url",
+   "blind-discovery-email-v22-no-url-spaced",
+   "blind-discovery-email-v26-landing-v3-no-url-spaced",
+   "blind-discovery-email-v21-no-url-spaced"
+  ],
+  "head": "blind-discovery-email-v21-no-url-spaced"
+ },
+ {
+  "slug": "cold-reply-observation-named",
+  "name": "Researched Observation",
+  "description": "Gets a reply by asking one smart question about the prospect's challenge, showing you studied their business, with your brand named.",
+  "signature": "Names the client in one plain sentence. Connects the prospect's real signals into a hypothesis about their tension and closes on a diagnostic question that tests it. Never a meeting ask, never an offer.",
+  "identity": "named",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "cold-email-v27",
+   "cold-email-v28",
+   "cold-email-v29",
+   "cold-email-v39",
+   "cold-email-v40",
+   "cold-email-v41",
+   "cold-email-v39-landing",
+   "cold-email-v49",
+   "cold-email-v50",
+   "cold-email-v39-landing-v2",
+   "cold-email-v58",
+   "cold-email-v59",
+   "cold-email-v39-landing-v3",
+   "cold-email-v59-no-url-spaced",
+   "cold-email-v40-no-url-spaced",
+   "cold-email-v39-landing-v3-no-url-spaced"
+  ],
+  "head": "cold-email-v39-landing-v3-no-url-spaced"
+ },
+ {
+  "slug": "cold-click-page-click-named",
+  "name": "Page Click",
+  "description": "Gets a website visit by pointing the prospect to one page of yours and saying exactly what they will find there.",
+  "signature": "Names the client. Observation, implied problem, then one sentence on exactly what the client's page shows, with the link as the only ask.",
+  "identity": "named",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_website_visit",
+  "versions": [
+   "sample-offer-click-email-v1"
+  ],
+  "head": "sample-offer-click-email-v1"
+ },
+ {
+  "slug": "cold-click-recommendation-stack-named",
+  "name": "Recommendation Stack",
+  "description": "Gets a website visit by recommending your brand in short punchy lines: their pain, your name, your proof, your link.",
+  "signature": "Names the client. No greeting, a vertical stack of one-line beats: prospect's pain, client name, a real de-risker, the bare URL, real urgency. Reply or click.",
+  "identity": "named",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_website_visit",
+  "versions": [
+   "cold-email-v19",
+   "cold-email-v32",
+   "cold-email-v33",
+   "cold-email-v36",
+   "cold-email-v38",
+   "cold-email-v45",
+   "cold-email-v46",
+   "cold-email-v47",
+   "cold-email-v48",
+   "cold-email-v54",
+   "cold-email-v55",
+   "cold-email-v56",
+   "cold-email-v57"
+  ],
+  "head": "cold-email-v57"
+ },
+ {
+  "slug": "cold-click-brand-first-stack-named",
+  "name": "Brand-First Stack",
+  "description": "Gets a website visit by stacking your proof and your link in short punchy lines, opening on your brand name.",
+  "signature": "Names the client in the FIRST line. Recommendation Stack without the pain opener: client name and what it does, de-risker, bare URL, urgency.",
+  "identity": "named",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_website_visit",
+  "versions": [
+   "cold-email-v61"
+  ],
+  "head": "cold-email-v61"
+ },
+ {
+  "slug": "cold-reply-three-line-reply-named",
+  "name": "Three-Line Reply",
+  "description": "Gets a reply by inviting a quick reply after presenting your brand in three lines, best proof first.",
+  "signature": "Names the client. Exactly three lines: what the client does, why it matters to this prospect (best proof first), a one-line reply ask.",
+  "identity": "named",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "yc-cold-email-v1"
+  ],
+  "head": "yc-cold-email-v1"
+ },
+ {
+  "slug": "cold-reply-free-offer-blind",
+  "name": "Blind Free Offer",
+  "description": "Gets a reply by offering the prospect something free from your list, like an audit or a benchmark, while keeping your brand private.",
+  "signature": "Never names the client. Research-backed pitch that offers the client's free gift (from its 'we give for free' list, else an audit or benchmark) and closes on a soft 'relevant for you?'.",
+  "identity": "blind",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "blind-discovery-email-v40",
+   "blind-discovery-email-v41",
+   "blind-discovery-email-v42",
+   "blind-discovery-email-v43",
+   "blind-discovery-email-v44",
+   "blind-discovery-email-v47"
+  ],
+  "head": "blind-discovery-email-v47"
+ },
+ {
+  "slug": "cold-reply-pain-question-blind",
+  "name": "Pain Question",
+  "description": "Gets a reply by asking the prospect if they face the problem you solve, while keeping your brand private.",
+  "signature": "Never names the client, pitches nothing. Opens on one sharp pain and asks only whether they are dealing with it.",
+  "identity": "blind",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "blind-discovery-email-v4"
+  ],
+  "head": "blind-discovery-email-v4"
+ },
+ {
+  "slug": "cold-click-three-line-click-named",
+  "name": "Three-Line Click",
+  "description": "Gets a website visit by inviting a click on your link after presenting your brand in three lines, best proof first.",
+  "signature": "Names the client. Same three lines as Three-Line Reply, but the only ask is a click on the client's link.",
+  "identity": "named",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_website_visit",
+  "versions": [
+   "yc-cold-email-click-v1"
+  ],
+  "head": "yc-cold-email-click-v1"
+ },
+ {
+  "slug": "cold-reply-contrarian-opener-named",
+  "name": "Contrarian Opener",
+  "description": "Gets a reply by grabbing attention with a bold truth about the prospect's market and asking for their thoughts, with your brand named.",
+  "signature": "Names the client. Opens on a bold, non-obvious truth about the prospect's world, frames the problem, ends on a soft 'Thoughts?'. No offer, no link ask.",
+  "identity": "named",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "cold-email",
+   "cold-email-v37",
+   "cold-email-v37-no-url-spaced"
+  ],
+  "head": "cold-email-v37-no-url-spaced"
+ },
+ {
+  "slug": "cold-reply-website-click-named",
+  "name": "Website Click",
+  "description": "Gets a reply by sending the prospect straight to your website, right after one sharp line about their problem.",
+  "signature": "Names the client. A sharp problem line, then the brand and its website URL as the ONLY call to action in every email. Aims for a click, never a reply or a call.",
+  "identity": "named",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "cold-email-v16",
+   "cold-email-v18"
+  ],
+  "head": "cold-email-v18"
+ },
+ {
+  "slug": "cold-click-brand-first-link-named",
+  "name": "Brand-First Link",
+  "description": "Gets a website visit by sending the prospect to your website, opening on what your brand does for them.",
+  "signature": "Names the client in the first line, no greeting, no problem opener. What the brand does for the reader, then the URL as the only ask (a click).",
+  "identity": "named",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_website_visit",
+  "versions": [
+   "cold-email-v60",
+   "cold-email-v63",
+   "cold-email-v64"
+  ],
+  "head": "cold-email-v64"
+ },
+ {
+  "slug": "cold-reply-one-line-free-offer-blind",
+  "name": "One-Line Free Offer",
+  "description": "Gets a reply by offering a free audit or insight in one single sentence, while keeping your brand private.",
+  "signature": "Never names the client. Greeting plus ONE sentence offering a free audit, benchmark or insight, then a tiny 'want me to send it?'.",
+  "identity": "blind",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "blind-discovery-email-v11",
+   "blind-discovery-email-v12"
+  ],
+  "head": "blind-discovery-email-v12"
+ },
+ {
+  "slug": "feedback-reply-feedback-gift-blind",
+  "name": "Blind Feedback Gift",
+  "description": "Gets a reply by offering your gift in exchange for quick feedback, keeping your brand private until the prospect replies.",
+  "signature": "Never names the client until the prospect replies. Offers a gift-for-feedback trade on behalf of an unnamed team.",
+  "identity": "blind",
+  "feature_slug": "feedback-request-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "feedback-request-blind-email-v1"
+  ],
+  "head": "feedback-request-blind-email-v1"
+ },
+ {
+  "slug": "cold-reply-client-rep-pitch-blind",
+  "name": "Client Rep Pitch",
+  "description": "Gets a reply by presenting your results, proof and guarantees with a free first step, while keeping your brand private.",
+  "signature": "Never names the client. Says up front it represents an unnamed client, stacks value levers (dream outcome, proof, risk reversal), closes on a zero-cost next step.",
+  "identity": "blind",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "blind-discovery-email-v5",
+   "blind-discovery-email-v6",
+   "blind-discovery-email-v7"
+  ],
+  "head": "blind-discovery-email-v7"
+ },
+ {
+  "slug": "feedback-reply-feedback-gift-named",
+  "name": "Named Feedback Gift",
+  "description": "Gets a reply by offering your gift and its value in exchange for quick feedback, with your brand named.",
+  "signature": "Names the client. Observation about the prospect, then the client's gift with its stated worth in exchange for small feedback, closes on a reaction question.",
+  "identity": "named",
+  "feature_slug": "feedback-request-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "feedback-request-giving-email-v1"
+  ],
+  "head": "feedback-request-giving-email-v1"
+ },
+ {
+  "slug": "cold-reply-volume-questions-blind",
+  "name": "Volume Questions",
+  "description": "Gets a reply by asking two quick questions about the prospect's prices and how they win customers today, while keeping your brand private.",
+  "signature": "Never names the client. Two one-line questions: what they would charge for a hypothetical volume of customers, and how they catch demand today.",
+  "identity": "blind",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "acquisition-questions-email-v1"
+  ],
+  "head": "acquisition-questions-email-v1"
+ },
+ {
+  "slug": "feedback-reply-diagnosis-gift-named",
+  "name": "Diagnosis Gift",
+  "description": "Gets a reply by offering your gift in exchange for quick feedback, after naming a challenge the prospect likely faces.",
+  "signature": "Names the client. Hypothesis about the prospect's tension first, then the client's gift, the feedback asked in return, and a diagnostic yes/no.",
+  "identity": "named",
+  "feature_slug": "feedback-request-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "feedback-request-observation-email-v1"
+  ],
+  "head": "feedback-request-observation-email-v1"
+ },
+ {
+  "slug": "cold-click-contrarian-opener-blind",
+  "name": "Blind Contrarian",
+  "description": "Gets a website visit by grabbing attention with a bold truth about the prospect's market and asking for their thoughts, while keeping your brand private.",
+  "signature": "Never names the client. Same bold-truth opener and soft 'Thoughts?' as Contrarian Opener.",
+  "identity": "blind",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_website_visit",
+  "versions": [
+   "cold-email-v6"
+  ],
+  "head": "cold-email-v6"
+ },
+ {
+  "slug": "cold-reply-give-first-insight-blind",
+  "name": "Give-First Insight",
+  "description": "Gets a reply by giving the prospect a useful insight in every email, while keeping your brand private.",
+  "signature": "Never names the client. Every email GIVES a useful insight grounded in what the client offers, no pain poking, no ask: the reply is left to the prospect.",
+  "identity": "blind",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "blind-discovery-email-v8"
+  ],
+  "head": "blind-discovery-email-v8"
+ },
+ {
+  "slug": "cold-click-contrarian-opener-named",
+  "name": "Contrarian Opener",
+  "description": "Gets a website visit by grabbing attention with a bold truth about the prospect's market and asking for their thoughts, with your brand named.",
+  "signature": "Names the client. Opens on a bold, non-obvious truth about the prospect's world, frames the problem, ends on a soft 'Thoughts?'. No offer, no link ask.",
+  "identity": "named",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_website_visit",
+  "versions": [
+   "cold-email"
+  ],
+  "head": "cold-email"
+ },
+ {
+  "slug": "cold-reply-intro-offer-named",
+  "name": "Named Intro Offer",
+  "description": "Gets a reply by offering the prospect an intro to your team, backed by one real result, with your brand named.",
+  "signature": "Names the client and its URL. Same intro offer as Blind Intro Offer: one real proof point, then 'want an intro?'. No deliverable promised.",
+  "identity": "named",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_conversation",
+  "versions": [
+   "blind-discovery-email-v16",
+   "blind-discovery-email-v17",
+   "blind-discovery-email-v21",
+   "blind-discovery-email-v22",
+   "blind-discovery-email-v23",
+   "blind-discovery-email-v24",
+   "blind-discovery-email-v25"
+  ],
+  "head": "blind-discovery-email-v25"
+ },
+ {
+  "slug": "cold-click-intro-offer-named",
+  "name": "Named Intro Offer",
+  "description": "Gets a website visit by offering the prospect an intro to your team, backed by one real result, with your brand named.",
+  "signature": "Names the client and its URL. Same intro offer as Blind Intro Offer: one real proof point, then 'want an intro?'. No deliverable promised.",
+  "identity": "named",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_website_visit",
+  "versions": [
+   "blind-discovery-email-v16"
+  ],
+  "head": "blind-discovery-email-v16"
+ },
+ {
+  "slug": "cold-click-intro-offer-blind",
+  "name": "Blind Intro Offer",
+  "description": "Gets a website visit by offering the prospect an intro to your team, backed by one real result, while keeping your brand private.",
+  "signature": "Never names the client. The writer represents a team that has helped businesses like the prospect's, backs it with one real proof point, and asks if they want an intro. No deliverable promised.",
+  "identity": "blind",
+  "feature_slug": "sales-cold-email-outreach",
+  "leg_key": "lead_found_to_website_visit",
+  "versions": [
+   "blind-discovery-email-v45"
+  ],
+  "head": "blind-discovery-email-v45"
+ }
+]

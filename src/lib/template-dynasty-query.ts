@@ -1,0 +1,195 @@
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { db } from "../db/index.js";
+import { prompts, templateDynasties, templateDynastyVersions } from "../db/schema.js";
+import { findNextVersionType } from "./prompt-versioning.js";
+import { assertBlindTemplateKeepsClientAnonymous, assertTemplateNeutral } from "./template-neutrality-guard.js";
+import type { JudgmentCaller } from "./judgments-client.js";
+import {
+  TemplateDynastyError,
+  assertVersionVariables,
+  dynastyNotFound,
+  headOf,
+  templateTwin,
+  type DynastyIdentity,
+  type DynastyResponse,
+  type TemplateVariable,
+} from "./template-dynasties.js";
+
+/** Reads and writes behind src/routes/template-dynasties.ts. Rules: template-dynasties.ts. */
+
+type DynastyRow = typeof templateDynasties.$inferSelect;
+type PromptRow = typeof prompts.$inferSelect;
+
+async function withVersions(rows: DynastyRow[]): Promise<DynastyResponse[]> {
+  if (rows.length === 0) return [];
+  const versions = await db
+    .select({
+      dynastySlug: templateDynastyVersions.dynastySlug,
+      type: templateDynastyVersions.promptType,
+      position: templateDynastyVersions.position,
+      addedAt: templateDynastyVersions.createdAt,
+      status: prompts.status,
+    })
+    .from(templateDynastyVersions)
+    .innerJoin(prompts, eq(prompts.type, templateDynastyVersions.promptType))
+    .where(inArray(templateDynastyVersions.dynastySlug, rows.map((r) => r.slug)))
+    .orderBy(asc(templateDynastyVersions.dynastySlug), asc(templateDynastyVersions.position));
+
+  return rows.map((row) => {
+    const own = versions
+      .filter((v) => v.dynastySlug === row.slug)
+      .map((v) => ({ type: v.type, position: v.position, status: v.status, addedAt: v.addedAt.toISOString() }));
+    return {
+      slug: row.slug,
+      name: row.name,
+      description: row.description,
+      signature: row.signature,
+      identity: row.identity,
+      featureSlug: row.featureSlug,
+      legKey: row.legKey,
+      head: headOf(own),
+      versions: own,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  });
+}
+
+/** Every dynasty, optionally of one pipe (feature slug, leg key, or both), by slug. */
+export async function listDynasties(filter: { featureSlug?: string; legKey?: string }): Promise<DynastyResponse[]> {
+  const conditions = [];
+  if (filter.featureSlug) conditions.push(eq(templateDynasties.featureSlug, filter.featureSlug));
+  if (filter.legKey) conditions.push(eq(templateDynasties.legKey, filter.legKey));
+  const rows = await db
+    .select()
+    .from(templateDynasties)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(asc(templateDynasties.slug));
+  return withVersions(rows);
+}
+
+export async function getDynasty(slug: string): Promise<DynastyResponse> {
+  const [row] = await db.select().from(templateDynasties).where(eq(templateDynasties.slug, slug));
+  if (!row) throw dynastyNotFound(slug);
+  const [dynasty] = await withVersions([row]);
+  return dynasty;
+}
+
+/** The template to write with for a dynasty: its head's stored row. */
+export async function resolveDynastyHead(slug: string): Promise<{ dynasty: DynastyResponse; template: PromptRow }> {
+  const dynasty = await getDynasty(slug);
+  if (!dynasty.head) {
+    throw new TemplateDynastyError(409, "DYNASTY_HAS_NO_VERSION", `Template dynasty "${slug}" has no version`);
+  }
+  const template = await db.query.prompts.findFirst({ where: eq(prompts.type, dynasty.head) });
+  if (!template) throw new Error(`Head "${dynasty.head}" of dynasty "${slug}" has no prompts row`);
+  return { dynasty, template };
+}
+
+/** The stored template whose text is byte-identical, if any. */
+export async function findTemplateTwin(prompt: string): Promise<string | null> {
+  const [twin] = await db
+    .select({ type: prompts.type })
+    .from(prompts)
+    .where(eq(prompts.prompt, prompt))
+    .orderBy(asc(prompts.createdAt))
+    .limit(1);
+  return twin?.type ?? null;
+}
+
+/**
+ * Add a version to a dynasty; it becomes the head. Refused: unknown dynasty (404), text
+ * byte-identical to ANY stored template (409 TEMPLATE_TWIN, twin named), a token the head
+ * does not declare (400), and the neutrality / blind checks (422) every stored template goes
+ * through, judged on what the version adds to the head. The blind check follows the dynasty's
+ * identity, not the type prefix. Type = next free `<head family>-vN`, so existing type
+ * families (and whatever reads their prefix) are unchanged.
+ */
+export async function addDynastyVersion(params: {
+  slug: string;
+  prompt: string;
+  variables: TemplateVariable[];
+  orgId: string | null;
+  caller: JudgmentCaller;
+}): Promise<{ dynasty: DynastyResponse; template: PromptRow }> {
+  const { slug, prompt, variables, orgId, caller } = params;
+  const { dynasty, template: head } = await resolveDynastyHead(slug);
+  const headVariables = (head.variables ?? []) as TemplateVariable[];
+
+  assertVersionVariables(prompt, variables, { type: head.type, variables: headVariables });
+
+  const twin = await findTemplateTwin(prompt);
+  if (twin) throw templateTwin(twin);
+
+  const inherited = { prompt: head.prompt, variables: headVariables };
+  await assertTemplateNeutral({ prompt, variables, inherited, caller });
+  await assertBlindTemplateKeepsClientAnonymous({
+    type: head.type,
+    prompt,
+    variables,
+    caller,
+    blind: dynasty.identity === "blind",
+  });
+
+  const newType = await findNextVersionType(head.type);
+  const template = await db.transaction(async (tx) => {
+    const [row] = await tx.insert(prompts).values({ orgId, type: newType, prompt, variables }).returning();
+    await tx.insert(templateDynastyVersions).values({
+      dynastySlug: slug,
+      promptType: newType,
+      position: sql`(SELECT COALESCE(MAX(position), 0) + 1 FROM template_dynasty_versions WHERE dynasty_slug = ${slug})`,
+    });
+    await tx.update(templateDynasties).set({ updatedAt: new Date() }).where(eq(templateDynasties.slug, slug));
+    return row;
+  });
+
+  console.log(`[template-dynasty] ${slug}: new head ${newType} (was ${head.type})`);
+  return { dynasty: await getDynasty(slug), template };
+}
+
+/** Create a dynasty over existing templates (chronological; the last is the head). */
+export async function createDynasty(input: {
+  slug: string;
+  name: string;
+  description: string;
+  signature: string;
+  identity: DynastyIdentity;
+  featureSlug: string;
+  legKey: string;
+  versions: string[];
+}): Promise<DynastyResponse> {
+  const unique = new Set(input.versions);
+  if (unique.size !== input.versions.length) {
+    throw new TemplateDynastyError(400, "DUPLICATE_VERSION", "versions lists a template twice");
+  }
+  const found = await db.select({ type: prompts.type }).from(prompts).where(inArray(prompts.type, input.versions));
+  const missing = input.versions.filter((t) => !found.some((f) => f.type === t));
+  if (missing.length > 0) {
+    throw new TemplateDynastyError(400, "UNKNOWN_TEMPLATE", `No template of type ${missing.join(", ")}`, { missing });
+  }
+
+  const clash = await db
+    .select({ slug: templateDynasties.slug, description: templateDynasties.description, name: templateDynasties.name, signature: templateDynasties.signature, featureSlug: templateDynasties.featureSlug, legKey: templateDynasties.legKey })
+    .from(templateDynasties);
+  for (const c of clash) {
+    const samePipe = c.featureSlug === input.featureSlug && c.legKey === input.legKey;
+    const field =
+      c.slug === input.slug ? "slug"
+      : c.description === input.description ? "description"
+      : samePipe && c.name === input.name ? "name"
+      : samePipe && c.signature === input.signature ? "signature"
+      : null;
+    if (field) {
+      throw new TemplateDynastyError(409, "DYNASTY_CONFLICT", `Dynasty "${c.slug}" already has this ${field}`, { field, dynastySlug: c.slug });
+    }
+  }
+
+  const { versions, ...fields } = input;
+  await db.transaction(async (tx) => {
+    await tx.insert(templateDynasties).values(fields);
+    await tx.insert(templateDynastyVersions).values(
+      versions.map((promptType, i) => ({ dynastySlug: input.slug, promptType, position: i + 1 })),
+    );
+  });
+  return getDynasty(input.slug);
+}

@@ -2,11 +2,10 @@ import { Router } from "express";
 import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { prompts } from "../db/schema.js";
-import { servedStatus } from "../lib/catalogue-status.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { CreatePromptRequestSchema, VersionPromptRequestSchema } from "../schemas.js";
 import { createPromptVersion } from "../lib/prompt-versioning.js";
-import { LEAD_CONTEXT_VARIABLES_PUBLISHED } from "../lib/lead-context-variables.js";
+import { formatPromptResponse } from "../lib/prompt-response.js";
 import { assertTemplateNeutral } from "../lib/template-neutrality-guard.js";
 import { templateWriteErrorResponse } from "../lib/template-neutrality.js";
 import type { JudgmentCaller } from "../lib/judgments-client.js";
@@ -17,24 +16,6 @@ const router = Router();
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function formatPromptResponse(row: typeof prompts.$inferSelect) {
-  return {
-    id: row.id,
-    type: row.type,
-    prompt: row.prompt,
-    variables: row.variables,
-    // Optional lead + organization inputs every template accepts, whether or not
-    // its body declares a {{token}} for them. Published here so a caller builds
-    // its variable mapping from the live contract rather than from a document.
-    contextVariables: LEAD_CONTEXT_VARIABLES_PUBLISHED,
-    // Staff catalogue status (src/lib/catalogue-status.ts): a NEW workflow must not name a
-    // deprecated template. Read here by workflow-service's validator; never by /generate.
-    ...servedStatus(row),
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-  };
-}
 
 /** Org-billed neutrality judgment under the inbound identity (serviceAuth guarantees runId). */
 function orgCaller(req: AuthenticatedRequest): JudgmentCaller {

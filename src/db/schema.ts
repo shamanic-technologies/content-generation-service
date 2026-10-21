@@ -1,4 +1,4 @@
-import { pgTable, pgView, uuid, text, timestamp, uniqueIndex, index, integer, jsonb, boolean, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, pgView, uuid, text, timestamp, uniqueIndex, index, integer, jsonb, boolean, doublePrecision, primaryKey } from "drizzle-orm/pg-core";
 
 // Email generations
 export const emailGenerations = pgTable(
@@ -200,6 +200,46 @@ export const templateNeutralityJudgments = pgTable("template_neutrality_judgment
   runId: text("run_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Template dynasty (TPL-DYNASTY-1021-CG): one email strategy on ONE pipe (feature_slug x
+// leg_key), cross-org. Its versions are prompts rows, ordered; the head (highest position)
+// is the template every workflow on the dynasty writes with. See src/lib/template-dynasties.ts.
+export const templateDynasties = pgTable(
+  "template_dynasties",
+  {
+    slug: text("slug").primaryKey(),
+    name: text("name").notNull(),
+    // One sentence shown to clients. Unique across the catalogue.
+    description: text("description").notNull(),
+    // What makes it unique; the guideline every upgrade must respect. Unique per pipe.
+    signature: text("signature").notNull(),
+    identity: text("identity").$type<"blind" | "named">().notNull(),
+    featureSlug: text("feature_slug").notNull(),
+    legKey: text("leg_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("idx_template_dynasties_description").on(table.description),
+    uniqueIndex("idx_template_dynasties_pipe_name").on(table.featureSlug, table.legKey, table.name),
+    uniqueIndex("idx_template_dynasties_pipe_signature").on(table.featureSlug, table.legKey, table.signature),
+  ]
+);
+
+// A dynasty's versions, in order. A prompt type may sit in two dynasties (it ran on two pipes).
+export const templateDynastyVersions = pgTable(
+  "template_dynasty_versions",
+  {
+    dynastySlug: text("dynasty_slug").notNull().references(() => templateDynasties.slug),
+    promptType: text("prompt_type").notNull().references(() => prompts.type),
+    position: integer("position").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ name: "template_dynasty_versions_pk", columns: [table.dynastySlug, table.promptType] }),
+    uniqueIndex("idx_template_dynasty_versions_position").on(table.dynastySlug, table.position),
+  ]
+);
 
 // Per-feature prompt assignment — maps a feature slug to the prompt type rendered
 // when generating for that feature. Feature-global (NOT org/brand-scoped): the

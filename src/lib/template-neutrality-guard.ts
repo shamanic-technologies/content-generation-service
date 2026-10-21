@@ -126,9 +126,15 @@ export async function assertBlindTemplateKeepsClientAnonymous(params: {
   prompt: string;
   variables: ReadonlyArray<TemplateVariable>;
   caller: JudgmentCaller;
+  /**
+   * Whether the template is blind. Default: read from the type prefix. A dynasty version
+   * passes its dynasty's identity instead: the identity is the truth, some historical
+   * type names say otherwise (template-dynasties.ts).
+   */
+  blind?: boolean;
 }): Promise<void> {
   const { type, prompt, variables, caller } = params;
-  if (!isBlindTemplateType(type)) return;
+  if (!(params.blind ?? isBlindTemplateType(type))) return;
   const contentKey = blindTemplateRuleKey(prompt, variables);
 
   const stored = await db.query.templateNeutralityJudgments.findFirst({
