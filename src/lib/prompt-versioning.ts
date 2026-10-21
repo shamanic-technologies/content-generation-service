@@ -3,6 +3,7 @@ import { db } from "../db/index.js";
 import { prompts } from "../db/schema.js";
 import { assertTemplateNeutral } from "./template-neutrality-guard.js";
 import type { JudgmentCaller } from "./judgments-client.js";
+import { assertNotDynastySource } from "./dynasty-membership.js";
 
 /**
  * Find the next available versioned type name.
@@ -73,6 +74,9 @@ export async function createPromptVersion(
   ) {
     return { row: source, created: false };
   }
+
+  // A version of a dynasty is added to its dynasty, never forked loose (TPL-DYNASTY-ROWS-1021-CG).
+  if (source) await assertNotDynastySource(sourceType);
 
   // Judged on what it changes: passages carried over unchanged from the source
   // are not re-judged (the source may predate the check).

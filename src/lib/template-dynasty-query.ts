@@ -1,16 +1,20 @@
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { prompts, templateDynasties, templateDynastyVersions } from "../db/schema.js";
+import { emailGenerations, prompts, templateDynasties, templateDynastyVersions } from "../db/schema.js";
+import { servedStatus } from "./catalogue-status.js";
+export { assertMayActivate, assertNotDynastySource } from "./dynasty-membership.js";
+import { outputEmails, type TemplateOutput } from "./catalogue-status-query.js";
 import { findNextVersionType } from "./prompt-versioning.js";
 import { assertBlindTemplateKeepsClientAnonymous, assertTemplateNeutral } from "./template-neutrality-guard.js";
 import type { JudgmentCaller } from "./judgments-client.js";
 import {
   TemplateDynastyError,
+  UPGRADED_BY_SYSTEM,
   UPGRADED_REASON,
+  applyDynastyStatus,
   assertVariablesMatchText,
   assertVersionVariables,
   dynastyNotFound,
-  headOf,
   templateTwin,
   type DynastyIdentity,
   type DynastyResponse,
@@ -64,6 +68,9 @@ async function withVersions(rows: DynastyRow[]): Promise<DynastyResponse[]> {
       position: templateDynastyVersions.position,
       addedAt: templateDynastyVersions.createdAt,
       status: prompts.status,
+      statusReason: prompts.statusReason,
+      statusChangedBy: prompts.statusChangedBy,
+      statusChangedAt: prompts.statusChangedAt,
     })
     .from(templateDynastyVersions)
     .innerJoin(prompts, eq(prompts.type, templateDynastyVersions.promptType))
@@ -71,9 +78,11 @@ async function withVersions(rows: DynastyRow[]): Promise<DynastyResponse[]> {
     .orderBy(asc(templateDynastyVersions.dynastySlug), asc(templateDynastyVersions.position));
 
   return rows.map((row) => {
-    const own = versions
-      .filter((v) => v.dynastySlug === row.slug)
-      .map((v) => ({ type: v.type, position: v.position, status: v.status, addedAt: v.addedAt.toISOString() }));
+    const { head, versions: own, status } = applyDynastyStatus(
+      versions
+        .filter((v) => v.dynastySlug === row.slug)
+        .map((v) => ({ type: v.type, position: v.position, addedAt: v.addedAt.toISOString(), ...servedStatus(v) })),
+    );
     return {
       slug: row.slug,
       name: row.name,
@@ -82,7 +91,8 @@ async function withVersions(rows: DynastyRow[]): Promise<DynastyResponse[]> {
       identity: row.identity,
       featureSlug: row.featureSlug,
       legKey: row.legKey,
-      head: headOf(own),
+      ...status,
+      head,
       versions: own,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
@@ -233,7 +243,7 @@ export async function createDynasty(input: {
 } & (
   | { versions: string[]; template?: undefined }
   | { template: NewDynastyTemplate; versions?: undefined }
-), options: { orgId?: string | null; caller?: JudgmentCaller } = {}): Promise<DynastyResponse> {
+), options: { orgId?: string | null; caller?: JudgmentCaller; changedBy?: string } = {}): Promise<DynastyResponse> {
   const { versions: listed, template, ...fields } = input;
 
   if (listed) {
@@ -293,7 +303,58 @@ export async function createDynasty(input: {
     await tx.insert(templateDynastyVersions).values(
       versions.map((promptType, i) => ({ dynastySlug: input.slug, promptType, position: i + 1 })),
     );
+    // Only the head may be Active: the older versions listed are deprecated "Upgraded" (unless they head another dynasty).
+    const older = versions.slice(0, -1);
+    if (older.length > 0) {
+      const deprecated = await deprecateUpgradedVersions(tx, { changedBy: options.changedBy ?? UPGRADED_BY_SYSTEM, onlyTypes: older });
+      if (deprecated.length) console.log(`[template-dynasty] ${input.slug}: created; deprecated ${deprecated.join(", ")} (${UPGRADED_REASON})`);
+    }
   });
   if (template) console.log(`[template-dynasty] ${input.slug}: created from a new text, head ${newType}`);
   return getDynasty(input.slug);
+}
+
+export interface DynastyOutput extends TemplateOutput {
+  /** The exact version that wrote it. */
+  promptType: string;
+}
+
+/**
+ * The last `limit` generations written with ANY version of a dynasty, newest first, every org
+ * (same fields as a template's outputs, plus the version). A version shared with a dynasty on
+ * another pipe brings that pipe's generations too: a generation records no leg.
+ */
+export async function readDynastyOutputs(slug: string, limit: number): Promise<{ dynasty: DynastyResponse; outputs: DynastyOutput[] }> {
+  const dynasty = await getDynasty(slug);
+  const types = dynasty.versions.map((v) => v.type);
+  if (types.length === 0) return { dynasty, outputs: [] };
+  const g = emailGenerations;
+  const rows = await db
+    .select({
+      id: g.id,
+      createdAt: g.createdAt,
+      promptType: g.promptType,
+      workflowSlug: g.workflowSlug,
+      model: g.model,
+      subject: g.subject,
+      bodyText: g.bodyText,
+      bodyHtml: g.bodyHtml,
+      sequence: g.sequence,
+    })
+    .from(g)
+    .where(inArray(g.promptType, types))
+    .orderBy(desc(g.createdAt), desc(g.id))
+    .limit(limit);
+  return {
+    dynasty,
+    outputs: rows.map((r) => ({
+      generationId: r.id,
+      createdAt: new Date(r.createdAt).toISOString(),
+      promptType: r.promptType!,
+      workflowSlug: r.workflowSlug,
+      model: r.model,
+      subject: r.subject,
+      emails: outputEmails(r),
+    })),
+  };
 }
