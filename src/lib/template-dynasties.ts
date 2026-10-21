@@ -98,7 +98,6 @@ export function assertVersionVariables(
   head: { type: string; variables: ReadonlyArray<TemplateVariable> },
 ): void {
   const tokens = new Set(extractTemplateVariableNames(prompt));
-  const declared = new Set(variables.map((v) => v.name));
   const headNames = new Set(head.variables.map((v) => v.name));
 
   const added = [...tokens].filter((t) => !headNames.has(t));
@@ -110,6 +109,13 @@ export function assertVersionVariables(
       { variables: added },
     );
   }
+  assertVariablesMatchText(prompt, variables);
+}
+
+/** The declared `variables` must be exactly the {{tokens}} the text uses (VARIABLES_MISMATCH). */
+export function assertVariablesMatchText(prompt: string, variables: ReadonlyArray<TemplateVariable>): void {
+  const tokens = new Set(extractTemplateVariableNames(prompt));
+  const declared = new Set(variables.map((v) => v.name));
   const undeclared = [...tokens].filter((t) => !declared.has(t));
   const unused = [...declared].filter((d) => !tokens.has(d));
   if (undeclared.length > 0 || unused.length > 0) {

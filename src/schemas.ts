@@ -2090,7 +2090,28 @@ export const CreateTemplateDynastyRequestSchema = registry.register(
       identity: z.enum(DYNASTY_IDENTITIES),
       featureSlug: z.string().min(1),
       legKey: z.string().min(1),
-      versions: z.array(z.string().min(1)).min(1).describe("Existing template types, oldest first; the last is the head."),
+      versions: z
+        .array(z.string().min(1))
+        .min(1)
+        .optional()
+        .describe("Existing template types, oldest first; the last is the head. Exactly one of `versions` / `template`."),
+      template: z
+        .object({
+          type: z
+            .string()
+            .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "type must be lowercase kebab-case")
+            .optional()
+            .describe("Type to store the new template under; default `<slug>-v1`. Later versions are `<family>-vN`."),
+          prompt: z.string().min(1).describe("The full text of a brand-new template. Must differ from every stored template."),
+          variables: z.array(PromptVariableSchema).describe("Exactly the {{tokens}} the text uses."),
+        })
+        .strict()
+        .optional()
+        .describe("A brand-new template, stored as the dynasty's first version and head. Exactly one of `versions` / `template`."),
+    })
+    .refine((b) => (b.versions === undefined) !== (b.template === undefined), {
+      message: "send exactly one of `versions` (existing templates) or `template` (a new text)",
+      path: ["versions"],
     })
     .openapi("CreateTemplateDynastyRequest")
 );
@@ -2148,13 +2169,19 @@ registry.registerPath({
   method: "post",
   path: "/internal/template-dynasties",
   tags: ["Template dynasties"],
-  summary: "Create a dynasty over existing templates",
-  description: `${dynastyNote} The versions must already be stored templates; the last listed is the head.`,
+  summary: "Create a dynasty, over existing templates or from a brand-new text",
+  description:
+    `${dynastyNote} Either \`versions\` (already-stored templates, the last listed is the head) or \`template\` ` +
+    "(a new text + its variables, stored as the first version and head, under `template.type` or `<slug>-v1`). " +
+    "A new text is judged like every stored template (brand/offer neutrality; the blind rule when the dynasty is blind), " +
+    "in full, billed to the platform. Nothing is stored on any refusal.",
   request: { body: { content: { "application/json": { schema: CreateTemplateDynastyRequestSchema } } } },
   responses: {
     201: { description: "Created", content: { "application/json": { schema: TemplateDynastySchema } } },
-    400: { description: "Invalid body, a template listed twice (`DUPLICATE_VERSION`) or unknown (`UNKNOWN_TEMPLATE`)", content: { "application/json": { schema: DynastyErrorSchema } } },
-    409: { description: "`DYNASTY_CONFLICT`: slug or description taken, or name/signature taken on the same pipe (`field`, `dynastySlug`)", content: { "application/json": { schema: DynastyErrorSchema } } },
+    400: { description: "Invalid body (neither or both of `versions` / `template`), a template listed twice (`DUPLICATE_VERSION`) or unknown (`UNKNOWN_TEMPLATE`), or `template.variables` not exactly the text's tokens (`VARIABLES_MISMATCH`)", content: { "application/json": { schema: DynastyErrorSchema } } },
+    409: { description: "`DYNASTY_CONFLICT`: slug or description taken, or name/signature taken on the same pipe (`field`, `dynastySlug`); `TEMPLATE_TYPE_TAKEN` (`type`); `TEMPLATE_TWIN`: the new text is byte-identical to the stored template `twinType`", content: { "application/json": { schema: DynastyErrorSchema } } },
+    422: { description: "`TEMPLATE_NOT_NEUTRAL` or `BLIND_TEMPLATE_REVEALS_CLIENT`, with the `passages` refused", content: { "application/json": { schema: DynastyErrorSchema } } },
+    502: { description: "`TEMPLATE_NEUTRALITY_CHECK_FAILED`: the judgment could not run (402/429 kept); nothing stored", content: { "application/json": { schema: DynastyErrorSchema } } },
   },
 });
 
