@@ -2459,25 +2459,45 @@
         ]
       },
       "AddTemplateDynastyVersionRequest": {
-        "type": "object",
-        "properties": {
-          "prompt": {
-            "type": "string",
-            "minLength": 1,
-            "description": "The new version's full text. Must differ from every stored template."
-          },
-          "variables": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PromptVariable"
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "prompt": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The new version's full text. Must differ from every stored template."
+              },
+              "variables": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PromptVariable"
+                },
+                "description": "Exactly the {{tokens}} the text uses, each one declared by the current head (the workflows on the dynasty send those)."
+              }
             },
-            "description": "Exactly the {{tokens}} the text uses, each one declared by the current head (the workflows on the dynasty send those)."
+            "required": [
+              "prompt",
+              "variables"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 1,
+                "description": "An ALREADY-STORED template to append as the head (same checks; refused if already a version of this dynasty)."
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "prompt",
-          "variables"
-        ]
+        ],
+        "description": "Either a new text (`prompt` + `variables`) or an existing template (`type`)."
       },
       "TemplateDynastyWithTemplate": {
         "type": "object",
@@ -5388,7 +5408,7 @@
             }
           },
           "400": {
-            "description": "Invalid body, a token the head does not declare (`VARIABLE_NOT_IN_HEAD`), or variables not matching the text (`VARIABLES_MISMATCH`)",
+            "description": "Invalid body, a token the head does not declare (`VARIABLE_NOT_IN_HEAD`), variables not matching the text (`VARIABLES_MISMATCH`), or an unknown `type` (`UNKNOWN_TEMPLATE`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -5436,7 +5456,7 @@
             }
           },
           "409": {
-            "description": "`TEMPLATE_TWIN`: the text is byte-identical to the stored template `twinType`; or `DYNASTY_HAS_NO_VERSION`",
+            "description": "`TEMPLATE_TWIN`: the text is byte-identical to another stored template `twinType`; `ALREADY_IN_DYNASTY`; or `DYNASTY_HAS_NO_VERSION`",
             "content": {
               "application/json": {
                 "schema": {

@@ -86,7 +86,7 @@ describe("template dynasties", () => {
     await seedDynasty("blind");
     const text = `${TAG} v3 fixed spacing {{leadFirstName}}`;
     const { dynasty, template } = await addDynastyVersion({
-      slug: SLUG, prompt: text, variables: [VARS[0]], orgId: null, caller: CALLER,
+      slug: SLUG, version: { prompt: text, variables: [VARS[0]] }, orgId: null, caller: CALLER,
     });
     expect(template.type).toBe(`${FAMILY}-v3`);
     expect(dynasty.head).toBe(`${FAMILY}-v3`);
@@ -102,16 +102,35 @@ describe("template dynasties", () => {
   it("refuses a text byte-identical to any stored template, naming the twin, nothing stored", async () => {
     await seedDynasty();
     await expect(addDynastyVersion({
-      slug: SLUG, prompt: `${TAG} v1 {{leadFirstName}} {{brands}}`, variables: VARS, orgId: null, caller: CALLER,
+      slug: SLUG, version: { prompt: `${TAG} v1 {{leadFirstName}} {{brands}}`, variables: VARS }, orgId: null, caller: CALLER,
     })).rejects.toMatchObject({ status: 409, code: "TEMPLATE_TWIN", extra: { twinType: FAMILY } });
     expect((await getDynasty(SLUG)).head).toBe(`${FAMILY}-v2`);
     expect(guard.assertTemplateNeutral).not.toHaveBeenCalled();
   });
 
+  it("appends an already-stored template as the head (not a twin of itself), once", async () => {
+    await seedDynasty("blind");
+    const type = `${FAMILY}-v47-spaced`;
+    await db.insert(prompts).values({ type, prompt: `${TAG} spaced {{leadFirstName}} {{brands}}`, variables: VARS });
+    const { dynasty, template } = await addDynastyVersion({ slug: SLUG, version: { type }, orgId: null, caller: CALLER });
+    expect(template.type).toBe(type);
+    expect(dynasty.head).toBe(type);
+    expect(dynasty.versions.map((v) => v.position)).toEqual([1, 2, 3]);
+    expect(guard.assertBlindTemplateKeepsClientAnonymous).toHaveBeenCalledWith(expect.objectContaining({ type, blind: true }));
+    await expect(addDynastyVersion({ slug: SLUG, version: { type }, orgId: null, caller: CALLER }))
+      .rejects.toMatchObject({ status: 409, code: "ALREADY_IN_DYNASTY" });
+    await expect(addDynastyVersion({ slug: SLUG, version: { type: `${TAG}-nope` }, orgId: null, caller: CALLER }))
+      .rejects.toMatchObject({ code: "UNKNOWN_TEMPLATE" });
+    // A stored template whose text duplicates another one is still a twin.
+    await db.insert(prompts).values({ type: `${FAMILY}-dup`, prompt: `${TAG} v1 {{leadFirstName}} {{brands}}`, variables: VARS });
+    await expect(addDynastyVersion({ slug: SLUG, version: { type: `${FAMILY}-dup` }, orgId: null, caller: CALLER }))
+      .rejects.toMatchObject({ code: "TEMPLATE_TWIN", extra: { twinType: FAMILY } });
+  });
+
   it("refuses a token the head does not declare, and an unknown dynasty", async () => {
     await seedDynasty();
     await expect(addDynastyVersion({
-      slug: SLUG, prompt: `${TAG} {{newThing}}`, variables: [{ name: "newThing", description: "" }], orgId: null, caller: CALLER,
+      slug: SLUG, version: { prompt: `${TAG} {{newThing}}`, variables: [{ name: "newThing", description: "" }] }, orgId: null, caller: CALLER,
     })).rejects.toMatchObject({ code: "VARIABLE_NOT_IN_HEAD" });
     await expect(getDynasty(`${TAG}-missing`)).rejects.toMatchObject({ status: 404, code: "DYNASTY_NOT_FOUND" });
   });
