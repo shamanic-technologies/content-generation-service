@@ -2305,6 +2305,202 @@
           "outputs"
         ]
       },
+      "TemplateDynasty": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Unique, stable id of the dynasty."
+          },
+          "name": {
+            "type": "string",
+            "description": "Short name, unique per pipe."
+          },
+          "description": {
+            "type": "string",
+            "description": "One sentence shown to clients. Unique across the catalogue."
+          },
+          "signature": {
+            "type": "string",
+            "description": "Internal: what makes this dynasty unique, the guideline every new version must respect. Unique per pipe."
+          },
+          "identity": {
+            "type": "string",
+            "enum": [
+              "blind",
+              "named"
+            ],
+            "description": "`blind` = the email never names the client; `named` = it does. Never the model's choice."
+          },
+          "featureSlug": {
+            "type": "string",
+            "description": "Pipe: the feature, e.g. `sales-cold-email-outreach`."
+          },
+          "legKey": {
+            "type": "string",
+            "description": "Pipe: the leg, e.g. `lead_found_to_conversation`."
+          },
+          "head": {
+            "type": "string",
+            "nullable": true,
+            "description": "Template type of the latest version: the one to write with. Null only for a dynasty with no version."
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "description": "Template type (readable alone via GET /prompts?type=)."
+                },
+                "position": {
+                  "type": "integer",
+                  "description": "1 = oldest; the highest is the head."
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "deprecated"
+                  ],
+                  "description": "The template's own staff status."
+                },
+                "addedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "position",
+                "status",
+                "addedAt"
+              ]
+            },
+            "description": "Oldest first. A template type may also be a version of a dynasty on another pipe."
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "description",
+          "signature",
+          "identity",
+          "featureSlug",
+          "legKey",
+          "head",
+          "versions",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "CreateTemplateDynastyRequest": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "signature": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "identity": {
+            "type": "string",
+            "enum": [
+              "blind",
+              "named"
+            ]
+          },
+          "featureSlug": {
+            "type": "string",
+            "minLength": 1
+          },
+          "legKey": {
+            "type": "string",
+            "minLength": 1
+          },
+          "versions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "description": "Existing template types, oldest first; the last is the head."
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "description",
+          "signature",
+          "identity",
+          "featureSlug",
+          "legKey",
+          "versions"
+        ]
+      },
+      "AddTemplateDynastyVersionRequest": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The new version's full text. Must differ from every stored template."
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PromptVariable"
+            },
+            "description": "Exactly the {{tokens}} the text uses, each one declared by the current head (the workflows on the dynasty send those)."
+          }
+        },
+        "required": [
+          "prompt",
+          "variables"
+        ]
+      },
+      "TemplateDynastyWithTemplate": {
+        "type": "object",
+        "properties": {
+          "dynasty": {
+            "$ref": "#/components/schemas/TemplateDynasty"
+          },
+          "template": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PromptResponse"
+              },
+              {
+                "description": "The head's stored template."
+              }
+            ]
+          }
+        },
+        "required": [
+          "dynasty",
+          "template"
+        ]
+      },
       "OrgId": {
         "type": "string"
       },
@@ -4877,6 +5073,436 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/template-dynasties": {
+      "get": {
+        "tags": [
+          "Template dynasties"
+        ],
+        "summary": "List template dynasties, optionally of one pipe",
+        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Only dynasties of this feature"
+            },
+            "required": false,
+            "description": "Only dynasties of this feature",
+            "name": "featureSlug",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Only dynasties of this leg"
+            },
+            "required": false,
+            "description": "Only dynasties of this leg",
+            "name": "legKey",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dynasties by slug",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "dynasties": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TemplateDynasty"
+                      }
+                    }
+                  },
+                  "required": [
+                    "dynasties"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Template dynasties"
+        ],
+        "summary": "Create a dynasty over existing templates",
+        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`). The versions must already be stored templates; the last listed is the head.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTemplateDynastyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDynasty"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, a template listed twice (`DUPLICATE_VERSION`) or unknown (`UNKNOWN_TEMPLATE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`DYNASTY_CONFLICT`: slug or description taken, or name/signature taken on the same pipe (`field`, `dynastySlug`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/template-dynasties/{slug}": {
+      "get": {
+        "tags": [
+          "Template dynasties"
+        ],
+        "summary": "One dynasty with its versions and head",
+        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Dynasty slug, e.g. `cold-reply-intro-offer-blind`"
+            },
+            "required": true,
+            "description": "Dynasty slug, e.g. `cold-reply-intro-offer-blind`",
+            "name": "slug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dynasty",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDynasty"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`DYNASTY_NOT_FOUND`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/template-dynasties/{slug}/head": {
+      "get": {
+        "tags": [
+          "Template dynasties"
+        ],
+        "summary": "The template to write with for a dynasty (its head)",
+        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`). Send `template.type` as the /generate `type`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Dynasty slug, e.g. `cold-reply-intro-offer-blind`"
+            },
+            "required": true,
+            "description": "Dynasty slug, e.g. `cold-reply-intro-offer-blind`",
+            "name": "slug",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dynasty + head template",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDynastyWithTemplate"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`DYNASTY_NOT_FOUND`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`DYNASTY_HAS_NO_VERSION`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/template-dynasties/{slug}/versions": {
+      "post": {
+        "tags": [
+          "Template dynasties"
+        ],
+        "summary": "Add a version to a dynasty; it becomes the head",
+        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`). The new template is stored under the next free `<head family>-vN` type. Judged like every stored template (brand/offer neutrality; the blind rule when the dynasty is blind), on what it adds to the head, billed to the platform.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Dynasty slug, e.g. `cold-reply-intro-offer-blind`"
+            },
+            "required": true,
+            "description": "Dynasty slug, e.g. `cold-reply-intro-offer-blind`",
+            "name": "slug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddTemplateDynastyVersionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Version added; `template` is the new head",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDynastyWithTemplate"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, a token the head does not declare (`VARIABLE_NOT_IN_HEAD`), or variables not matching the text (`VARIABLES_MISMATCH`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`DYNASTY_NOT_FOUND`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`TEMPLATE_TWIN`: the text is byte-identical to the stored template `twinType`; or `DYNASTY_HAS_NO_VERSION`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`TEMPLATE_NOT_NEUTRAL` or `BLIND_TEMPLATE_REVEALS_CLIENT`, with the passages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`TEMPLATE_NEUTRALITY_CHECK_FAILED`: nothing stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
                 }
               }
             }
