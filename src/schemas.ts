@@ -2078,7 +2078,7 @@ export const TemplateDynastySchema = registry.register(
           z.object({
             type: z.string().describe("Template type (readable alone via GET /prompts?type=)."),
             position: z.number().int().describe("1 = oldest; the highest is the head."),
-            status: z.enum(["active", "deprecated"]).describe("The template's own staff status (a template heading a dynasty on another pipe stays active there)."),
+            status: z.enum(["active", "deprecated"]).describe("The template's own staff status. A template belongs to one dynasty, so it equals `statusInDynasty`."),
             statusInDynasty: z
               .enum(["active", "deprecated"])
               .describe("Its status IN this dynasty: the head's own status; every older version `deprecated`. Show this on a dynasty's version list."),
@@ -2086,10 +2086,14 @@ export const TemplateDynastySchema = registry.register(
               .string()
               .nullable()
               .describe("Why it is deprecated in this dynasty: the template's stated reason, else `Upgraded`. Null when active."),
+            copiedFrom: z
+              .string()
+              .nullable()
+              .describe("The template this version was copied from when a text shared by two dynasties was split (2026-10-21). Emails this dynasty's pipe sent BEFORE the split are recorded under that original name. Null otherwise."),
             addedAt: z.string(),
           })
         )
-        .describe("Oldest first. A template type may also be a version of a dynasty on another pipe."),
+        .describe("Oldest first. A template belongs to ONE dynasty: no type appears in two."),
       createdAt: z.string(),
       updatedAt: z.string(),
     })
@@ -2213,7 +2217,7 @@ registry.registerPath({
   responses: {
     201: { description: "Created", content: { "application/json": { schema: TemplateDynastySchema } } },
     400: { description: "Invalid body (neither or both of `versions` / `template`), a template listed twice (`DUPLICATE_VERSION`) or unknown (`UNKNOWN_TEMPLATE`), or `template.variables` not exactly the text's tokens (`VARIABLES_MISMATCH`)", content: { "application/json": { schema: DynastyErrorSchema } } },
-    409: { description: "`DYNASTY_CONFLICT`: slug or description taken, or name/signature taken on the same pipe (`field`, `dynastySlug`); `TEMPLATE_TYPE_TAKEN` (`type`); `TEMPLATE_TWIN`: the new text is byte-identical to the stored template `twinType`", content: { "application/json": { schema: DynastyErrorSchema } } },
+    409: { description: "`DYNASTY_CONFLICT`: slug or description taken, or name/signature taken on the same pipe (`field`, `dynastySlug`); `TEMPLATE_TYPE_TAKEN` (`type`); `TEMPLATE_TWIN`: the new text is byte-identical to the stored template `twinType`; `TEMPLATE_IN_OTHER_DYNASTY`: a listed template is already a version of `dynastySlug` (a template belongs to one dynasty)", content: { "application/json": { schema: DynastyErrorSchema } } },
     422: { description: "`TEMPLATE_NOT_NEUTRAL` or `BLIND_TEMPLATE_REVEALS_CLIENT`, with the `passages` refused", content: { "application/json": { schema: DynastyErrorSchema } } },
     502: { description: "`TEMPLATE_NEUTRALITY_CHECK_FAILED`: the judgment could not run (402/429 kept); nothing stored", content: { "application/json": { schema: DynastyErrorSchema } } },
   },
@@ -2278,7 +2282,7 @@ registry.registerPath({
     201: { description: "Version added; `template` is the new head", content: { "application/json": { schema: TemplateDynastyWithTemplateSchema } } },
     400: { description: "Invalid body, a token the head does not declare (`VARIABLE_NOT_IN_HEAD`), variables not matching the text (`VARIABLES_MISMATCH`), or an unknown `type` (`UNKNOWN_TEMPLATE`)", content: { "application/json": { schema: DynastyErrorSchema } } },
     404: { description: "`DYNASTY_NOT_FOUND`", content: { "application/json": { schema: DynastyErrorSchema } } },
-    409: { description: "`TEMPLATE_TWIN`: the text is byte-identical to another stored template `twinType`; `ALREADY_IN_DYNASTY`; or `DYNASTY_HAS_NO_VERSION`", content: { "application/json": { schema: DynastyErrorSchema } } },
+    409: { description: "`TEMPLATE_TWIN`: the text is byte-identical to another stored template `twinType`; `ALREADY_IN_DYNASTY`; `TEMPLATE_IN_OTHER_DYNASTY` (a template belongs to one dynasty); or `DYNASTY_HAS_NO_VERSION`", content: { "application/json": { schema: DynastyErrorSchema } } },
     422: { description: "`TEMPLATE_NOT_NEUTRAL` or `BLIND_TEMPLATE_REVEALS_CLIENT`, with the passages", content: { "application/json": { schema: DynastyErrorSchema } } },
     502: { description: "`TEMPLATE_NEUTRALITY_CHECK_FAILED`: nothing stored", content: { "application/json": { schema: DynastyErrorSchema } } },
   },

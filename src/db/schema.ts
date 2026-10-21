@@ -166,6 +166,9 @@ export const prompts = pgTable(
     // carries both; NULL on a deprecated row = deprecated before reasons existed.
     statusReason: text("status_reason"),
     statusChangedBy: text("status_changed_by"),
+    // The template this row was copied from when a text shared by two dynasties was split
+    // (drizzle/0038): past emails of the copy's pipe are recorded under this original name.
+    copiedFrom: text("copied_from"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -226,7 +229,7 @@ export const templateDynasties = pgTable(
   ]
 );
 
-// A dynasty's versions, in order. A prompt type may sit in two dynasties (it ran on two pipes).
+// A dynasty's versions, in order. A template belongs to ONE dynasty (unique prompt_type, drizzle/0038).
 export const templateDynastyVersions = pgTable(
   "template_dynasty_versions",
   {
@@ -238,6 +241,7 @@ export const templateDynastyVersions = pgTable(
   (table) => [
     primaryKey({ name: "template_dynasty_versions_pk", columns: [table.dynastySlug, table.promptType] }),
     uniqueIndex("idx_template_dynasty_versions_position").on(table.dynastySlug, table.position),
+    uniqueIndex("idx_template_dynasty_versions_type").on(table.promptType),
   ]
 );
 
