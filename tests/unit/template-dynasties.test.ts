@@ -118,13 +118,26 @@ describe("template dynasty routes", () => {
       .expect(201);
     expect(q.addDynastyVersion).toHaveBeenCalledWith({
       slug: DYNASTY.slug,
-      prompt: ROW.prompt,
-      variables: ROW.variables,
+      version: { prompt: ROW.prompt, variables: ROW.variables },
       orgId: "22222222-2222-2222-2222-222222222222",
       caller: { mode: "platform" },
     });
     expect(res.body.dynasty.head).toBe(ROW.type);
     expect(res.body.template.type).toBe(ROW.type);
+  });
+
+  it("appends an already-stored template by type; refuses a body mixing both forms", async () => {
+    q.addDynastyVersion.mockResolvedValue({ dynasty: { ...DYNASTY, head: ROW.type }, template: ROW });
+    await request(app())
+      .post(`/internal/template-dynasties/${DYNASTY.slug}/versions`)
+      .send({ type: "blind-discovery-email-v47-spaced" })
+      .expect(201);
+    expect(q.addDynastyVersion).toHaveBeenLastCalledWith(expect.objectContaining({ version: { type: "blind-discovery-email-v47-spaced" } }));
+    await request(app())
+      .post(`/internal/template-dynasties/${DYNASTY.slug}/versions`)
+      .send({ type: "x", prompt: "y", variables: [] })
+      .expect(400);
+    expect(q.addDynastyVersion).toHaveBeenCalledTimes(1);
   });
 
   it("refuses an identical text with the twin named", async () => {

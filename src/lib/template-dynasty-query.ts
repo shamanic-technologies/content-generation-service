@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { prompts, templateDynasties, templateDynastyVersions } from "../db/schema.js";
 import { findNextVersionType } from "./prompt-versioning.js";
@@ -86,54 +86,71 @@ export async function resolveDynastyHead(slug: string): Promise<{ dynasty: Dynas
   return { dynasty, template };
 }
 
-/** The stored template whose text is byte-identical, if any. */
-export async function findTemplateTwin(prompt: string): Promise<string | null> {
+/** The stored template (other than `exceptType`) whose text is byte-identical, if any. */
+export async function findTemplateTwin(prompt: string, exceptType?: string): Promise<string | null> {
   const [twin] = await db
     .select({ type: prompts.type })
     .from(prompts)
-    .where(eq(prompts.prompt, prompt))
+    .where(exceptType ? and(eq(prompts.prompt, prompt), ne(prompts.type, exceptType)) : eq(prompts.prompt, prompt))
     .orderBy(asc(prompts.createdAt))
     .limit(1);
   return twin?.type ?? null;
 }
 
 /**
- * Add a version to a dynasty; it becomes the head. Refused: unknown dynasty (404), text
- * byte-identical to ANY stored template (409 TEMPLATE_TWIN, twin named), a token the head
- * does not declare (400), and the neutrality / blind checks (422) every stored template goes
- * through, judged on what the version adds to the head. The blind check follows the dynasty's
- * identity, not the type prefix. Type = next free `<head family>-vN`, so existing type
- * families (and whatever reads their prefix) are unchanged.
+ * Add a version to a dynasty; it becomes the head. Two forms:
+ * - `{ prompt, variables }`: a NEW template, stored as the next free `<head family>-vN` (type
+ *   families, and whatever reads their prefix, unchanged).
+ * - `{ type }`: an ALREADY-STORED template appended as the head (e.g. one stored before its
+ *   dynasty existed). Refused if it is already a version of this dynasty.
+ * Both refuse: unknown dynasty (404), a text byte-identical to ANY OTHER stored template (409
+ * TEMPLATE_TWIN, twin named), a token the head does not declare (400), and the neutrality /
+ * blind checks (422) every stored template goes through, judged on what the version adds to the
+ * head. The blind check follows the dynasty's identity, not the type prefix.
  */
 export async function addDynastyVersion(params: {
   slug: string;
-  prompt: string;
-  variables: TemplateVariable[];
+  version: { prompt: string; variables: TemplateVariable[] } | { type: string };
   orgId: string | null;
   caller: JudgmentCaller;
 }): Promise<{ dynasty: DynastyResponse; template: PromptRow }> {
-  const { slug, prompt, variables, orgId, caller } = params;
+  const { slug, version, orgId, caller } = params;
   const { dynasty, template: head } = await resolveDynastyHead(slug);
   const headVariables = (head.variables ?? []) as TemplateVariable[];
 
+  let existing: PromptRow | undefined;
+  if ("type" in version) {
+    existing = await db.query.prompts.findFirst({ where: eq(prompts.type, version.type) });
+    if (!existing) {
+      throw new TemplateDynastyError(400, "UNKNOWN_TEMPLATE", `No template of type ${version.type}`, { missing: [version.type] });
+    }
+    if (dynasty.versions.some((v) => v.type === version.type)) {
+      throw new TemplateDynastyError(409, "ALREADY_IN_DYNASTY", `"${version.type}" is already a version of "${slug}"`);
+    }
+  }
+  const prompt = existing ? existing.prompt : (version as { prompt: string }).prompt;
+  const variables = existing
+    ? ((existing.variables ?? []) as TemplateVariable[])
+    : (version as { variables: TemplateVariable[] }).variables;
+
   assertVersionVariables(prompt, variables, { type: head.type, variables: headVariables });
 
-  const twin = await findTemplateTwin(prompt);
+  const twin = await findTemplateTwin(prompt, existing?.type);
   if (twin) throw templateTwin(twin);
 
   const inherited = { prompt: head.prompt, variables: headVariables };
   await assertTemplateNeutral({ prompt, variables, inherited, caller });
   await assertBlindTemplateKeepsClientAnonymous({
-    type: head.type,
+    type: existing?.type ?? head.type,
     prompt,
     variables,
     caller,
     blind: dynasty.identity === "blind",
   });
 
-  const newType = await findNextVersionType(head.type);
+  const newType = existing ? existing.type : await findNextVersionType(head.type);
   const template = await db.transaction(async (tx) => {
-    const [row] = await tx.insert(prompts).values({ orgId, type: newType, prompt, variables }).returning();
+    const row = existing ?? (await tx.insert(prompts).values({ orgId, type: newType, prompt, variables }).returning())[0];
     await tx.insert(templateDynastyVersions).values({
       dynastySlug: slug,
       promptType: newType,
@@ -143,7 +160,7 @@ export async function addDynastyVersion(params: {
     return row;
   });
 
-  console.log(`[template-dynasty] ${slug}: new head ${newType} (was ${head.type})`);
+  console.log(`[template-dynasty] ${slug}: new head ${newType} (was ${head.type})${existing ? " (existing template)" : ""}`);
   return { dynasty: await getDynasty(slug), template };
 }
 

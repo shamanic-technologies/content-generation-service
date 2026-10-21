@@ -66,8 +66,7 @@ router.post("/internal/template-dynasties/:slug/versions", handle(async (req, re
   const orgId = req.header("x-org-id");
   const { dynasty, template } = await addDynastyVersion({
     slug: req.params.slug,
-    prompt: parsed.data.prompt,
-    variables: parsed.data.variables,
+    version: parsed.data,
     // Traceability only (who created the row), like every prompts row.
     orgId: orgId && /^[0-9a-f-]{36}$/i.test(orgId) ? orgId : null,
     caller: { mode: "platform" },
