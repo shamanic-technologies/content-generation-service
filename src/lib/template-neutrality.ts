@@ -15,6 +15,7 @@
 import { createHash } from "node:crypto";
 import { JudgmentsError } from "./judgments-client.js";
 import { BlindTemplateRevealsClientError } from "./blind-template-rule.js";
+import { TemplateDynastyError } from "./template-dynasties.js";
 
 /**
  * Bump when the question wording, the splitting or the threshold changes: it is
@@ -262,6 +263,7 @@ export function templateWriteErrorResponse(
   if (error instanceof TemplateNotNeutralError || error instanceof BlindTemplateRevealsClientError) {
     return { status: 422, body: error.toResponseBody() };
   }
+  if (error instanceof TemplateDynastyError) return { status: error.status, body: error.toResponseBody() };
   if (error instanceof JudgmentsError) {
     const status = error.status === 402 || error.status === 429 ? error.status : 502;
     return {

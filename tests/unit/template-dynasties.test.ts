@@ -10,6 +10,7 @@ const q = vi.hoisted(() => ({
   resolveDynastyHead: vi.fn(),
   addDynastyVersion: vi.fn(),
   createDynasty: vi.fn(),
+  readDynastyOutputs: vi.fn(),
 }));
 vi.mock("../../src/lib/template-dynasty-query.js", () => q);
 
@@ -179,12 +180,15 @@ describe("template dynasty routes", () => {
       .expect(201);
     expect(q.createDynasty).toHaveBeenLastCalledWith(
       { ...fields, template },
-      { orgId: "22222222-2222-2222-2222-222222222222", caller: { mode: "platform" } },
+      { orgId: "22222222-2222-2222-2222-222222222222", caller: { mode: "platform" }, changedBy: "template-dynasty-upgrade" },
     );
     expect(res.body.head).toBe("eight-second-test-click-v1");
 
-    await request(app()).post("/internal/template-dynasties").send({ ...fields, versions: ["cold-email-v68"] }).expect(201);
-    expect(q.createDynasty).toHaveBeenLastCalledWith({ ...fields, versions: ["cold-email-v68"] }, { orgId: null, caller: { mode: "platform" } });
+    await request(app()).post("/internal/template-dynasties").set("x-staff-email", "Kevin@Distribute.you").send({ ...fields, versions: ["cold-email-v68"] }).expect(201);
+    expect(q.createDynasty).toHaveBeenLastCalledWith(
+      { ...fields, versions: ["cold-email-v68"] },
+      { orgId: null, caller: { mode: "platform" }, changedBy: "kevin@distribute.you" },
+    );
 
     for (const body of [fields, { ...fields, versions: ["x"], template }, { ...fields, template: { ...template, type: "Bad Type" } }]) {
       const r = await request(app()).post("/internal/template-dynasties").send(body).expect(400);

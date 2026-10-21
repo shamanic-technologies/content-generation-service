@@ -2340,6 +2340,29 @@
             "type": "string",
             "description": "Pipe: the leg, e.g. `lead_found_to_conversation`."
           },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deprecated"
+            ],
+            "description": "The dynasty's status = its head's: `deprecated` exactly when every version is. Deprecating the head template deprecates the dynasty."
+          },
+          "statusReason": {
+            "type": "string",
+            "nullable": true,
+            "description": "The head's deprecation reason (`Not specified` when none was stated). Null when active."
+          },
+          "statusChangedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Staff email (or `template-dynasty-upgrade`) of who last changed the head's status."
+          },
+          "statusChangedAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "When the head's status last changed (ISO 8601)."
+          },
           "head": {
             "type": "string",
             "nullable": true,
@@ -2364,7 +2387,20 @@
                     "active",
                     "deprecated"
                   ],
-                  "description": "The template's own staff status."
+                  "description": "The template's own staff status (a template heading a dynasty on another pipe stays active there)."
+                },
+                "statusInDynasty": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "deprecated"
+                  ],
+                  "description": "Its status IN this dynasty: the head's own status; every older version `deprecated`. Show this on a dynasty's version list."
+                },
+                "statusReasonInDynasty": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Why it is deprecated in this dynasty: the template's stated reason, else `Upgraded`. Null when active."
                 },
                 "addedAt": {
                   "type": "string"
@@ -2374,6 +2410,8 @@
                 "type",
                 "position",
                 "status",
+                "statusInDynasty",
+                "statusReasonInDynasty",
                 "addedAt"
               ]
             },
@@ -2394,6 +2432,10 @@
           "identity",
           "featureSlug",
           "legKey",
+          "status",
+          "statusReason",
+          "statusChangedBy",
+          "statusChangedAt",
           "head",
           "versions",
           "createdAt",
@@ -2546,6 +2588,90 @@
         "required": [
           "dynasty",
           "template"
+        ]
+      },
+      "TemplateDynastyOutputsResponse": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "generationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "This service's generation id."
+                },
+                "createdAt": {
+                  "type": "string",
+                  "description": "When it was written (ISO 8601)."
+                },
+                "workflowSlug": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "The workflow VERSION slug whose run asked for it. Null when written without one."
+                },
+                "model": {
+                  "type": "string",
+                  "description": "The concrete model id that wrote it (e.g. `gemini-3.1-pro-preview`)."
+                },
+                "subject": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Subject line of the sequence."
+                },
+                "emails": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "step": {
+                        "type": "integer",
+                        "description": "1 = the first email, then each follow-up."
+                      },
+                      "bodyText": {
+                        "type": "string",
+                        "description": "The email's text as stored (= as sent)."
+                      },
+                      "daysSinceLastStep": {
+                        "type": "number",
+                        "nullable": true,
+                        "description": "Days after the previous email. Null when the stored step carries none."
+                      }
+                    },
+                    "required": [
+                      "step",
+                      "bodyText",
+                      "daysSinceLastStep"
+                    ]
+                  },
+                  "description": "Each email of the sequence, in order. Empty when the generation stored no copy."
+                },
+                "promptType": {
+                  "type": "string",
+                  "description": "The exact version that wrote it."
+                }
+              },
+              "required": [
+                "generationId",
+                "createdAt",
+                "workflowSlug",
+                "model",
+                "subject",
+                "emails",
+                "promptType"
+              ]
+            },
+            "description": "Newest first, every org, across every version of the dynasty."
+          }
+        },
+        "required": [
+          "slug",
+          "outputs"
         ]
       },
       "OrgId": {
@@ -2934,6 +3060,16 @@
               }
             }
           },
+          "409": {
+            "description": "`SOURCE_IN_DYNASTY`: the source is a version of a template dynasty; add the new text to that dynasty (POST /internal/template-dynasties/{slug}/versions) instead. Nothing stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "422": {
             "description": "The template is not brand/offer neutral: a passage of its fixed text names a specific company, brand, offer, price, figure or person. Templates are shared by every brand. Replace the specific part of each cited passage with a {{variable}} declared in `variables`, or make it generic, then resubmit. Nothing stored.",
             "content": {
@@ -3259,6 +3395,16 @@
           },
           "404": {
             "description": "Resolved source prompt type not registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`SOURCE_IN_DYNASTY`: the source is a version of a template dynasty; add the new text to that dynasty (POST /internal/template-dynasties/{slug}/versions) instead. Nothing stored.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5058,6 +5204,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "`NOT_DYNASTY_HEAD`: re-activating an older version of a template dynasty (only a dynasty's latest version can be Active); `dynasties` names each one and its head",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -5418,6 +5574,99 @@
           },
           "409": {
             "description": "`DYNASTY_HAS_NO_VERSION`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/template-dynasties/{slug}/outputs": {
+      "get": {
+        "tags": [
+          "Template dynasties"
+        ],
+        "summary": "The last outputs written with any version of a dynasty, newest first",
+        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`). Same fields as GET /internal/templates/{type}/outputs plus `promptType` (the version). A version shared with a dynasty on another pipe brings that pipe's outputs too (a generation records no leg).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Dynasty slug, e.g. `cold-reply-intro-offer-blind`"
+            },
+            "required": true,
+            "description": "Dynasty slug, e.g. `cold-reply-intro-offer-blind`",
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "description": "How many outputs, 1..20. Omitted = 5."
+            },
+            "required": false,
+            "description": "How many outputs, 1..20. Omitted = 5.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Outputs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDynastyOutputsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`DYNASTY_NOT_FOUND`",
             "content": {
               "application/json": {
                 "schema": {

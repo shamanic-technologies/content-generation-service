@@ -10,6 +10,8 @@ import {
 } from "../lib/catalogue-status-query.js";
 import { resolveStatusChange, STAFF_EMAIL_HEADER, type StatusChange } from "../lib/catalogue-status.js";
 import { SetCatalogueStatusRequestSchema, TemplateOutputsQuerySchema } from "../schemas.js";
+import { assertMayActivate } from "../lib/dynasty-membership.js";
+import { TemplateDynastyError } from "../lib/template-dynasties.js";
 
 /**
  * Staff catalogue status of templates and writer models + a template's last outputs
@@ -22,6 +24,7 @@ const router = Router();
 function handle(fn: (req: Request, res: Response) => Promise<unknown>) {
   return (req: Request, res: Response) => {
     fn(req, res).catch((error: unknown) => {
+      if (error instanceof TemplateDynastyError) return res.status(error.status).json(error.toResponseBody());
       console.error(`[content-generation-service] ${req.method} ${req.path} error:`, error);
       res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
     });
@@ -68,6 +71,8 @@ router.get("/internal/templates", handle(async (_req: Request, res: Response) =>
 router.put("/internal/templates/:type/status", handle(async (req: Request, res: Response) => {
   const change = parseStatusChange(req, res);
   if (!change) return;
+  // Only a dynasty's head may be Active (TPL-DYNASTY-ROWS-1021-CG): 409 NOT_DYNASTY_HEAD otherwise.
+  if (change.status === "active") await assertMayActivate(req.params.type);
   const entry = await setTemplateStatus(req.params.type, change);
   if (!entry) {
     return res.status(404).json({ error: `No template found for type=${req.params.type}` });
