@@ -6,6 +6,7 @@ import { assertBlindTemplateKeepsClientAnonymous, assertTemplateNeutral } from "
 import type { JudgmentCaller } from "./judgments-client.js";
 import {
   TemplateDynastyError,
+  UPGRADED_REASON,
   assertVersionVariables,
   dynastyNotFound,
   headOf,
@@ -19,6 +20,39 @@ import {
 
 type DynastyRow = typeof templateDynasties.$inferSelect;
 type PromptRow = typeof prompts.$inferSelect;
+type Executor = Pick<typeof db, "execute">;
+
+/**
+ * Deprecate (reason UPGRADED_REASON) every ACTIVE template that is a version of some dynasty and
+ * the head of none. `onlyTypes` narrows it (a new head: the previous head only). A template in
+ * two dynasties stays active while it heads either. Returns the types deprecated.
+ */
+export async function deprecateUpgradedVersions(
+  executor: Executor,
+  params: { changedBy: string; onlyTypes?: string[]; dryRun?: boolean },
+): Promise<string[]> {
+  const { changedBy, onlyTypes, dryRun } = params;
+  if (onlyTypes && onlyTypes.length === 0) return [];
+  const narrow = onlyTypes ? sql`AND p.type IN (${sql.join(onlyTypes.map((t) => sql`${t}`), sql`, `)})` : sql``;
+  const upgraded = sql`
+    SELECT p.type FROM prompts p
+    WHERE p.status = 'active'
+      AND EXISTS (SELECT 1 FROM template_dynasty_versions v WHERE v.prompt_type = p.type)
+      AND NOT EXISTS (
+        SELECT 1 FROM template_dynasty_versions v
+        WHERE v.prompt_type = p.type
+          AND v.position = (SELECT MAX(h.position) FROM template_dynasty_versions h WHERE h.dynasty_slug = v.dynasty_slug)
+      )
+      ${narrow}`;
+  const rows = dryRun
+    ? await executor.execute(upgraded)
+    : await executor.execute(sql`
+        UPDATE prompts SET status = 'deprecated', status_reason = ${UPGRADED_REASON},
+          status_changed_by = ${changedBy}, status_changed_at = now()
+        WHERE type IN (${upgraded})
+        RETURNING type`);
+  return (rows as unknown as Array<{ type: string }>).map((r) => r.type).sort();
+}
 
 async function withVersions(rows: DynastyRow[]): Promise<DynastyResponse[]> {
   if (rows.length === 0) return [];
@@ -113,8 +147,10 @@ export async function addDynastyVersion(params: {
   version: { prompt: string; variables: TemplateVariable[] } | { type: string };
   orgId: string | null;
   caller: JudgmentCaller;
+  /** Recorded as who deprecated the previous head (reason UPGRADED_REASON). */
+  changedBy: string;
 }): Promise<{ dynasty: DynastyResponse; template: PromptRow }> {
-  const { slug, version, orgId, caller } = params;
+  const { slug, version, orgId, caller, changedBy } = params;
   const { dynasty, template: head } = await resolveDynastyHead(slug);
   const headVariables = (head.variables ?? []) as TemplateVariable[];
 
@@ -149,7 +185,7 @@ export async function addDynastyVersion(params: {
   });
 
   const newType = existing ? existing.type : await findNextVersionType(head.type);
-  const template = await db.transaction(async (tx) => {
+  const written = await db.transaction(async (tx) => {
     const row = existing ?? (await tx.insert(prompts).values({ orgId, type: newType, prompt, variables }).returning())[0];
     await tx.insert(templateDynastyVersions).values({
       dynastySlug: slug,
@@ -157,11 +193,15 @@ export async function addDynastyVersion(params: {
       position: sql`(SELECT COALESCE(MAX(position), 0) + 1 FROM template_dynasty_versions WHERE dynasty_slug = ${slug})`,
     });
     await tx.update(templateDynasties).set({ updatedAt: new Date() }).where(eq(templateDynasties.slug, slug));
-    return row;
+    const deprecated = await deprecateUpgradedVersions(tx, { changedBy, onlyTypes: [head.type] });
+    return { row, deprecated };
   });
 
-  console.log(`[template-dynasty] ${slug}: new head ${newType} (was ${head.type})${existing ? " (existing template)" : ""}`);
-  return { dynasty: await getDynasty(slug), template };
+  console.log(
+    `[template-dynasty] ${slug}: new head ${newType} (was ${head.type})${existing ? " (existing template)" : ""}` +
+      (written.deprecated.length ? `; deprecated ${head.type} (${UPGRADED_REASON})` : `; ${head.type} kept (heads another dynasty or already deprecated)`),
+  );
+  return { dynasty: await getDynasty(slug), template: written.row };
 }
 
 /** Create a dynasty over existing templates (chronological; the last is the head). */

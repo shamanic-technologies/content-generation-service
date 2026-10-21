@@ -14,7 +14,8 @@
  * deprecation without a plain-language reason, or without the staff email the gateway
  * verified (`x-staff-email`), is refused. A row deprecated before reasons existed serves
  * `NOT_SPECIFIED` and no author (nothing invented). Re-activating needs no reason and
- * clears it. No code path here deprecates on its own.
+ * clears it. The one code path that deprecates on its own is a dynasty upgrade: the previous head
+ * becomes `deprecated` with reason "Upgraded" (template-dynasties.ts, TPL-DYNASTY-1021-CG3).
  *
  * Standalone leaf (schemas.ts reads the enum at module-eval).
  */
