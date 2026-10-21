@@ -7,6 +7,7 @@ import {
 import { CHAT_MODELS } from "./lib/chat-models.js";
 import { CATALOGUE_STATUSES, MAX_STATUS_REASON_LENGTH, NOT_SPECIFIED, STAFF_EMAIL_HEADER } from "./lib/catalogue-status.js";
 import { DEBRIEF_ERROR_CODES } from "./lib/debrief/errors.js";
+import { DYNASTY_IDENTITIES } from "./lib/template-dynasties.js";
 
 extendZodWithOpenApi(z);
 
@@ -2026,5 +2027,172 @@ registry.registerPath({
     200: { description: "Outputs", content: { "application/json": { schema: TemplateOutputsResponseSchema } } },
     400: { description: "Bad limit", content: { "application/json": { schema: ErrorResponseSchema } } },
     404: { description: "No template of that type", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Template dynasties (TPL-DYNASTY-1021-CG) — src/lib/template-dynasties.ts
+// ---------------------------------------------------------------------------
+
+const dynastyNote =
+  "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe " +
+  "(featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template " +
+  "every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the " +
+  "exact version it used (`promptType`).";
+
+const DynastySlugParam = z.object({ slug: z.string().describe("Dynasty slug, e.g. `cold-reply-intro-offer-blind`") });
+
+const DynastyFields = {
+  slug: z.string().describe("Unique, stable id of the dynasty."),
+  name: z.string().describe("Short name, unique per pipe."),
+  description: z.string().describe("One sentence shown to clients. Unique across the catalogue."),
+  signature: z.string().describe("Internal: what makes this dynasty unique, the guideline every new version must respect. Unique per pipe."),
+  identity: z.enum(DYNASTY_IDENTITIES).describe("`blind` = the email never names the client; `named` = it does. Never the model's choice."),
+  featureSlug: z.string().describe("Pipe: the feature, e.g. `sales-cold-email-outreach`."),
+  legKey: z.string().describe("Pipe: the leg, e.g. `lead_found_to_conversation`."),
+};
+
+export const TemplateDynastySchema = registry.register(
+  "TemplateDynasty",
+  z
+    .object({
+      ...DynastyFields,
+      head: z.string().nullable().describe("Template type of the latest version: the one to write with. Null only for a dynasty with no version."),
+      versions: z
+        .array(
+          z.object({
+            type: z.string().describe("Template type (readable alone via GET /prompts?type=)."),
+            position: z.number().int().describe("1 = oldest; the highest is the head."),
+            status: z.enum(["active", "deprecated"]).describe("The template's own staff status."),
+            addedAt: z.string(),
+          })
+        )
+        .describe("Oldest first. A template type may also be a version of a dynasty on another pipe."),
+      createdAt: z.string(),
+      updatedAt: z.string(),
+    })
+    .openapi("TemplateDynasty")
+);
+
+export const ListTemplateDynastiesQuerySchema = z.object({
+  featureSlug: z.string().optional().describe("Only dynasties of this feature"),
+  legKey: z.string().optional().describe("Only dynasties of this leg"),
+});
+
+export const CreateTemplateDynastyRequestSchema = registry.register(
+  "CreateTemplateDynastyRequest",
+  z
+    .object({
+      slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "slug must be lowercase kebab-case"),
+      name: z.string().trim().min(1).max(80),
+      description: z.string().trim().min(1).max(300),
+      signature: z.string().trim().min(1).max(1000),
+      identity: z.enum(DYNASTY_IDENTITIES),
+      featureSlug: z.string().min(1),
+      legKey: z.string().min(1),
+      versions: z.array(z.string().min(1)).min(1).describe("Existing template types, oldest first; the last is the head."),
+    })
+    .openapi("CreateTemplateDynastyRequest")
+);
+
+export const AddTemplateDynastyVersionRequestSchema = registry.register(
+  "AddTemplateDynastyVersionRequest",
+  z
+    .object({
+      prompt: z.string().min(1).describe("The new version's full text. Must differ from every stored template."),
+      variables: z.array(PromptVariableSchema).describe(
+        "Exactly the {{tokens}} the text uses, each one declared by the current head (the workflows on the dynasty send those)."
+      ),
+    })
+    .openapi("AddTemplateDynastyVersionRequest")
+);
+
+const TemplateDynastyWithTemplateSchema = registry.register(
+  "TemplateDynastyWithTemplate",
+  z
+    .object({
+      dynasty: TemplateDynastySchema,
+      template: PromptResponseSchema.describe("The head's stored template."),
+    })
+    .openapi("TemplateDynastyWithTemplate")
+);
+
+const DynastyErrorSchema = z.object({ error: z.string(), code: z.string().optional() }).passthrough();
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/template-dynasties",
+  tags: ["Template dynasties"],
+  summary: "List template dynasties, optionally of one pipe",
+  description: dynastyNote,
+  request: { query: ListTemplateDynastiesQuerySchema },
+  responses: {
+    200: {
+      description: "Dynasties by slug",
+      content: { "application/json": { schema: z.object({ dynasties: z.array(TemplateDynastySchema) }) } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/template-dynasties",
+  tags: ["Template dynasties"],
+  summary: "Create a dynasty over existing templates",
+  description: `${dynastyNote} The versions must already be stored templates; the last listed is the head.`,
+  request: { body: { content: { "application/json": { schema: CreateTemplateDynastyRequestSchema } } } },
+  responses: {
+    201: { description: "Created", content: { "application/json": { schema: TemplateDynastySchema } } },
+    400: { description: "Invalid body, a template listed twice (`DUPLICATE_VERSION`) or unknown (`UNKNOWN_TEMPLATE`)", content: { "application/json": { schema: DynastyErrorSchema } } },
+    409: { description: "`DYNASTY_CONFLICT`: slug or description taken, or name/signature taken on the same pipe (`field`, `dynastySlug`)", content: { "application/json": { schema: DynastyErrorSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/template-dynasties/{slug}",
+  tags: ["Template dynasties"],
+  summary: "One dynasty with its versions and head",
+  description: dynastyNote,
+  request: { params: DynastySlugParam },
+  responses: {
+    200: { description: "Dynasty", content: { "application/json": { schema: TemplateDynastySchema } } },
+    404: { description: "`DYNASTY_NOT_FOUND`", content: { "application/json": { schema: DynastyErrorSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/template-dynasties/{slug}/head",
+  tags: ["Template dynasties"],
+  summary: "The template to write with for a dynasty (its head)",
+  description: `${dynastyNote} Send \`template.type\` as the /generate \`type\`.`,
+  request: { params: DynastySlugParam },
+  responses: {
+    200: { description: "Dynasty + head template", content: { "application/json": { schema: TemplateDynastyWithTemplateSchema } } },
+    404: { description: "`DYNASTY_NOT_FOUND`", content: { "application/json": { schema: DynastyErrorSchema } } },
+    409: { description: "`DYNASTY_HAS_NO_VERSION`", content: { "application/json": { schema: DynastyErrorSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/template-dynasties/{slug}/versions",
+  tags: ["Template dynasties"],
+  summary: "Add a version to a dynasty; it becomes the head",
+  description:
+    `${dynastyNote} The new template is stored under the next free \`<head family>-vN\` type. ` +
+    "Judged like every stored template (brand/offer neutrality; the blind rule when the dynasty is blind), on what it adds to the head, billed to the platform.",
+  request: {
+    params: DynastySlugParam,
+    body: { content: { "application/json": { schema: AddTemplateDynastyVersionRequestSchema } } },
+  },
+  responses: {
+    201: { description: "Version added; `template` is the new head", content: { "application/json": { schema: TemplateDynastyWithTemplateSchema } } },
+    400: { description: "Invalid body, a token the head does not declare (`VARIABLE_NOT_IN_HEAD`), or variables not matching the text (`VARIABLES_MISMATCH`)", content: { "application/json": { schema: DynastyErrorSchema } } },
+    404: { description: "`DYNASTY_NOT_FOUND`", content: { "application/json": { schema: DynastyErrorSchema } } },
+    409: { description: "`TEMPLATE_TWIN`: the text is byte-identical to the stored template `twinType`; or `DYNASTY_HAS_NO_VERSION`", content: { "application/json": { schema: DynastyErrorSchema } } },
+    422: { description: "`TEMPLATE_NOT_NEUTRAL` or `BLIND_TEMPLATE_REVEALS_CLIENT`, with the passages", content: { "application/json": { schema: DynastyErrorSchema } } },
+    502: { description: "`TEMPLATE_NEUTRALITY_CHECK_FAILED`: nothing stored", content: { "application/json": { schema: DynastyErrorSchema } } },
   },
 });
