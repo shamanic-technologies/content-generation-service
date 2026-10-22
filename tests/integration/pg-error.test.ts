@@ -8,7 +8,7 @@ import { pgErrorOf, isUniqueViolation } from "../../src/lib/pg-error.js";
 // drizzle-orm >= 0.44 wraps it in DrizzleQueryError.
 const TABLE = "pg_error_probe_sec2";
 
-describe("pgErrorOf against a real Postgres unique violation", () => {
+describe("pgErrorOf + restored message against a real Postgres unique violation", () => {
   afterAll(async () => {
     await db.execute(sql.raw(`DROP TABLE IF EXISTS ${TABLE}`));
   });
@@ -27,6 +27,9 @@ describe("pgErrorOf against a real Postgres unique violation", () => {
     // drizzle's wrapper carries no SQLSTATE itself: reading `err.code` directly would miss it.
     expect((caught as { code?: unknown }).code).toBeUndefined();
     expect(pgErrorOf(caught).code).toBe("23505");
+    // The db client restores the database's own message: no SQL text, no bound values.
+    expect((caught as Error).message).toMatch(/^duplicate key value violates unique constraint/);
+    expect((caught as Error).message).not.toContain("Failed query");
     expect(isUniqueViolation(caught, `${TABLE}_k_uniq`)).toBe(true);
     expect(isUniqueViolation(caught, "some_other_index")).toBe(false);
   });
