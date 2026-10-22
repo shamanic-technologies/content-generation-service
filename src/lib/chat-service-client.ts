@@ -9,12 +9,8 @@ import {
   buildLeadRelationshipDirective,
   normalizeLeadRelationship,
 } from "./lead-relationship.js";
-import {
-  type ChatModel,
-  type ChatProvider,
-  MODEL_TO_PROVIDER,
-  DEFAULT_MODEL,
-} from "./chat-models.js";
+import { type ChatModel, type ChatProvider, DEFAULT_MODEL } from "./chat-models.js";
+import { resolveChatModel } from "./chat-model-catalogue.js";
 import { fetchWithRetry } from "./fetch-retry.js";
 import { type Tracking, buildTrackingHeaders } from "./tracking.js";
 import { unescapeLineBreaks, collapseEscapedLineBreaks } from "./escaped-line-breaks.js";
@@ -430,7 +426,8 @@ export async function generateFromTemplate(
   }
 
   const model = params.model ?? DEFAULT_MODEL;
-  const provider = MODEL_TO_PROVIDER[model];
+  // Provider read from chat-service's catalogue; an unknown name throws UnknownModelError (400).
+  const { provider } = await resolveChatModel(model);
   // Anthropic structured-output requires the strict schema; google ignores it.
   const responseSchema =
     provider === "anthropic" ? GENERATE_RESPONSE_SCHEMA_STRICT : GENERATE_RESPONSE_SCHEMA;
@@ -587,8 +584,8 @@ async function callChatServiceForText(
     ...buildTrackingHeaders(identity),
   };
 
-  // Free-text pitch: no responseSchema for any provider. Provider derived from alias.
-  const provider = MODEL_TO_PROVIDER[model];
+  // Free-text pitch: no responseSchema for any provider. Provider read from chat-service's catalogue.
+  const { provider } = await resolveChatModel(model);
   const response = await fetchWithRetry(
     `${CHAT_SERVICE_URL}/complete`,
     {

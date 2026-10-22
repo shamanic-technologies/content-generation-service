@@ -4,32 +4,29 @@ import {
   extendZodWithOpenApi,
   OpenAPIRegistry,
 } from "@asteasolutions/zod-to-openapi";
-import { CHAT_MODELS } from "./lib/chat-models.js";
 import { CATALOGUE_STATUSES, MAX_STATUS_REASON_LENGTH, NOT_SPECIFIED, STAFF_EMAIL_HEADER } from "./lib/catalogue-status.js";
 import { DEBRIEF_ERROR_CODES } from "./lib/debrief/errors.js";
 import { DYNASTY_IDENTITIES } from "./lib/template-dynasties.js";
 
 extendZodWithOpenApi(z);
 
-// Shared `model` field — version-free alias; provider derived downstream.
-// Optional: omitted → chat-service-client defaults to 'pro' (google), the
-// historical behavior. Source of truth for the alias set is CHAT_MODELS.
+// Shared `model` field (LLM-DYNASTY-1022-CG): any name chat-service's /complete accepts,
+// validated at run time against chat-service's own catalogue (src/lib/chat-model-catalogue.ts),
+// never a list kept here. Provider read from that catalogue too.
 const ModelField = z
-  .enum(CHAT_MODELS)
+  .string()
+  .min(1)
   .optional()
   .describe(
-    "LLM model to generate with (version-free alias). Provider is derived automatically: " +
-      "anthropic → haiku | sonnet | opus; google → flash-lite | flash | flash-pro | pro; " +
-      "deepseek → deepseek-flash (DeepSeek V4 Flash) | deepseek-pro (DeepSeek V4 Pro); " +
-      "zai → glm-flash (glm-4.7-flashx) | glm-pro (glm-5.2); " +
-      "moonshot → kimi-flash (kimi-k2.6) | kimi-pro (kimi-k3). " +
-      "The six deepseek/zai/moonshot aliases are called directly on each vendor's " +
-      "OpenAI-compatible API. That path is text-only, which this service never exceeds; note " +
-      "that JSON-mode enforcement there is best-effort (fails loud rather than degrading), and " +
-      "a vendor whose account is out of credit answers 429 — surfaced as an error naming the " +
-      "provider, never silently rerouted to another vendor. " +
-      "Omit to use the default 'pro' (google) — unchanged from before this field existed. " +
-      "Every alias stays accepted here whatever its staff status: a NEW workflow must not name one whose " +
+    "LLM to write with. Preferred: an LLM dynasty slug (e.g. `claude-opus`, `gemini-flash`; the list is " +
+      "chat-service GET /internal/model-dynasties), which always runs the dynasty's newest version. " +
+      "Any name chat-service POST /complete accepts is accepted: a dynasty slug, a head's exact model id, or a " +
+      "legacy alias (`opus`, `flash-pro`, `pro`…, each a redirect to its dynasty's head). The list is " +
+      "chat-service's (GET /internal/models there, mirrored with statuses on GET /internal/models here), read " +
+      "live: a name it does not accept → 400 `UNKNOWN_MODEL`. Provider is read from that catalogue, never " +
+      "sent by the caller. The model that actually wrote is recorded per generation (`model`). " +
+      "Omit to use the default `gemini-pro` (the model the old `pro` default ran). " +
+      "Every name stays accepted here whatever its staff status: a NEW workflow must not name one whose " +
       "status is `deprecated` on GET /internal/models, but a stored workflow that does keeps generating."
   );
 
@@ -1878,8 +1875,9 @@ const ModelStatusEntrySchema = registry.register(
   "ModelStatusEntry",
   z
     .object({
-      model: z.enum(CHAT_MODELS).describe("Writer model alias, as accepted in `model` on POST /generate."),
-      provider: z.string().describe("Provider the alias is served by (derived, never sent by a caller)."),
+      model: z.string().describe("A name accepted in `model` on POST /generate (dynasty slug, exact model id or legacy alias), as chat-service serves it."),
+      provider: z.string().describe("Provider the name runs on, read from chat-service's catalogue (never sent by a caller)."),
+      dynasty: z.string().nullable().describe("LLM dynasty slug of the model the name runs, from chat-service; null while chat-service serves none."),
       status: CatalogueStatusField,
       statusChangedAt: StatusChangedAtField,
       ...StatusReasonFields,
@@ -1893,7 +1891,7 @@ const ModelStatusListResponseSchema = registry.register(
     .object({
       models: z
         .array(ModelStatusEntrySchema)
-        .describe("Every alias POST /generate accepts, each with its status. Only `active` ones may be named by a NEW workflow."),
+        .describe("Every name POST /generate accepts (chat-service's catalogue, read live), each with its status. Only `active` ones may be named by a NEW workflow."),
     })
     .openapi("ModelStatusListResponse")
 );

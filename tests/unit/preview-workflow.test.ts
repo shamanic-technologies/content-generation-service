@@ -102,7 +102,7 @@ describe("planPreviewWorkflow", () => {
 
   it("calls unusable a model or template that is not a literal, or a /generate setting the preview does not reproduce", () => {
     expect(planPreviewWorkflow(wf([generateNode({ type: "t" }, {})])).ok).toBe(false);
-    expect(planPreviewWorkflow(wf([generateNode({ type: "t", model: "not-a-model" }, {})])).ok).toBe(false);
+    expect(planPreviewWorkflow(wf([generateNode({ type: "t", model: "" }, {})])).ok).toBe(false);
     expect(planPreviewWorkflow(wf([generateNode({ model: "pro" }, {})])).ok).toBe(false);
     expect(planPreviewWorkflow(wf([generateNode({ type: "t", model: "pro", disableThinking: true }, {})])).ok).toBe(false);
     expect(planPreviewWorkflow(wf([generateNode({ type: "t", model: "pro" }, { "body.model": "$ref:x.output" })])).ok).toBe(false);

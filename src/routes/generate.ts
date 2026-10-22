@@ -27,6 +27,7 @@ import { findGenerationForLead } from "../lib/lead-generation-query.js";
 import { withResolvedBody } from "../lib/generation-body.js";
 import { withSequenceDelays, IncompleteSequenceError } from "../lib/sequence-delays.js";
 import { ClientCommsVoiceError } from "../lib/client-comms-voice.js";
+import { ChatModelCatalogueError, UnknownModelError, resolveChatModel } from "../lib/chat-model-catalogue.js";
 import { stripDashes, hasDashes } from "../lib/dashes.js";
 import { textToHtml } from "../lib/text-to-html.js";
 
@@ -105,6 +106,10 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       offerId: bodyOfferId,
       instruction: bodyInstruction,
     } = parsed.data;
+
+    // The model name is checked against chat-service's catalogue before anything is read or
+    // billed (400 UNKNOWN_MODEL); omitted → the default, resolved at the completion.
+    if (model) await resolveChatModel(model);
 
     // Header values (from workflow-service) serve as fallback when body values are missing
     const brandIds = bodyBrandIds?.length ? bodyBrandIds : (req.brandIds ?? []);
@@ -359,6 +364,13 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       tokensOutput: result.tokensOutput,
     });
   } catch (error) {
+    if (error instanceof UnknownModelError) {
+      return res.status(400).json({ error: error.message, code: error.code, accepted: error.accepted });
+    }
+    if (error instanceof ChatModelCatalogueError) {
+      console.error("Generate error:", error.message);
+      return res.status(502).json({ error: error.message, code: error.code });
+    }
     if (error instanceof InsufficientCreditsError) {
       return res.status(402).json({
         error: "Insufficient credits",
@@ -405,6 +417,7 @@ router.post("/generate-expert-quote-pitch", serviceAuth, async (req: Authenticat
     }
 
     const { variables, templateType, model, brandIds: bodyBrandIds, campaignId: bodyCampaignId, workflowSlug: bodyWorkflowSlug, featureSlug: bodyFeatureSlug, audienceId: bodyAudienceId } = parsed.data;
+    if (model) await resolveChatModel(model);
 
     const brandIds = bodyBrandIds?.length ? bodyBrandIds : (req.brandIds ?? []);
     const brandId = brandIds.length > 0 ? brandIds.join(",") : req.brandId;
@@ -474,6 +487,13 @@ router.post("/generate-expert-quote-pitch", serviceAuth, async (req: Authenticat
         maxChars: error.maxChars,
         attempts: error.attempts,
       });
+    }
+    if (error instanceof UnknownModelError) {
+      return res.status(400).json({ error: error.message, code: error.code, accepted: error.accepted });
+    }
+    if (error instanceof ChatModelCatalogueError) {
+      console.error("Generate expert-quote pitch error:", error.message);
+      return res.status(502).json({ error: error.message, code: error.code });
     }
     if (error instanceof InsufficientCreditsError) {
       return res.status(402).json({

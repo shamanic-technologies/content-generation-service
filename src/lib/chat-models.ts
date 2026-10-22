@@ -1,72 +1,16 @@
-// Model aliases accepted by chat-service POST /complete + the alias→provider map.
+// Model names and providers for chat-service POST /complete (LLM-DYNASTY-1022-CG).
 //
-// Kept in its OWN module (not chat-service-client.ts) on purpose: schemas.ts reads
-// CHAT_MODELS at module-eval time for the `model` Zod enum, and ~13 unit tests fully
-// `vi.mock` chat-service-client.js WITHOUT re-exporting its constants. Importing the
-// enum from there would make z.enum(undefined) crash every one of those suites. This
-// module is never mocked, so the alias set is always real. (Same defer-the-access
-// philosophy as the schema/auth mock gotcha in CLAUDE.md.)
+// The set of accepted names is NOT kept here: chat-service serves it on
+// `GET /internal/models` and `src/lib/chat-model-catalogue.ts` reads it (LLM dynasty
+// slugs like `claude-opus`, each head's exact model id, legacy aliases like `opus`).
+// A hand-kept copy lived here until 2026-10-22 and fell behind each time chat-service
+// shipped a model. The provider of a name is read from that catalogue too.
+//
+// Kept in its OWN module (never `vi.mock`'d) so schemas.ts can read DEFAULT_MODEL at
+// module-eval time while ~13 suites mock chat-service-client.js.
 
-// Version-free model aliases. The 17 are unique across providers, so the provider is
-// derived from the alias — callers pick ONE model, never a provider/model pair.
-//
-// Seven of them are served by chat-service's DIRECT-VENDOR path (v0.51.0 removed the
-// Vercel AI Gateway, which resold these models well above the vendors' list prices;
-// the slug `vercel` no longer exists in `/complete`, so a request carrying it is
-// rejected with 400 before it reaches a model). One shared OpenAI-compatible adapter
-// in chat-service calls each vendor directly, and each vendor resolves its OWN
-// key-service credential under its own slug:
-//   - `deepseek-flash` (DeepSeek V4 Flash) / `deepseek-pro` (DeepSeek V4 Pro) → `deepseek`
-//   - `glm-flash` (glm-4.7-flashx) / `glm-pro` (glm-5.2)                      → `zai`
-//   - `kimi-flash` (kimi-k2.6) / `kimi-pro` (kimi-k3)                         → `moonshot`
-//   - `gpt-pro` (GPT-6 Astra)                                                 → `openai`
-// The two frontier aliases added last are `fable` (Claude Fable 5.1, the tier above
-// opus) on the NATIVE `anthropic` client, and `gpt-pro` on the direct-vendor path
-// under the `openai` slug. Every alias and slug above is chat-service's own spelling,
-// read off its DEPLOYED `/complete` schema — never invented here.
-//
-// `fable` rejects `temperature` with a 400 (Anthropic removed the sampling
-// parameters on its always-thinking models). Neither generation path here sends
-// `temperature`, so nothing had to change for it.
-//
-// That direct-vendor path is TEXT-IN / TEXT-OUT only — chat-service 400s on
-// `webSearch` / `imageUrl`. Neither of this service's two generation paths sends
-// either field, so nothing here depends on a capability the models lack. The one
-// caveat is JSON mode: `/generate` forwards a `responseSchema`, and these vendors do
-// not all advertise `response_format` support, so a vendor may ignore the schema.
-// That is best-effort but never silent — chat-service's JSON parse fails loud (502)
-// on output it cannot read, so a malformed sequence is an error, not a half-filled
-// email. The free-text pitch route sends no schema and is unaffected.
-//
-// Vendor ACCOUNT state is not a routing concern, and is deliberately not recorded
-// here: a balance and a catalog row both change without touching this file, so a
-// comment naming either is wrong by the next top-up. Whether a vendor is funded
-// belongs to billing, whether its models are priced belongs to costs-service, and
-// the answer to "can this alias serve right now" is a call to chat-service, not a
-// line of source. There is deliberately NO fallback rerouting an out-of-credit
-// vendor to a funded one — an unfunded vendor fails loud, with the provider slug
-// named in the error.
-export const CHAT_MODELS = [
-  "haiku",
-  "sonnet",
-  "opus",
-  "flash-lite",
-  "flash",
-  "flash-pro",
-  "pro",
-  "deepseek-flash",
-  "deepseek-pro",
-  "glm-flash",
-  "glm-pro",
-  "kimi-flash",
-  "kimi-pro",
-  "fable",
-  "gpt-pro",
-  // chat-service #464 (2026-09-29): GPT-6 Sol and GPT-5.6 Terra, direct-vendor `openai`.
-  "gpt-sol",
-  "gpt-terra",
-] as const;
-export type ChatModel = (typeof CHAT_MODELS)[number];
+/** A name chat-service's `/complete` accepts (validated at run time against its catalogue). */
+export type ChatModel = string;
 
 export type ChatProvider =
   | "anthropic"
@@ -76,26 +20,6 @@ export type ChatProvider =
   | "moonshot"
   | "openai";
 
-export const MODEL_TO_PROVIDER: Record<ChatModel, ChatProvider> = {
-  haiku: "anthropic",
-  sonnet: "anthropic",
-  opus: "anthropic",
-  "flash-lite": "google",
-  flash: "google",
-  "flash-pro": "google",
-  pro: "google",
-  "deepseek-flash": "deepseek",
-  "deepseek-pro": "deepseek",
-  "glm-flash": "zai",
-  "glm-pro": "zai",
-  "kimi-flash": "moonshot",
-  "kimi-pro": "moonshot",
-  fable: "anthropic",
-  "gpt-pro": "openai",
-  "gpt-sol": "openai",
-  "gpt-terra": "openai",
-};
-
-// Default when the caller omits `model` — preserves the historical google/pro path.
-export const DEFAULT_MODEL: ChatModel = "pro";
-
+// Default when the caller omits `model`: the Gemini Pro dynasty, the model the
+// historical `pro` default ran (chat-service redirects `pro` to the same head).
+export const DEFAULT_MODEL: ChatModel = "gemini-pro";

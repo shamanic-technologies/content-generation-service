@@ -1,0 +1,250 @@
+{
+  "models": [
+    {
+      "provider": "anthropic",
+      "model": "claude-haiku",
+      "capabilityTier": "cheap",
+      "dynasty": "claude-haiku"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-haiku-5-5",
+      "capabilityTier": "cheap",
+      "dynasty": "claude-haiku"
+    },
+    {
+      "provider": "anthropic",
+      "model": "haiku",
+      "capabilityTier": "cheap",
+      "dynasty": "claude-haiku"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet",
+      "capabilityTier": "strong",
+      "dynasty": "claude-sonnet"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "capabilityTier": "strong",
+      "dynasty": "claude-sonnet"
+    },
+    {
+      "provider": "anthropic",
+      "model": "sonnet",
+      "capabilityTier": "strong",
+      "dynasty": "claude-sonnet"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus",
+      "capabilityTier": "frontier",
+      "dynasty": "claude-opus"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-5-5",
+      "capabilityTier": "frontier",
+      "dynasty": "claude-opus"
+    },
+    {
+      "provider": "anthropic",
+      "model": "opus",
+      "capabilityTier": "frontier",
+      "dynasty": "claude-opus"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-fable",
+      "capabilityTier": "frontier",
+      "dynasty": "claude-fable"
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-fable-5-1",
+      "capabilityTier": "frontier",
+      "dynasty": "claude-fable"
+    },
+    {
+      "provider": "anthropic",
+      "model": "fable",
+      "capabilityTier": "frontier",
+      "dynasty": "claude-fable"
+    },
+    {
+      "provider": "google",
+      "model": "gemini-flash-lite",
+      "capabilityTier": "cheap",
+      "dynasty": "gemini-flash-lite"
+    },
+    {
+      "provider": "google",
+      "model": "gemini-3.5-flash-lite",
+      "capabilityTier": "cheap",
+      "dynasty": "gemini-flash-lite"
+    },
+    {
+      "provider": "google",
+      "model": "flash",
+      "capabilityTier": "cheap",
+      "dynasty": "gemini-flash-lite"
+    },
+    {
+      "provider": "google",
+      "model": "flash-lite",
+      "capabilityTier": "cheap",
+      "dynasty": "gemini-flash-lite"
+    },
+    {
+      "provider": "google",
+      "model": "gemini-flash",
+      "capabilityTier": "cheap",
+      "dynasty": "gemini-flash"
+    },
+    {
+      "provider": "google",
+      "model": "gemini-3.8-flash",
+      "capabilityTier": "cheap",
+      "dynasty": "gemini-flash"
+    },
+    {
+      "provider": "google",
+      "model": "flash-pro",
+      "capabilityTier": "cheap",
+      "dynasty": "gemini-flash"
+    },
+    {
+      "provider": "google",
+      "model": "gemini-pro",
+      "capabilityTier": "strong",
+      "dynasty": "gemini-pro"
+    },
+    {
+      "provider": "google",
+      "model": "gemini-3.1-pro-preview",
+      "capabilityTier": "strong",
+      "dynasty": "gemini-pro"
+    },
+    {
+      "provider": "google",
+      "model": "pro",
+      "capabilityTier": "strong",
+      "dynasty": "gemini-pro"
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-flash",
+      "capabilityTier": "cheap",
+      "dynasty": "deepseek-flash"
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-pro",
+      "capabilityTier": "cheap",
+      "dynasty": "deepseek-flash"
+    },
+    {
+      "provider": "zai",
+      "model": "glm-flash",
+      "capabilityTier": "cheap",
+      "dynasty": "glm-flash"
+    },
+    {
+      "provider": "zai",
+      "model": "glm-5.3-flash",
+      "capabilityTier": "cheap",
+      "dynasty": "glm-flash"
+    },
+    {
+      "provider": "zai",
+      "model": "glm",
+      "capabilityTier": "strong",
+      "dynasty": "glm"
+    },
+    {
+      "provider": "zai",
+      "model": "glm-5.3",
+      "capabilityTier": "strong",
+      "dynasty": "glm"
+    },
+    {
+      "provider": "zai",
+      "model": "glm-pro",
+      "capabilityTier": "strong",
+      "dynasty": "glm"
+    },
+    {
+      "provider": "moonshot",
+      "model": "kimi-k2",
+      "capabilityTier": "cheap",
+      "dynasty": "kimi-k2"
+    },
+    {
+      "provider": "moonshot",
+      "model": "kimi-k2.6",
+      "capabilityTier": "cheap",
+      "dynasty": "kimi-k2"
+    },
+    {
+      "provider": "moonshot",
+      "model": "kimi-flash",
+      "capabilityTier": "cheap",
+      "dynasty": "kimi-k2"
+    },
+    {
+      "provider": "moonshot",
+      "model": "kimi-k3",
+      "capabilityTier": "strong",
+      "dynasty": "kimi-k3"
+    },
+    {
+      "provider": "moonshot",
+      "model": "kimi-pro",
+      "capabilityTier": "strong",
+      "dynasty": "kimi-k3"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-astra",
+      "capabilityTier": "frontier",
+      "dynasty": "gpt-astra"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-astra",
+      "capabilityTier": "frontier",
+      "dynasty": "gpt-astra"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-pro",
+      "capabilityTier": "frontier",
+      "dynasty": "gpt-astra"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-sol",
+      "capabilityTier": "strong",
+      "dynasty": "gpt-sol"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-6-sol",
+      "capabilityTier": "strong",
+      "dynasty": "gpt-sol"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-terra",
+      "capabilityTier": "strong",
+      "dynasty": "gpt-terra"
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.6-terra",
+      "capabilityTier": "strong",
+      "dynasty": "gpt-terra"
+    }
+  ]
+}
