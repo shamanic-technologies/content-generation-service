@@ -5503,7 +5503,7 @@
           "Template dynasties"
         ],
         "summary": "Create a dynasty, over existing templates or from a brand-new text",
-        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`). Either `versions` (already-stored templates, the last listed is the head) or `template` (a new text + its variables, stored as the first version and head, under `template.type` or `<slug>-v1`). A new text is judged like every stored template (brand/offer neutrality; the blind rule when the dynasty is blind), in full, billed to the platform. Nothing is stored on any refusal.",
+        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`). Either `versions` (already-stored templates, the last listed is the head) or `template` (a new text + its variables, stored as the first version and head, under `template.type` or `<slug>-v1`). A new text is judged like every stored template (brand/offer neutrality; the dynasty's identity rule: a blind text never names the client, a named one never hides it, 422 BLIND_TEMPLATE_REVEALS_CLIENT / NAMED_TEMPLATE_HIDES_CLIENT), in full, billed to the platform. Nothing is stored on any refusal.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5860,7 +5860,7 @@
           "Template dynasties"
         ],
         "summary": "Add a version to a dynasty; it becomes the head",
-        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`). The new template is stored under the next free `<head family>-vN` type. Judged like every stored template (brand/offer neutrality; the blind rule when the dynasty is blind), on what it adds to the head, billed to the platform.",
+        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`). The new template is stored under the next free `<head family>-vN` type. Judged like every stored template (brand/offer neutrality; the dynasty's identity rule: a blind text never names the client, a named one never hides it, 422 BLIND_TEMPLATE_REVEALS_CLIENT / NAMED_TEMPLATE_HIDES_CLIENT), on what it adds to the head, billed to the platform.",
         "parameters": [
           {
             "schema": {

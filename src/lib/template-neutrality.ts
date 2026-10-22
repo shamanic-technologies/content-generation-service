@@ -15,6 +15,7 @@
 import { createHash } from "node:crypto";
 import { JudgmentsError } from "./judgments-client.js";
 import { BlindTemplateRevealsClientError } from "./blind-template-rule.js";
+import { NamedTemplateHidesClientError } from "./named-template-rule.js";
 import { TemplateDynastyError } from "./template-dynasties.js";
 
 /**
@@ -260,7 +261,11 @@ export class TemplateNotNeutralError extends Error {
 export function templateWriteErrorResponse(
   error: unknown,
 ): { status: number; body: Record<string, unknown> } | null {
-  if (error instanceof TemplateNotNeutralError || error instanceof BlindTemplateRevealsClientError) {
+  if (
+    error instanceof TemplateNotNeutralError ||
+    error instanceof BlindTemplateRevealsClientError ||
+    error instanceof NamedTemplateHidesClientError
+  ) {
     return { status: 422, body: error.toResponseBody() };
   }
   if (error instanceof TemplateDynastyError) return { status: error.status, body: error.toResponseBody() };

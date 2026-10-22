@@ -2258,7 +2258,7 @@ registry.registerPath({
   description:
     `${dynastyNote} Either \`versions\` (already-stored templates, the last listed is the head) or \`template\` ` +
     "(a new text + its variables, stored as the first version and head, under `template.type` or `<slug>-v1`). " +
-    "A new text is judged like every stored template (brand/offer neutrality; the blind rule when the dynasty is blind), " +
+    "A new text is judged like every stored template (brand/offer neutrality; the dynasty's identity rule: a blind text never names the client, a named one never hides it, 422 BLIND_TEMPLATE_REVEALS_CLIENT / NAMED_TEMPLATE_HIDES_CLIENT), " +
     "in full, billed to the platform. Nothing is stored on any refusal.",
   request: { body: { content: { "application/json": { schema: CreateTemplateDynastyRequestSchema } } } },
   responses: {
@@ -2320,7 +2320,7 @@ registry.registerPath({
   summary: "Add a version to a dynasty; it becomes the head",
   description:
     `${dynastyNote} The new template is stored under the next free \`<head family>-vN\` type. ` +
-    "Judged like every stored template (brand/offer neutrality; the blind rule when the dynasty is blind), on what it adds to the head, billed to the platform.",
+    "Judged like every stored template (brand/offer neutrality; the dynasty's identity rule: a blind text never names the client, a named one never hides it, 422 BLIND_TEMPLATE_REVEALS_CLIENT / NAMED_TEMPLATE_HIDES_CLIENT), on what it adds to the head, billed to the platform.",
   request: {
     params: DynastySlugParam,
     body: { content: { "application/json": { schema: AddTemplateDynastyVersionRequestSchema } } },

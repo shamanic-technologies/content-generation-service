@@ -6,7 +6,7 @@ export { assertMayActivate, assertNotDynastySource } from "./dynasty-membership.
 import { dynastiesHolding } from "./dynasty-membership.js";
 import { outputEmails, type TemplateOutput } from "./catalogue-status-query.js";
 import { findNextVersionType } from "./prompt-versioning.js";
-import { assertBlindTemplateKeepsClientAnonymous, assertTemplateNeutral } from "./template-neutrality-guard.js";
+import { assertTemplateKeepsDynastyIdentity, assertTemplateNeutral } from "./template-neutrality-guard.js";
 import type { JudgmentCaller } from "./judgments-client.js";
 import {
   TemplateDynastyError,
@@ -154,7 +154,8 @@ export async function findTemplateTwin(prompt: string, exceptType?: string): Pro
  * Both refuse: unknown dynasty (404), a text byte-identical to ANY OTHER stored template (409
  * TEMPLATE_TWIN, twin named), a token the head does not declare (400), and the neutrality /
  * blind checks (422) every stored template goes through, judged on what the version adds to the
- * head. The blind check follows the dynasty's identity, not the type prefix.
+ * head. The identity check follows the dynasty's identity, not the type prefix: a blind dynasty's
+ * text never licenses naming the client, a named one's never hides it (TPL-NAMED-HEAD-1023).
  */
 export async function addDynastyVersion(params: {
   slug: string;
@@ -192,12 +193,12 @@ export async function addDynastyVersion(params: {
 
   const inherited = { prompt: head.prompt, variables: headVariables };
   await assertTemplateNeutral({ prompt, variables, inherited, caller });
-  await assertBlindTemplateKeepsClientAnonymous({
+  await assertTemplateKeepsDynastyIdentity({
     type: existing?.type ?? head.type,
     prompt,
     variables,
     caller,
-    blind: dynasty.identity === "blind",
+    identity: dynasty.identity,
   });
 
   const newType = existing ? existing.type : await findNextVersionType(head.type);
@@ -233,8 +234,8 @@ export interface NewDynastyTemplate {
  * head) or from a brand-new text (`template`, stored as its first version and head,
  * TPL-DYNASTY-FROM-TEXT-1021). A new text is refused like every stored template: variables not
  * exactly its tokens (400), a type already taken (409 TEMPLATE_TYPE_TAKEN), a text byte-identical
- * to a stored template (409 TEMPLATE_TWIN), brand/offer neutrality and, when the dynasty is
- * blind, the blind rule (422), judged in full (no head to inherit from) and billed to `caller`.
+ * to a stored template (409 TEMPLATE_TWIN), brand/offer neutrality and the dynasty's identity
+ * rule (blind or named, 422), judged in full (no head to inherit from) and billed to `caller`.
  * Every refusal happens before anything is written; the template and the dynasty land together.
  */
 export async function createDynasty(input: {
@@ -264,6 +265,21 @@ export async function createDynasty(input: {
     for (const type of listed) {
       const [home] = await dynastiesHolding(type);
       if (home) throw templateInOtherDynasty(type, home.slug);
+    }
+    // The head (last listed) is what every workflow on the dynasty writes with: it must keep
+    // the dynasty's identity (a blind text headed "Named Free Offer", TPL-NAMED-HEAD-1023).
+    if (options.caller) {
+      const headType = listed[listed.length - 1];
+      const head = await db.query.prompts.findFirst({ where: eq(prompts.type, headType) });
+      if (head) {
+        await assertTemplateKeepsDynastyIdentity({
+          type: head.type,
+          prompt: head.prompt,
+          variables: (head.variables ?? []) as TemplateVariable[],
+          caller: options.caller,
+          identity: input.identity,
+        });
+      }
     }
   }
 
@@ -296,8 +312,8 @@ export async function createDynasty(input: {
     const twin = await findTemplateTwin(prompt);
     if (twin) throw templateTwin(twin);
     await assertTemplateNeutral({ prompt, variables, caller: options.caller });
-    await assertBlindTemplateKeepsClientAnonymous({
-      type: newType, prompt, variables, caller: options.caller, blind: input.identity === "blind",
+    await assertTemplateKeepsDynastyIdentity({
+      type: newType, prompt, variables, caller: options.caller, identity: input.identity,
     });
   }
 
