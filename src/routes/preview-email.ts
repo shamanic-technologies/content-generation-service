@@ -27,6 +27,7 @@ import {
   type PreviewHighlight,
 } from "../lib/preview-highlights.js";
 import { annotatePreviewEmail } from "../lib/preview-annotate-client.js";
+import { isUniqueViolation } from "../lib/pg-error.js";
 import { PreviewEmailRequestSchema, PreviewEmailPrepareRequestSchema } from "../schemas.js";
 
 const router = Router();
@@ -82,8 +83,7 @@ async function annotateFirstEmail(
 }
 
 function isPreviewDuplicateError(err: unknown): boolean {
-  const e = err as { code?: unknown; constraint_name?: unknown };
-  return e?.code === "23505" && e?.constraint_name === "idx_email_previews_recipient";
+  return isUniqueViolation(err, "idx_email_previews_recipient");
 }
 
 /**

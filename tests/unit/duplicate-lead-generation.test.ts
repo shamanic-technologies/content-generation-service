@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
+import { DrizzleQueryError } from "drizzle-orm";
 
 // A lead that is legitimately retried (paid for, served, never contacted) already has an
 // `email_generations` row for its campaign. `idx_emailgen_lead` is UNIQUE on
@@ -320,6 +321,23 @@ describe("POST /generate — two retries of the same lead race on the insert", (
     expect(res.body.id).toBe("gen-from-2026-08-13");
     expect(mockGenerateFromTemplate).toHaveBeenCalledOnce();
     expect(mockGenFindFirst).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns the winning generation when drizzle wraps the duplicate key in a DrizzleQueryError", async () => {
+    // drizzle-orm >= 0.44 throws DrizzleQueryError("Failed query: ...") with the postgres.js error as `cause`.
+    mockGenFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(storedGeneration);
+    mockReturning.mockRejectedValue(
+      new DrizzleQueryError("insert into email_generations ...", [], pgUniqueViolation("idx_emailgen_lead")),
+    );
+
+    const res = await request(app)
+      .post("/generate")
+      .set("X-Org-Id", "org-internal-123")
+      .set("X-User-Id", "user-internal-456")
+      .send({ ...validBody, leadId: LEAD_ID, campaignId: CAMPAIGN_ID })
+      .expect(200);
+
+    expect(res.body.id).toBe("gen-from-2026-08-13");
   });
 
   it("fails loud on a unique violation from a different index", async () => {
