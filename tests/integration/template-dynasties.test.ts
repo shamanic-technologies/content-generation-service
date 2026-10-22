@@ -3,10 +3,10 @@ import { inArray, like, sql } from "drizzle-orm";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-// The brand/offer and blind judgments are chat-service calls (Jev), covered by their own suites.
+// The brand/offer and identity (blind/named) judgments are chat-service calls (Jev), covered by their own suites.
 const guard = vi.hoisted(() => ({
   assertTemplateNeutral: vi.fn(async () => undefined),
-  assertBlindTemplateKeepsClientAnonymous: vi.fn(async () => undefined),
+  assertTemplateKeepsDynastyIdentity: vi.fn(async () => undefined),
 }));
 vi.mock("../../src/lib/template-neutrality-guard.js", () => guard);
 // tests/setup.ts stubs dynasty membership as "in no dynasty" for unit suites; this suite needs the real read.
@@ -106,7 +106,7 @@ describe("template dynasties", () => {
       prompt: text, inherited: { prompt: `${TAG} v2 {{leadFirstName}} {{brands}}`, variables: VARS },
     }));
     // The family name is not blind; the dynasty is.
-    expect(guard.assertBlindTemplateKeepsClientAnonymous).toHaveBeenCalledWith(expect.objectContaining({ blind: true }));
+    expect(guard.assertTemplateKeepsDynastyIdentity).toHaveBeenCalledWith(expect.objectContaining({ identity: "blind" }));
   });
 
   it("refuses a text byte-identical to any stored template, naming the twin, nothing stored", async () => {
@@ -126,7 +126,7 @@ describe("template dynasties", () => {
     expect(template.type).toBe(type);
     expect(dynasty.head).toBe(type);
     expect(dynasty.versions.map((v) => v.position)).toEqual([1, 2, 3]);
-    expect(guard.assertBlindTemplateKeepsClientAnonymous).toHaveBeenCalledWith(expect.objectContaining({ type, blind: true }));
+    expect(guard.assertTemplateKeepsDynastyIdentity).toHaveBeenCalledWith(expect.objectContaining({ type, identity: "blind" }));
     await expect(addDynastyVersion({ slug: SLUG, version: { type }, orgId: null, caller: CALLER, changedBy: BY }))
       .rejects.toMatchObject({ status: 409, code: "ALREADY_IN_DYNASTY" });
     await expect(addDynastyVersion({ slug: SLUG, version: { type: `${TAG}-nope` }, orgId: null, caller: CALLER, changedBy: BY }))
@@ -180,13 +180,28 @@ describe("template dynasties", () => {
     expect((await resolveDynastyHead(`${TAG}-fresh`)).template).toMatchObject({ prompt: text, variables: VARS });
     expect(guard.assertTemplateNeutral).toHaveBeenCalledWith(expect.objectContaining({ prompt: text, variables: VARS }));
     expect(guard.assertTemplateNeutral.mock.calls[0][0]).not.toHaveProperty("inherited");
-    expect(guard.assertBlindTemplateKeepsClientAnonymous).toHaveBeenCalledWith(expect.objectContaining({ blind: true }));
+    expect(guard.assertTemplateKeepsDynastyIdentity).toHaveBeenCalledWith(expect.objectContaining({ identity: "blind" }));
 
     // The next version follows the new family.
     const { template } = await addDynastyVersion({
       slug: `${TAG}-fresh`, version: { prompt: `${TAG} 8-second v2 {{leadFirstName}}`, variables: [VARS[0]] }, orgId: null, caller: CALLER, changedBy: BY,
     });
     expect(template.type).toBe(`${TAG}-fresh-v2`);
+  });
+
+  it("a dynasty created over stored templates has its head judged by the dynasty's identity (TPL-NAMED-HEAD-1023)", async () => {
+    await db.insert(prompts).values([
+      { type: `${TAG}-id-v1`, prompt: `${TAG} id v1 {{leadFirstName}}`, variables: [VARS[0]] },
+      { type: `${TAG}-id-v2`, prompt: `${TAG} id v2 {{leadFirstName}}`, variables: [VARS[0]] },
+    ]);
+    await createDynasty(
+      { slug: `${TAG}-id`, name: "Id", description: `Id ${TAG}`, signature: `Id sig ${TAG}`, identity: "named", ...PIPE, versions: [`${TAG}-id-v1`, `${TAG}-id-v2`] },
+      { caller: CALLER },
+    );
+    expect(guard.assertTemplateKeepsDynastyIdentity).toHaveBeenCalledTimes(1);
+    expect(guard.assertTemplateKeepsDynastyIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({ type: `${TAG}-id-v2`, prompt: `${TAG} id v2 {{leadFirstName}}`, identity: "named" }),
+    );
   });
 
   it("a new text is refused before anything is stored: mismatch, twin, taken type, not neutral", async () => {
