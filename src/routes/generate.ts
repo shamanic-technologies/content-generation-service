@@ -29,6 +29,7 @@ import { withSequenceDelays, IncompleteSequenceError } from "../lib/sequence-del
 import { ClientCommsVoiceError } from "../lib/client-comms-voice.js";
 import { ChatModelCatalogueError, UnknownModelError, resolveChatModel } from "../lib/chat-model-catalogue.js";
 import { stripDashes, hasDashes } from "../lib/dashes.js";
+import { isUniqueViolation } from "../lib/pg-error.js";
 import { textToHtml } from "../lib/text-to-html.js";
 
 const router = Router();
@@ -77,8 +78,7 @@ function withoutDashes<T extends { bodyText?: unknown }>(step: T): T {
  * including a unique violation on a different index — is rethrown.
  */
 function isLeadDuplicateError(err: unknown): boolean {
-  const e = err as { code?: unknown; constraint_name?: unknown };
-  return e?.code === "23505" && e?.constraint_name === "idx_emailgen_lead";
+  return isUniqueViolation(err, "idx_emailgen_lead");
 }
 
 /**

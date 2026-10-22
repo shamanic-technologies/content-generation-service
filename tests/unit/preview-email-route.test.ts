@@ -453,6 +453,15 @@ describe("POST /preview-email", () => {
     expect(mockGenerate).not.toHaveBeenCalled();
   });
 
+  it("returns the winner's email when drizzle wraps the duplicate key in a DrizzleQueryError", async () => {
+    const { DrizzleQueryError } = await import("drizzle-orm");
+    mockReturning.mockRejectedValue(new DrizzleQueryError("insert ...", [], Object.assign(new Error("dup"), { code: "23505", constraint_name: "idx_email_previews_recipient" })));
+    mockPreviewFindFirst.mockResolvedValueOnce(undefined).mockResolvedValueOnce(storedRow());
+    const res = await request(app).post("/preview-email").send(BODY);
+    expect(res.status).toBe(200);
+    expect(res.body.cached).toBe(true);
+  });
+
   it("returns the winner's email when a concurrent identical call won the insert", async () => {
     mockReturning.mockRejectedValue(Object.assign(new Error("dup"), { code: "23505", constraint_name: "idx_email_previews_recipient" }));
     mockPreviewFindFirst.mockResolvedValueOnce(undefined).mockResolvedValueOnce(storedRow());

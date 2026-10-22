@@ -7,6 +7,7 @@ import { DebriefVideoRequestSchema } from "../schemas.js";
 import { extractTracking } from "../lib/tracking.js";
 import { createRun, updateRun } from "../lib/runs-client.js";
 import { enqueueDebrief, toDebriefResponse } from "../lib/debrief/jobs.js";
+import { isUniqueViolation } from "../lib/pg-error.js";
 
 const router = Router();
 
@@ -63,8 +64,7 @@ router.post(
       enqueueDebrief(row.id);
       return res.status(202).json(toDebriefResponse(row));
     } catch (err) {
-      const e = err as { code?: string; constraint_name?: string };
-      if (e.code === "23505" && e.constraint_name === "idx_debrief_videos_idempotency") {
+      if (isUniqueViolation(err, "idx_debrief_videos_idempotency")) {
         // A concurrent POST with the same key won: answer its render, close the run we opened for nothing.
         await updateRun(run.id, "failed", { ...tracking, runId: run.id }).catch(() => {});
         const winner = await findForOrg(orgId, { idempotencyKey: body.idempotencyKey });
