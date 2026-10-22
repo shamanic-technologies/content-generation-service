@@ -2680,6 +2680,120 @@
           "outputs"
         ]
       },
+      "WorkflowDynastyOutputsResponse": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "The workflow dynasty slug asked for."
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "generationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "This service's generation id."
+                },
+                "createdAt": {
+                  "type": "string",
+                  "description": "When it was written (ISO 8601)."
+                },
+                "model": {
+                  "type": "string",
+                  "description": "The concrete model id that wrote it (e.g. `gemini-3.1-pro-preview`)."
+                },
+                "subject": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Subject line of the sequence."
+                },
+                "emails": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "step": {
+                        "type": "integer",
+                        "description": "1 = the first email, then each follow-up."
+                      },
+                      "bodyText": {
+                        "type": "string",
+                        "description": "The email's text as stored (= as sent)."
+                      },
+                      "daysSinceLastStep": {
+                        "type": "number",
+                        "nullable": true,
+                        "description": "Days after the previous email. Null when the stored step carries none."
+                      }
+                    },
+                    "required": [
+                      "step",
+                      "bodyText",
+                      "daysSinceLastStep"
+                    ]
+                  },
+                  "description": "Each email of the sequence, in order. Empty when the generation stored no copy."
+                },
+                "runId": {
+                  "type": "string",
+                  "description": "The workflow run that asked for it."
+                },
+                "workflowSlug": {
+                  "type": "string",
+                  "description": "The workflow VERSION slug of that run."
+                },
+                "promptType": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "The exact template version that wrote it. Null on rows written before templates were recorded."
+                },
+                "templateDynasty": {
+                  "type": "object",
+                  "nullable": true,
+                  "properties": {
+                    "slug": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "The dynasty's name, as on the Template pages."
+                    },
+                    "position": {
+                      "type": "integer",
+                      "description": "The version's position in the dynasty (1 = first)."
+                    }
+                  },
+                  "required": [
+                    "slug",
+                    "name",
+                    "position"
+                  ],
+                  "description": "The template dynasty of `promptType`. Null for a template in no dynasty."
+                }
+              },
+              "required": [
+                "generationId",
+                "createdAt",
+                "model",
+                "subject",
+                "emails",
+                "runId",
+                "workflowSlug",
+                "promptType",
+                "templateDynasty"
+              ]
+            },
+            "description": "Newest first, every org, across every version of the workflow dynasty. Empty when it never wrote, or workflow-service does not know it."
+          }
+        },
+        "required": [
+          "slug",
+          "outputs"
+        ]
+      },
       "OrgId": {
         "type": "string"
       },
@@ -5282,6 +5396,97 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/workflow-dynasties/{slug}/outputs": {
+      "get": {
+        "tags": [
+          "Workflow dynasties"
+        ],
+        "summary": "The last emails one workflow dynasty wrote, each with its template and model, newest first",
+        "description": "Fleet-wide staff read (API key only, no identity headers). The dynasty's version slugs are read from workflow-service; each output carries the run, the workflow version, the template (dynasty + version) and the concrete model that wrote it, and the subject + every email of the sequence. Never an org, brand, campaign, audience or lead.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "How many outputs, 1..50. Omitted = 20."
+            },
+            "required": false,
+            "description": "How many outputs, 1..50. Omitted = 20.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Outputs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDynastyOutputsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "workflow-service could not resolve the dynasty's versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
                 }
               }
             }

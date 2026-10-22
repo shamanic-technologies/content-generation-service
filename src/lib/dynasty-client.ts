@@ -15,23 +15,28 @@ interface DynastyEntry {
 
 /**
  * Resolve a workflow dynasty slug into all its versioned slugs.
- * Returns an empty array if the dynasty is not found.
+ * workflow-service answers `{ workflowDynastySlug, workflowDynastyName, workflowSlugs }` and 404s a
+ * dynasty it does not know: that is the empty answer. Any other failure throws (an outage is not
+ * "this dynasty wrote nothing").
  */
 export async function resolveWorkflowDynastySlugs(dynastySlug: string): Promise<string[]> {
-  const url = `${WORKFLOW_SERVICE_URL}/workflows/dynasty/slugs?dynastySlug=${encodeURIComponent(dynastySlug)}`;
+  const url = `${WORKFLOW_SERVICE_URL}/workflows/dynasty/slugs?workflowDynastySlug=${encodeURIComponent(dynastySlug)}`;
   const res = await fetch(url, {
     headers: {
       "X-Api-Key": WORKFLOW_SERVICE_API_KEY,
     },
   });
 
+  if (res.status === 404) return [];
   if (!res.ok) {
-    console.warn(`[content-generation-service] Failed to resolve workflow dynasty slug "${dynastySlug}": ${res.status}`);
-    return [];
+    throw new Error(`workflow-service GET /workflows/dynasty/slugs failed for "${dynastySlug}": ${res.status}`);
   }
 
-  const data = (await res.json()) as { slugs: string[] };
-  return data.slugs ?? [];
+  const data = (await res.json()) as { workflowSlugs?: unknown };
+  if (!Array.isArray(data.workflowSlugs)) {
+    throw new Error(`workflow-service GET /workflows/dynasty/slugs for "${dynastySlug}" carried no workflowSlugs list`);
+  }
+  return data.workflowSlugs.filter((s): s is string => typeof s === "string");
 }
 
 /**

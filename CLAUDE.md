@@ -25,6 +25,7 @@ Microservice that generates personalized content (emails, calendar events, etc.)
 - `src/routes/sequences.ts` + `src/lib/sequence-feed-query.ts` + `src/lib/first-email-shape.ts` — GET /internal/sequences, the fleet-wide sequence feed (see "Fleet-wide sequence feed" below)
 - `src/routes/catalogue-status.ts` + `src/lib/catalogue-status*.ts` — staff status of templates and writer models + a template's last outputs (see "Catalogue status" below)
 - `src/routes/template-dynasties.ts` + `src/lib/template-dynast*.ts` — template dynasties: list, read, resolve the head, add a version (see "Template dynasties" below)
+- `src/routes/workflow-dynasty-outputs.ts` + `src/lib/workflow-dynasty-outputs.ts` — GET /internal/workflow-dynasties/{slug}/outputs (see "Last outputs of a workflow dynasty" below)
 - `src/routes/health.ts` — GET /health endpoint
 - `src/middleware/auth.ts` — Authentication middleware (X-Clerk-Org-Id header)
 - `src/lib/chat-service-client.ts` — Chat-service client + email template utilities (prompt substitution, JSON parsing)
@@ -109,6 +110,10 @@ A dynasty is ONE email strategy on ONE pipe (`featureSlug` x `legKey`), cross-or
 - **Every version that wrote on a pipe is in a dynasty of that pipe** (`drizzle/0037`): 18 versions that wrote on the OTHER cold-email pipe than their dynasty joined the same strategy's twin (`cold-reply-*` ↔ `cold-click-*`, 6 twins created from their sibling; existing heads untouched); since `0038` the twin holds a COPY, never the same template. Templates that never wrote (drafts, PR/hiring/expert pitch) stay unattached.
 - **Last outputs of a dynasty**: `GET /internal/template-dynasties/{slug}/outputs?limit=` (default 5, max 20) → `{ slug, outputs }`, newest first across every version, the per-template outputs' fields + `promptType`. A copied version also brings what was written under its original name, on both pipes (a generation records no leg).
 - **Not on the client MCP**: the MCP treats prompt templates as platform-internal by design. LLM dynasties are a later phase. `/generate` does not read dynasties: workflow-service resolves the head and sends its type.
+
+## Last outputs of a workflow dynasty (`GET /internal/workflow-dynasties/{slug}/outputs`, WF-RUNS-OUTPUTS-1022)
+
+Staff Research page, fleet-wide. Since BEST-TPL-LLM-1022 a workflow fixes no template or LLM (each send uses the leg's best), so each output names what wrote it. API key only, `?limit=` 1..50 (default 20), newest first → `{ slug, outputs: [{ generationId, createdAt, runId, workflowSlug, promptType, templateDynasty: { slug, name, position } | null, model, subject, emails }] }` (`emails` = `outputEmails`, same as the template outputs). Version slugs from workflow-service `GET /workflows/dynasty/slugs?workflowDynastySlug=` (`resolveWorkflowDynastySlugs`: 404 = `[]`, any other failure throws → 502). A dynasty unknown or never run = `outputs: []`. Never an org, brand, campaign, audience or lead. Index `idx_emailgen_workflow_created` (`drizzle/0039`). That client read `?dynastySlug=` + `slugs` before this (both wrong), so `/stats?workflowDynastySlug=` always answered zero before.
 
 ## Per-feature prompt assignment
 
