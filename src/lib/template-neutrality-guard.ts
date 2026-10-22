@@ -20,6 +20,7 @@ import {
   type InheritedTemplate,
   type JudgedPassage,
   type NeutralityVerdict,
+  type TemplatePassage,
   type TemplateVariable,
 } from "./template-neutrality.js";
 import {
@@ -30,6 +31,13 @@ import {
   buildBlindRuleQuestions,
   isBlindTemplateType,
 } from "./blind-template-rule.js";
+import {
+  NAMED_TEMPLATE_RULE_VERSION,
+  NamedTemplateHidesClientError,
+  buildNamedRuleQuestions,
+  namedPassagesToJudge,
+  namedTemplateRuleKey,
+} from "./named-template-rule.js";
 
 async function judgeTemplate(
   prompt: string,
@@ -115,6 +123,69 @@ export async function assertTemplateNeutral(params: {
 }
 
 /**
+ * Judge EVERY passage of a template with one identity rule (blind or named), persisted under
+ * the rule's own key so a resubmission of the same content costs nothing. Returns the
+ * passages at or above the refusal threshold (empty = the template keeps its identity).
+ */
+async function judgeIdentityRule(rule: {
+  name: string;
+  version: string;
+  contentKey: string;
+  passages: () => TemplatePassage[];
+  questions: (chunk: TemplatePassage[], offset: number) => Record<string, unknown>;
+  type: string;
+  prompt: string;
+  caller: JudgmentCaller;
+}): Promise<JudgedPassage[]> {
+  const { contentKey, prompt, caller } = rule;
+  const stored = await db.query.templateNeutralityJudgments.findFirst({
+    where: eq(templateNeutralityJudgments.contentKey, contentKey),
+  });
+
+  let refused: JudgedPassage[];
+  if (stored) {
+    refused = (stored.passages as JudgedPassage[]).filter(
+      (p) => p.probability >= SPECIFIC_PROBABILITY_THRESHOLD,
+    );
+  } else {
+    const passages = rule.passages();
+    const answers: Record<string, unknown> = {};
+    let model = "none";
+    let inputTokens = 0;
+    for (let offset = 0; offset < passages.length; offset += QUESTIONS_PER_CALL) {
+      const chunk = passages.slice(offset, offset + QUESTIONS_PER_CALL);
+      const res = await askJudgments({ state: prompt, questions: rule.questions(chunk, offset) }, caller);
+      Object.assign(answers, res.answers);
+      model = res.model;
+      inputTokens += res.usage.inputTokens;
+    }
+    // Same reading as neutrality: a missing answer fails loud, >= 0.5 is refused.
+    const verdict = interpretNeutralityAnswers(passages, answers);
+    await db
+      .insert(templateNeutralityJudgments)
+      .values({
+        contentKey,
+        ruleVersion: rule.version,
+        neutral: verdict.neutral,
+        passages: verdict.passages,
+        model,
+        inputTokens,
+        orgId: caller.mode === "org" ? caller.tracking.orgId : null,
+        runId: caller.mode === "org" ? caller.tracking.runId : null,
+      })
+      .onConflictDoNothing();
+    refused = verdict.specific;
+  }
+
+  if (refused.length > 0) {
+    console.warn(
+      `[${rule.name}] refused type=${rule.type} key=${contentKey.slice(0, 12)} passages=${refused.length} cached=${Boolean(stored)}`,
+    );
+  }
+  return refused;
+}
+
+/**
  * Throws BlindTemplateRevealsClientError (→ 422) when a BLIND-type template tells or
  * allows the writer to name the client, its website or a link to it (blind-template-rule.ts).
  * Any other type returns at once. Every passage is judged, inherited ones included;
@@ -135,51 +206,56 @@ export async function assertBlindTemplateKeepsClientAnonymous(params: {
 }): Promise<void> {
   const { type, prompt, variables, caller } = params;
   if (!(params.blind ?? isBlindTemplateType(type))) return;
-  const contentKey = blindTemplateRuleKey(prompt, variables);
-
-  const stored = await db.query.templateNeutralityJudgments.findFirst({
-    where: eq(templateNeutralityJudgments.contentKey, contentKey),
+  const licensing = await judgeIdentityRule({
+    name: "blind-template-rule",
+    version: BLIND_TEMPLATE_RULE_VERSION,
+    contentKey: blindTemplateRuleKey(prompt, variables),
+    passages: () => blindPassagesToJudge(prompt, variables),
+    questions: buildBlindRuleQuestions,
+    type,
+    prompt,
+    caller,
   });
+  if (licensing.length > 0) throw new BlindTemplateRevealsClientError(type, licensing);
+}
 
-  let licensing: JudgedPassage[];
-  if (stored) {
-    licensing = (stored.passages as JudgedPassage[]).filter(
-      (p) => p.probability >= SPECIFIC_PROBABILITY_THRESHOLD,
-    );
-  } else {
-    const passages = blindPassagesToJudge(prompt, variables);
-    const answers: Record<string, unknown> = {};
-    let model = "none";
-    let inputTokens = 0;
-    for (let offset = 0; offset < passages.length; offset += QUESTIONS_PER_CALL) {
-      const chunk = passages.slice(offset, offset + QUESTIONS_PER_CALL);
-      const res = await askJudgments({ state: prompt, questions: buildBlindRuleQuestions(chunk, offset) }, caller);
-      Object.assign(answers, res.answers);
-      model = res.model;
-      inputTokens += res.usage.inputTokens;
-    }
-    // Same reading as neutrality: a missing answer fails loud, >= 0.5 is refused.
-    const verdict = interpretNeutralityAnswers(passages, answers);
-    await db
-      .insert(templateNeutralityJudgments)
-      .values({
-        contentKey,
-        ruleVersion: BLIND_TEMPLATE_RULE_VERSION,
-        neutral: verdict.neutral,
-        passages: verdict.passages,
-        model,
-        inputTokens,
-        orgId: caller.mode === "org" ? caller.tracking.orgId : null,
-        runId: caller.mode === "org" ? caller.tracking.runId : null,
-      })
-      .onConflictDoNothing();
-    licensing = verdict.specific;
-  }
+/**
+ * Throws NamedTemplateHidesClientError (→ 422) when a template of a NAMED dynasty tells the
+ * writer to keep the client anonymous (named-template-rule.ts). Every passage is judged,
+ * inherited ones included; verdict persisted under its own key.
+ */
+export async function assertNamedTemplateNamesClient(params: {
+  type: string;
+  prompt: string;
+  variables: ReadonlyArray<TemplateVariable>;
+  caller: JudgmentCaller;
+}): Promise<void> {
+  const { type, prompt, variables, caller } = params;
+  const hiding = await judgeIdentityRule({
+    name: "named-template-rule",
+    version: NAMED_TEMPLATE_RULE_VERSION,
+    contentKey: namedTemplateRuleKey(prompt, variables),
+    passages: () => namedPassagesToJudge(prompt, variables),
+    questions: buildNamedRuleQuestions,
+    type,
+    prompt,
+    caller,
+  });
+  if (hiding.length > 0) throw new NamedTemplateHidesClientError(type, hiding);
+}
 
-  if (licensing.length > 0) {
-    console.warn(
-      `[blind-template-rule] refused type=${type} key=${contentKey.slice(0, 12)} licensing=${licensing.length} cached=${Boolean(stored)}`,
-    );
-    throw new BlindTemplateRevealsClientError(type, licensing);
-  }
+/**
+ * A dynasty's text must keep its dynasty's identity (owner 2026-10-23: binary, blind | named):
+ * a blind dynasty's text never licenses naming the client, a named one's never hides it.
+ */
+export async function assertTemplateKeepsDynastyIdentity(params: {
+  type: string;
+  prompt: string;
+  variables: ReadonlyArray<TemplateVariable>;
+  caller: JudgmentCaller;
+  identity: "blind" | "named";
+}): Promise<void> {
+  const { identity, ...rest } = params;
+  if (identity === "blind") await assertBlindTemplateKeepsClientAnonymous({ ...rest, blind: true });
+  else await assertNamedTemplateNamesClient(rest);
 }
