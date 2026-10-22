@@ -29,24 +29,32 @@ describe("dynasty-client", () => {
     it("returns versioned slugs from workflow-service", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ slugs: ["cold-email", "cold-email-v2", "cold-email-v3"] }),
+        status: 200,
+        json: async () => ({ workflowDynastySlug: "cold-email", workflowDynastyName: "Cold", workflowSlugs: ["cold-email", "cold-email-v2", "cold-email-v3"] }),
       });
 
       const slugs = await resolveWorkflowDynastySlugs("cold-email");
 
       expect(slugs).toEqual(["cold-email", "cold-email-v2", "cold-email-v3"]);
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://workflow-test/workflows/dynasty/slugs?dynastySlug=cold-email",
+        "http://workflow-test/workflows/dynasty/slugs?workflowDynastySlug=cold-email",
         expect.objectContaining({ headers: { "X-Api-Key": "wf-key" } }),
       );
     });
 
-    it("returns empty array on non-ok response", async () => {
+    it("returns an empty array for a dynasty workflow-service does not know (404)", async () => {
       mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
 
       const slugs = await resolveWorkflowDynastySlugs("nonexistent");
 
       expect(slugs).toEqual([]);
+    });
+
+    it("throws on any other failure", async () => {
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 503 });
+      await expect(resolveWorkflowDynastySlugs("cold-email")).rejects.toThrow(/503/);
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ slugs: ["x"] }) });
+      await expect(resolveWorkflowDynastySlugs("cold-email")).rejects.toThrow(/workflowSlugs/);
     });
   });
 

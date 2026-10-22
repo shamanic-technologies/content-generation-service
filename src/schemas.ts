@@ -2188,6 +2188,55 @@ const DynastyOutputsResponseSchema = registry.register(
     .openapi("TemplateDynastyOutputsResponse")
 );
 
+export const WorkflowDynastyOutputsQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(50).optional().describe("How many outputs, 1..50. Omitted = 20."),
+  })
+  .openapi("WorkflowDynastyOutputsQuery");
+
+const WorkflowDynastyOutputsResponseSchema = registry.register(
+  "WorkflowDynastyOutputsResponse",
+  z
+    .object({
+      slug: z.string().describe("The workflow dynasty slug asked for."),
+      outputs: z
+        .array(
+          TemplateOutputSchema.omit({ workflowSlug: true }).extend({
+            runId: z.string().describe("The workflow run that asked for it."),
+            workflowSlug: z.string().describe("The workflow VERSION slug of that run."),
+            promptType: z.string().nullable().describe("The exact template version that wrote it. Null on rows written before templates were recorded."),
+            templateDynasty: z
+              .object({
+                slug: z.string(),
+                name: z.string().describe("The dynasty's name, as on the Template pages."),
+                position: z.number().int().describe("The version's position in the dynasty (1 = first)."),
+              })
+              .nullable()
+              .describe("The template dynasty of `promptType`. Null for a template in no dynasty."),
+          })
+        )
+        .describe("Newest first, every org, across every version of the workflow dynasty. Empty when it never wrote, or workflow-service does not know it."),
+    })
+    .openapi("WorkflowDynastyOutputsResponse")
+);
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/workflow-dynasties/{slug}/outputs",
+  tags: ["Workflow dynasties"],
+  summary: "The last emails one workflow dynasty wrote, each with its template and model, newest first",
+  description:
+    "Fleet-wide staff read (API key only, no identity headers). The dynasty's version slugs are read from workflow-service; " +
+    "each output carries the run, the workflow version, the template (dynasty + version) and the concrete model that wrote it, " +
+    "and the subject + every email of the sequence. Never an org, brand, campaign, audience or lead.",
+  request: { params: z.object({ slug: z.string() }), query: WorkflowDynastyOutputsQuerySchema },
+  responses: {
+    200: { description: "Outputs", content: { "application/json": { schema: WorkflowDynastyOutputsResponseSchema } } },
+    400: { description: "Bad limit", content: { "application/json": { schema: DynastyErrorSchema } } },
+    502: { description: "workflow-service could not resolve the dynasty's versions", content: { "application/json": { schema: DynastyErrorSchema } } },
+  },
+});
+
 registry.registerPath({
   method: "get",
   path: "/internal/template-dynasties",
