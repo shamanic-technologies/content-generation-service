@@ -19,6 +19,7 @@ import submagicRoutes from "./routes/submagic.js";
 import transferBrandRoutes from "./routes/transfer-brand.js";
 import catalogueStatusRoutes from "./routes/catalogue-status.js";
 import templateDynastyRoutes from "./routes/template-dynasties.js";
+import workflowDynastyOutputRoutes from "./routes/workflow-dynasty-outputs.js";
 import sequenceRoutes from "./routes/sequences.js";
 import previewEmailRoutes from "./routes/preview-email.js";
 import industryDebriefVideoRoutes from "./routes/industry-debrief-videos.js";
@@ -71,6 +72,7 @@ app.use(transferBrandRoutes);
 app.use(sequenceRoutes);
 app.use(catalogueStatusRoutes);
 app.use(templateDynastyRoutes);
+app.use(workflowDynastyOutputRoutes);
 app.use(previewEmailRoutes);
 app.use(industryDebriefVideoRoutes);
 
