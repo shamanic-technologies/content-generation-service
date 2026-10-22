@@ -79,6 +79,20 @@ describe("POST /industry-debrief-videos", () => {
     expect(mockEnqueue).not.toHaveBeenCalled();
   });
 
+  it("answers the concurrent winner when drizzle wraps the idempotency unique violation", async () => {
+    const { DrizzleQueryError } = await import("drizzle-orm");
+    mockSelectRows.mockReturnValueOnce([]).mockReturnValue([{ id: ID, status: "rendering" }]);
+    mockUpdateRun.mockResolvedValue({});
+    mockReturning.mockRejectedValue(new DrizzleQueryError("insert ...", [], Object.assign(new Error("dup"), {
+      code: "23505", constraint_name: "idx_debrief_videos_idempotency",
+    })));
+    const res = await request(app()).post("/industry-debrief-videos").set(H).send(fixture);
+    expect(res.status).toBe(202);
+    expect(res.body.status).toBe("rendering");
+    expect(mockUpdateRun).toHaveBeenCalledWith("render-run", "failed", expect.anything());
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
   it("requires x-run-id", async () => {
     const { "x-run-id": _, ...noRun } = H;
     const res = await request(app()).post("/industry-debrief-videos").set(noRun).send(fixture);
