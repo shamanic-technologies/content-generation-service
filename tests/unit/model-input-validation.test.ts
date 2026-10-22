@@ -3,121 +3,68 @@ import {
   GenerateRequestSchema,
   GenerateExpertQuotePitchRequestSchema,
 } from "../../src/schemas";
-import { CHAT_MODELS, MODEL_TO_PROVIDER } from "../../src/lib/chat-models";
+import { DEFAULT_MODEL } from "../../src/lib/chat-models";
+import { listChatModels, resolveChatModel, UnknownModelError } from "../../src/lib/chat-model-catalogue";
 
-const ALL_MODELS = [
-  "haiku",
-  "sonnet",
-  "opus",
-  "flash-lite",
-  "flash",
-  "flash-pro",
-  "pro",
-  "deepseek-flash",
-  "deepseek-pro",
-  "glm-flash",
-  "glm-pro",
-  "kimi-flash",
-  "kimi-pro",
-  "fable",
-  "gpt-pro",
-  "gpt-sol",
-  "gpt-terra",
+// LLM-DYNASTY-1022-CG: the accepted names are chat-service's (stubbed in tests/setup.ts with its
+// catalogue as served 2026-10-22), never a list kept here. The schema takes any non-empty name;
+// the routes check it against the catalogue before any read or spend.
+const DYNASTIES = [
+  "claude-haiku", "claude-sonnet", "claude-opus", "claude-fable",
+  "gemini-flash-lite", "gemini-flash", "gemini-pro",
+  "deepseek-flash", "glm-flash", "glm", "kimi-k2", "kimi-k3",
+  "gpt-astra", "gpt-sol", "gpt-terra",
+];
+const LEGACY = [
+  "haiku", "sonnet", "opus", "fable", "flash-lite", "flash", "flash-pro", "pro",
+  "deepseek-pro", "glm-pro", "kimi-flash", "kimi-pro", "gpt-pro",
 ];
 
-describe("model alias set", () => {
-  it("is exactly the aliases chat-service accepts, each mapped to its provider", () => {
-    expect([...CHAT_MODELS]).toEqual(ALL_MODELS);
-    expect(MODEL_TO_PROVIDER).toEqual({
-      haiku: "anthropic",
-      sonnet: "anthropic",
-      opus: "anthropic",
-      "flash-lite": "google",
-      flash: "google",
-      "flash-pro": "google",
-      pro: "google",
-      "deepseek-flash": "deepseek",
-      "deepseek-pro": "deepseek",
-      "glm-flash": "zai",
-      "glm-pro": "zai",
-      "kimi-flash": "moonshot",
-      "kimi-pro": "moonshot",
-      fable: "anthropic",
-      "gpt-pro": "openai",
-      "gpt-sol": "openai",
-      "gpt-terra": "openai",
-    });
+describe("model names come from chat-service's catalogue", () => {
+  it("accepts every served dynasty slug, each on its provider and dynasty", async () => {
+    for (const slug of DYNASTIES) {
+      const entry = await resolveChatModel(slug);
+      expect(entry.dynasty, slug).toBe(slug);
+    }
+    expect((await resolveChatModel("claude-opus")).provider).toBe("anthropic");
+    expect((await resolveChatModel("gemini-flash")).provider).toBe("google");
+    expect((await resolveChatModel("kimi-k3")).provider).toBe("moonshot");
+    expect((await resolveChatModel("gpt-terra")).provider).toBe("openai");
+    expect((await resolveChatModel("glm")).provider).toBe("zai");
   });
 
-  it("routes each direct-vendor alias to the provider slug chat-service expects", () => {
-    expect(MODEL_TO_PROVIDER["deepseek-flash"]).toBe("deepseek");
-    expect(MODEL_TO_PROVIDER["deepseek-pro"]).toBe("deepseek");
-    expect(MODEL_TO_PROVIDER["glm-flash"]).toBe("zai");
-    expect(MODEL_TO_PROVIDER["glm-pro"]).toBe("zai");
-    expect(MODEL_TO_PROVIDER["kimi-flash"]).toBe("moonshot");
-    expect(MODEL_TO_PROVIDER["kimi-pro"]).toBe("moonshot");
-    expect(MODEL_TO_PROVIDER["gpt-pro"]).toBe("openai");
+  it("keeps every legacy alias, redirected to its dynasty", async () => {
+    for (const alias of LEGACY) await expect(resolveChatModel(alias)).resolves.toBeTruthy();
+    expect((await resolveChatModel("opus")).dynasty).toBe("claude-opus");
+    expect((await resolveChatModel("flash-pro")).dynasty).toBe("gemini-flash");
+    expect((await resolveChatModel("pro")).dynasty).toBe("gemini-pro");
   });
 
-  it("routes fable to the native anthropic client", () => {
-    expect(MODEL_TO_PROVIDER.fable).toBe("anthropic");
+  it("refuses a name chat-service does not accept, naming what it accepts", async () => {
+    const err = await resolveChatModel("gpt-4").catch((e) => e);
+    expect(err).toBeInstanceOf(UnknownModelError);
+    expect(err.status).toBe(400);
+    expect(err.code).toBe("UNKNOWN_MODEL");
+    expect(err.accepted).toEqual((await listChatModels()).map((e) => e.model));
   });
 
-  it("keeps the seven pre-existing aliases on their original providers", () => {
-    expect(MODEL_TO_PROVIDER.haiku).toBe("anthropic");
-    expect(MODEL_TO_PROVIDER.sonnet).toBe("anthropic");
-    expect(MODEL_TO_PROVIDER.opus).toBe("anthropic");
-    expect(MODEL_TO_PROVIDER["flash-lite"]).toBe("google");
-    expect(MODEL_TO_PROVIDER.flash).toBe("google");
-    expect(MODEL_TO_PROVIDER["flash-pro"]).toBe("google");
-    expect(MODEL_TO_PROVIDER.pro).toBe("google");
+  it("defaults to the Gemini Pro dynasty, the model the old `pro` default ran", async () => {
+    expect(DEFAULT_MODEL).toBe("gemini-pro");
+    expect((await resolveChatModel("pro")).dynasty).toBe((await resolveChatModel(DEFAULT_MODEL)).dynasty);
+  });
+
+  it("has no `_` in any name", async () => {
+    for (const e of await listChatModels()) expect(e.model).not.toContain("_");
   });
 });
 
-describe("model input validation — POST /generate", () => {
-  it("accepts every one of the 15 model aliases", () => {
-    for (const model of ALL_MODELS) {
-      const r = GenerateRequestSchema.safeParse({ type: "cold-email", variables: {}, model });
-      expect(r.success, `model ${model} should be accepted`).toBe(true);
+describe("model field on the request schemas", () => {
+  it("takes any non-empty name (checked against the catalogue by the route), optional", () => {
+    for (const model of [...DYNASTIES, ...LEGACY, "gemini-3.8-flash"]) {
+      expect(GenerateRequestSchema.safeParse({ type: "cold-email", variables: {}, model }).success, model).toBe(true);
+      expect(GenerateExpertQuotePitchRequestSchema.safeParse({ variables: {}, model }).success, model).toBe(true);
     }
-  });
-
-  it("rejects an unknown model alias (400-class, no silent default)", () => {
-    const r = GenerateRequestSchema.safeParse({ type: "cold-email", variables: {}, model: "gpt-4" });
-    expect(r.success).toBe(false);
-  });
-
-  it("names the whole accepted set in the rejection message the route returns as 400", () => {
-    const r = GenerateRequestSchema.safeParse({ type: "cold-email", variables: {}, model: "gpt-4" });
-    expect(r.success).toBe(false);
-    // The route serializes `parsed.error.issues.map(i => i.message)` into the 400 body.
-    const message = r.success ? "" : r.error.issues.map((i) => i.message).join(", ");
-    for (const model of ALL_MODELS) {
-      expect(message, `rejection should name ${model}`).toContain(model);
-    }
-  });
-
-  it("treats model as optional (omitted is valid → service defaults to pro)", () => {
-    const r = GenerateRequestSchema.safeParse({ type: "cold-email", variables: {} });
-    expect(r.success).toBe(true);
-  });
-});
-
-describe("model input validation — POST /generate-expert-quote-pitch", () => {
-  it("accepts every one of the 15 model aliases", () => {
-    for (const model of ALL_MODELS) {
-      const r = GenerateExpertQuotePitchRequestSchema.safeParse({ variables: {}, model });
-      expect(r.success, `model ${model} should be accepted`).toBe(true);
-    }
-  });
-
-  it("rejects an unknown model alias", () => {
-    const r = GenerateExpertQuotePitchRequestSchema.safeParse({ variables: {}, model: "nope" });
-    expect(r.success).toBe(false);
-  });
-
-  it("treats model as optional", () => {
-    const r = GenerateExpertQuotePitchRequestSchema.safeParse({ variables: {} });
-    expect(r.success).toBe(true);
+    expect(GenerateRequestSchema.safeParse({ type: "cold-email", variables: {} }).success).toBe(true);
+    expect(GenerateRequestSchema.safeParse({ type: "cold-email", variables: {}, model: "" }).success).toBe(false);
   });
 });

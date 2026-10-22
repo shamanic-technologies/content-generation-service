@@ -43,7 +43,7 @@ describe("chat-service client (generateFromTemplate)", () => {
     expect(body.message).toContain("Sarah");
     expect(body.systemPrompt).toBeDefined();
     expect(body.provider).toBe("google");
-    expect(body.model).toBe("pro");
+    expect(body.model).toBe("gemini-pro");
     // responseSchema enables Gemini structured-output mode (fixes Bad escaped character in JSON).
     // responseFormat + maxTokens are intentionally absent: responseSchema implies JSON mode,
     // and chat-service silently drops maxTokens.
@@ -130,7 +130,7 @@ describe("chat-service client (generateFromTemplate)", () => {
     });
 
     await expect(generateFromTemplate(PARAMS, IDENTITY)).rejects.toThrow(
-      "chat-service /complete failed for provider 'google' model 'pro': 502"
+      "chat-service /complete failed for provider 'google' model 'gemini-pro': 502"
     );
   });
 
@@ -229,14 +229,14 @@ describe("model selection (generateFromTemplate)", () => {
     vi.clearAllMocks();
   });
 
-  it("defaults to google/pro with the permissive schema when model is omitted", async () => {
+  it("defaults to google/gemini-pro with the permissive schema when model is omitted", async () => {
     mockFetch.mockResolvedValueOnce(successResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
 
     await generateFromTemplate(PARAMS, IDENTITY);
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(body.provider).toBe("google");
-    expect(body.model).toBe("pro");
+    expect(body.model).toBe("gemini-pro");
     expect(body.responseSchema.additionalProperties).toBeUndefined();
   });
 
@@ -378,14 +378,14 @@ describe("model selection (generateExpertQuotePitchFromTemplate, free-text)", ()
     vi.clearAllMocks();
   });
 
-  it("defaults to google/pro and never sends a responseSchema", async () => {
+  it("defaults to google/gemini-pro and never sends a responseSchema", async () => {
     mockFetch.mockResolvedValueOnce(textResponse(PITCH_BODY));
 
     await generateExpertQuotePitchFromTemplate(PITCH_PARAMS, IDENTITY);
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(body.provider).toBe("google");
-    expect(body.model).toBe("pro");
+    expect(body.model).toBe("gemini-pro");
     expect(body.responseSchema).toBeUndefined();
   });
 

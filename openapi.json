@@ -390,26 +390,8 @@
           },
           "model": {
             "type": "string",
-            "enum": [
-              "haiku",
-              "sonnet",
-              "opus",
-              "flash-lite",
-              "flash",
-              "flash-pro",
-              "pro",
-              "deepseek-flash",
-              "deepseek-pro",
-              "glm-flash",
-              "glm-pro",
-              "kimi-flash",
-              "kimi-pro",
-              "fable",
-              "gpt-pro",
-              "gpt-sol",
-              "gpt-terra"
-            ],
-            "description": "LLM model to generate with (version-free alias). Provider is derived automatically: anthropic → haiku | sonnet | opus; google → flash-lite | flash | flash-pro | pro; deepseek → deepseek-flash (DeepSeek V4 Flash) | deepseek-pro (DeepSeek V4 Pro); zai → glm-flash (glm-4.7-flashx) | glm-pro (glm-5.2); moonshot → kimi-flash (kimi-k2.6) | kimi-pro (kimi-k3). The six deepseek/zai/moonshot aliases are called directly on each vendor's OpenAI-compatible API. That path is text-only, which this service never exceeds; note that JSON-mode enforcement there is best-effort (fails loud rather than degrading), and a vendor whose account is out of credit answers 429 — surfaced as an error naming the provider, never silently rerouted to another vendor. Omit to use the default 'pro' (google) — unchanged from before this field existed. Every alias stays accepted here whatever its staff status: a NEW workflow must not name one whose status is `deprecated` on GET /internal/models, but a stored workflow that does keeps generating."
+            "minLength": 1,
+            "description": "LLM to write with. Preferred: an LLM dynasty slug (e.g. `claude-opus`, `gemini-flash`; the list is chat-service GET /internal/model-dynasties), which always runs the dynasty's newest version. Any name chat-service POST /complete accepts is accepted: a dynasty slug, a head's exact model id, or a legacy alias (`opus`, `flash-pro`, `pro`…, each a redirect to its dynasty's head). The list is chat-service's (GET /internal/models there, mirrored with statuses on GET /internal/models here), read live: a name it does not accept → 400 `UNKNOWN_MODEL`. Provider is read from that catalogue, never sent by the caller. The model that actually wrote is recorded per generation (`model`). Omit to use the default `gemini-pro` (the model the old `pro` default ran). Every name stays accepted here whatever its staff status: a NEW workflow must not name one whose status is `deprecated` on GET /internal/models, but a stored workflow that does keeps generating."
           },
           "brandIds": {
             "type": "array",
@@ -524,26 +506,8 @@
           },
           "model": {
             "type": "string",
-            "enum": [
-              "haiku",
-              "sonnet",
-              "opus",
-              "flash-lite",
-              "flash",
-              "flash-pro",
-              "pro",
-              "deepseek-flash",
-              "deepseek-pro",
-              "glm-flash",
-              "glm-pro",
-              "kimi-flash",
-              "kimi-pro",
-              "fable",
-              "gpt-pro",
-              "gpt-sol",
-              "gpt-terra"
-            ],
-            "description": "LLM model to generate with (version-free alias). Provider is derived automatically: anthropic → haiku | sonnet | opus; google → flash-lite | flash | flash-pro | pro; deepseek → deepseek-flash (DeepSeek V4 Flash) | deepseek-pro (DeepSeek V4 Pro); zai → glm-flash (glm-4.7-flashx) | glm-pro (glm-5.2); moonshot → kimi-flash (kimi-k2.6) | kimi-pro (kimi-k3). The six deepseek/zai/moonshot aliases are called directly on each vendor's OpenAI-compatible API. That path is text-only, which this service never exceeds; note that JSON-mode enforcement there is best-effort (fails loud rather than degrading), and a vendor whose account is out of credit answers 429 — surfaced as an error naming the provider, never silently rerouted to another vendor. Omit to use the default 'pro' (google) — unchanged from before this field existed. Every alias stays accepted here whatever its staff status: a NEW workflow must not name one whose status is `deprecated` on GET /internal/models, but a stored workflow that does keeps generating."
+            "minLength": 1,
+            "description": "LLM to write with. Preferred: an LLM dynasty slug (e.g. `claude-opus`, `gemini-flash`; the list is chat-service GET /internal/model-dynasties), which always runs the dynasty's newest version. Any name chat-service POST /complete accepts is accepted: a dynasty slug, a head's exact model id, or a legacy alias (`opus`, `flash-pro`, `pro`…, each a redirect to its dynasty's head). The list is chat-service's (GET /internal/models there, mirrored with statuses on GET /internal/models here), read live: a name it does not accept → 400 `UNKNOWN_MODEL`. Provider is read from that catalogue, never sent by the caller. The model that actually wrote is recorded per generation (`model`). Omit to use the default `gemini-pro` (the model the old `pro` default ran). Every name stays accepted here whatever its staff status: a NEW workflow must not name one whose status is `deprecated` on GET /internal/models, but a stored workflow that does keeps generating."
           },
           "brandIds": {
             "type": "array",
@@ -2099,30 +2063,16 @@
         "properties": {
           "model": {
             "type": "string",
-            "enum": [
-              "haiku",
-              "sonnet",
-              "opus",
-              "flash-lite",
-              "flash",
-              "flash-pro",
-              "pro",
-              "deepseek-flash",
-              "deepseek-pro",
-              "glm-flash",
-              "glm-pro",
-              "kimi-flash",
-              "kimi-pro",
-              "fable",
-              "gpt-pro",
-              "gpt-sol",
-              "gpt-terra"
-            ],
-            "description": "Writer model alias, as accepted in `model` on POST /generate."
+            "description": "A name accepted in `model` on POST /generate (dynasty slug, exact model id or legacy alias), as chat-service serves it."
           },
           "provider": {
             "type": "string",
-            "description": "Provider the alias is served by (derived, never sent by a caller)."
+            "description": "Provider the name runs on, read from chat-service's catalogue (never sent by a caller)."
+          },
+          "dynasty": {
+            "type": "string",
+            "nullable": true,
+            "description": "LLM dynasty slug of the model the name runs, from chat-service; null while chat-service serves none."
           },
           "status": {
             "type": "string",
@@ -2151,6 +2101,7 @@
         "required": [
           "model",
           "provider",
+          "dynasty",
           "status",
           "statusChangedAt",
           "statusReason",
@@ -2165,7 +2116,7 @@
             "items": {
               "$ref": "#/components/schemas/ModelStatusEntry"
             },
-            "description": "Every alias POST /generate accepts, each with its status. Only `active` ones may be named by a NEW workflow."
+            "description": "Every name POST /generate accepts (chat-service's catalogue, read live), each with its status. Only `active` ones may be named by a NEW workflow."
           }
         },
         "required": [

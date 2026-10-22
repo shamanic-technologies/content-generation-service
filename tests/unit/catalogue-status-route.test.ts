@@ -42,15 +42,15 @@ describe("staff catalogue status routes", () => {
   });
 
   it("PUT a model status: deprecated with why + who, and back without a reason", async () => {
-    q.setModelStatus.mockImplementation(async (model, change) => ({ model, provider: "zai", ...served(change.status, change.reason) }));
+    q.setModelStatus.mockImplementation(async (entry, change) => ({ ...entry, ...served(change.status, change.reason) }));
     const dep = await request(app()).put("/internal/models/glm-pro/status").set(WHO)
       .send({ status: "deprecated", reason: "  Writes one block, no line breaks  " }).expect(200);
-    expect(q.setModelStatus).toHaveBeenLastCalledWith("glm-pro", {
+    expect(q.setModelStatus).toHaveBeenLastCalledWith(expect.objectContaining({ model: "glm-pro", provider: "zai" }), {
       status: "deprecated", reason: "Writes one block, no line breaks", changedBy: "kevin@distribute.you",
     });
     expect(dep.body.statusReason).toBe("Writes one block, no line breaks");
     await request(app()).put("/internal/models/glm-pro/status").send({ status: "active", reason: "x" }).expect(200);
-    expect(q.setModelStatus).toHaveBeenLastCalledWith("glm-pro", { status: "active", reason: null, changedBy: null });
+    expect(q.setModelStatus).toHaveBeenLastCalledWith(expect.objectContaining({ model: "glm-pro", provider: "zai" }), { status: "active", reason: null, changedBy: null });
   });
 
   it("refuses a deprecation without a reason or without who, nothing written", async () => {
@@ -64,6 +64,13 @@ describe("staff catalogue status routes", () => {
     }
     expect(q.setModelStatus).not.toHaveBeenCalled();
     expect(q.setTemplateStatus).not.toHaveBeenCalled();
+  });
+
+  it("PUT a dynasty slug's status: any name chat-service accepts, with its provider and dynasty", async () => {
+    q.setModelStatus.mockImplementation(async (entry, change) => ({ ...entry, ...served(change.status, change.reason) }));
+    const dep = await request(app()).put("/internal/models/claude-opus/status").set(WHO)
+      .send({ status: "deprecated", reason: "Too slow" }).expect(200);
+    expect(dep.body).toMatchObject({ model: "claude-opus", provider: "anthropic", dynasty: "claude-opus", status: "deprecated" });
   });
 
   it("404s an alias this service does not accept, 400s a bad status", async () => {

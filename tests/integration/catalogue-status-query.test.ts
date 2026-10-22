@@ -14,6 +14,7 @@ import { closeDb, randomId } from "../helpers/test-db.js";
 const TYPE = `catalogue-status-test-${randomId().slice(0, 8)}`;
 const OTHER_TYPE = `${TYPE}-other`;
 const MODEL = "kimi-flash";
+const ENTRY = { model: MODEL, provider: "moonshot" as const, dynasty: "kimi-k2" };
 const DEPRECATE = { status: "deprecated" as const, reason: "Writes one block", changedBy: "kevin@distribute.you" };
 const ACTIVATE = { status: "active" as const, reason: null, changedBy: "kevin@distribute.you" };
 
@@ -85,14 +86,14 @@ describe("catalogue status (templates + models)", () => {
   it("every model reads active until staff changes it, both ways", async () => {
     const initial = (await listModelStatuses()).find((m) => m.model === MODEL)!;
     expect(initial).toEqual({
-      model: MODEL, provider: "moonshot", status: "active", statusChangedAt: null, statusReason: null, statusChangedBy: null,
+      model: MODEL, provider: "moonshot", dynasty: "kimi-k2", status: "active", statusChangedAt: null, statusReason: null, statusChangedBy: null,
     });
 
-    expect((await setModelStatus(MODEL, DEPRECATE)).statusReason).toBe("Writes one block");
+    expect((await setModelStatus(ENTRY, DEPRECATE)).statusReason).toBe("Writes one block");
     expect((await listModelStatuses()).find((m) => m.model === MODEL)).toMatchObject({
       status: "deprecated", statusReason: "Writes one block", statusChangedBy: "kevin@distribute.you",
     });
-    expect((await setModelStatus(MODEL, ACTIVATE)).statusReason).toBeNull();
+    expect((await setModelStatus(ENTRY, ACTIVATE)).statusReason).toBeNull();
     expect((await listModelStatuses()).find((m) => m.model === MODEL)!.status).toBe("active");
   });
 

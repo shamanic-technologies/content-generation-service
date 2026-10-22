@@ -53,3 +53,30 @@ vi.mock("../src/lib/dynasty-membership.js", async (importOriginal) => {
     assertNotDynastySource: vi.fn(async () => undefined),
   };
 });
+
+// Which model names chat-service accepts is read live from its `GET /internal/models`
+// (src/lib/chat-model-catalogue.ts, LLM-DYNASTY-1022-CG). Unit suites count fetch calls, so the
+// read is stubbed once here with chat-service's catalogue as served on 2026-10-22 (16 LLM dynasty
+// slugs, each head's model id, the legacy aliases); the real module is exercised by
+// tests/unit/chat-model-catalogue.test.ts (vi.importActual).
+vi.mock("../src/lib/chat-model-catalogue.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/chat-model-catalogue.js")>();
+  const { readFileSync } = await import("node:fs");
+  const fixture = JSON.parse(
+    readFileSync(new URL("./fixtures/chat-service-models-2026-10-22.json", import.meta.url), "utf8")
+  ) as { models: Array<{ model: string; provider: string; dynasty: string }> };
+  const entries = fixture.models.map(({ model, provider, dynasty }) => ({ model, provider, dynasty })) as Awaited<
+    ReturnType<typeof actual.listChatModels>
+  >;
+  const find = async (model: string) => entries.find((e) => e.model === model) ?? null;
+  return {
+    ...actual,
+    listChatModels: vi.fn(async () => entries),
+    findChatModel: vi.fn(find),
+    resolveChatModel: vi.fn(async (model: string) => {
+      const hit = await find(model);
+      if (!hit) throw new actual.UnknownModelError(model, entries.map((e) => e.model));
+      return hit;
+    }),
+  };
+});

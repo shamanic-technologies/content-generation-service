@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { CHAT_MODELS, type ChatModel } from "../lib/chat-models.js";
+import { ChatModelCatalogueError, findChatModel, listChatModels } from "../lib/chat-model-catalogue.js";
 import {
   listModelStatuses,
   listTemplateStatuses,
@@ -25,6 +25,7 @@ function handle(fn: (req: Request, res: Response) => Promise<unknown>) {
   return (req: Request, res: Response) => {
     fn(req, res).catch((error: unknown) => {
       if (error instanceof TemplateDynastyError) return res.status(error.status).json(error.toResponseBody());
+      if (error instanceof ChatModelCatalogueError) return res.status(502).json({ error: error.message, code: error.code });
       console.error(`[content-generation-service] ${req.method} ${req.path} error:`, error);
       res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
     });
@@ -46,22 +47,20 @@ function parseStatusChange(req: Request, res: Response): StatusChange | null {
   return change;
 }
 
-function isChatModel(value: string): value is ChatModel {
-  return (CHAT_MODELS as readonly string[]).includes(value);
-}
-
 router.get("/internal/models", handle(async (_req: Request, res: Response) => {
   res.json({ models: await listModelStatuses() });
 }));
 
 router.put("/internal/models/:model/status", handle(async (req: Request, res: Response) => {
   const { model } = req.params;
-  if (!isChatModel(model)) {
-    return res.status(404).json({ error: `Unknown model alias "${model}". Accepted: ${CHAT_MODELS.join(", ")}` });
+  const entry = await findChatModel(model);
+  if (!entry) {
+    const accepted = (await listChatModels()).map((e) => e.model);
+    return res.status(404).json({ error: `Unknown model "${model}". chat-service accepts: ${accepted.join(", ")}` });
   }
   const change = parseStatusChange(req, res);
   if (!change) return;
-  res.json(await setModelStatus(model, change));
+  res.json(await setModelStatus(entry, change));
 }));
 
 router.get("/internal/templates", handle(async (_req: Request, res: Response) => {
