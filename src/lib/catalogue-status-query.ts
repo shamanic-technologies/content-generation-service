@@ -1,7 +1,8 @@
 import { asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, modelStatuses, prompts } from "../db/schema.js";
-import { CHAT_MODELS, MODEL_TO_PROVIDER, type ChatModel, type ChatProvider } from "./chat-models.js";
+import type { ChatModel, ChatProvider } from "./chat-models.js";
+import { listChatModels, type ChatModelEntry } from "./chat-model-catalogue.js";
 import { servedStatus, type ServedStatus, type StatusChange } from "./catalogue-status.js";
 import { resolveGenerationBody } from "./generation-body.js";
 
@@ -13,23 +14,26 @@ import { resolveGenerationBody } from "./generation-body.js";
 export interface ModelStatusEntry extends ServedStatus {
   model: ChatModel;
   provider: ChatProvider;
+  dynasty: string | null;
 }
 
-/** Every alias this service accepts, in CHAT_MODELS order. No row = active (never changed). */
+/** Every name chat-service accepts, in its catalogue order. No row = active (never changed). */
 export async function listModelStatuses(): Promise<ModelStatusEntry[]> {
-  const rows = await db.select().from(modelStatuses);
+  const [catalogue, rows] = await Promise.all([listChatModels(), db.select().from(modelStatuses)]);
   const byModel = new Map(rows.map((r) => [r.model, r]));
-  return CHAT_MODELS.map((model) => {
+  return catalogue.map(({ model, provider, dynasty }) => {
     const row = byModel.get(model);
     return {
       model,
-      provider: MODEL_TO_PROVIDER[model],
+      provider,
+      dynasty,
       ...servedStatus(row ?? { status: "active", statusReason: null, statusChangedBy: null, statusChangedAt: null }),
     };
   });
 }
 
-export async function setModelStatus(model: ChatModel, change: StatusChange): Promise<ModelStatusEntry> {
+export async function setModelStatus(entry: ChatModelEntry, change: StatusChange): Promise<ModelStatusEntry> {
+  const { model, provider, dynasty } = entry;
   const now = new Date();
   const set = { status: change.status, statusReason: change.reason, statusChangedBy: change.changedBy, statusChangedAt: now };
   const [row] = await db
@@ -37,7 +41,7 @@ export async function setModelStatus(model: ChatModel, change: StatusChange): Pr
     .values({ model, ...set })
     .onConflictDoUpdate({ target: modelStatuses.model, set })
     .returning();
-  return { model, provider: MODEL_TO_PROVIDER[model], ...servedStatus(row) };
+  return { model, provider, dynasty, ...servedStatus(row) };
 }
 
 export interface TemplateStatusEntry extends ServedStatus {

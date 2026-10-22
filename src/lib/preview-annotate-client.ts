@@ -9,7 +9,8 @@
  * it rests on. Its output is validated by `resolveHighlights` (preview-highlights.ts).
  * Billing is chat-service's, under the same identity headers as the writing call.
  */
-import { type ChatModel, MODEL_TO_PROVIDER } from "./chat-models.js";
+import type { ChatModel } from "./chat-models.js";
+import { resolveChatModel } from "./chat-model-catalogue.js";
 import { fetchWithRetry } from "./fetch-retry.js";
 import { type Tracking, buildTrackingHeaders } from "./tracking.js";
 import type { HighlightSource, RawHighlight } from "./preview-highlights.js";
@@ -18,7 +19,7 @@ const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:3030"
 const CHAT_SERVICE_API_KEY = process.env.CHAT_SERVICE_API_KEY || "";
 
 /** Copying sentences verbatim and naming one input each: Sonnet 5.5, strict schema. */
-export const PREVIEW_ANNOTATE_MODEL: ChatModel = "sonnet";
+export const PREVIEW_ANNOTATE_MODEL: ChatModel = "claude-sonnet";
 
 export const ANNOTATE_SYSTEM_PROMPT = [
   "You explain an email that has already been written. You never rewrite it.",
@@ -73,7 +74,7 @@ export async function annotatePreviewEmail(
   identity: Tracking & { runId: string }
 ): Promise<{ highlights: RawHighlight[]; tokensInput: number; tokensOutput: number; model: string }> {
   const model = PREVIEW_ANNOTATE_MODEL;
-  const provider = MODEL_TO_PROVIDER[model];
+  const { provider } = await resolveChatModel(model);
   const response = await fetchWithRetry(
     `${CHAT_SERVICE_URL}/complete`,
     {

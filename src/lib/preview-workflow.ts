@@ -25,7 +25,7 @@
  *
  * Pure leaf (no I/O, never `vi.mock`'d).
  */
-import { CHAT_MODELS, type ChatModel } from "./chat-models.js";
+import type { ChatModel } from "./chat-models.js";
 import type { PreviewRecipient } from "./preview-email.js";
 
 /** The feature whose fleet ranking picks the preview's workflow. */
@@ -209,8 +209,8 @@ export function planPreviewWorkflow(workflow: WorkflowForPlan): PlanResult {
     return { ok: false, reason: `${workflow.workflowSlug} /generate states no literal template type` };
   }
   const model = body.model;
-  if (typeof model !== "string" || !(CHAT_MODELS as readonly string[]).includes(model)) {
-    return { ok: false, reason: `${workflow.workflowSlug} /generate states no known literal model (got ${JSON.stringify(model)})` };
+  if (typeof model !== "string" || model.length === 0) {
+    return { ok: false, reason: `${workflow.workflowSlug} /generate states no literal model (got ${JSON.stringify(model)})` };
   }
 
   const sources: Record<string, PreviewSource> = {};

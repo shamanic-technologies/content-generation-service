@@ -179,7 +179,7 @@ export const prompts = pgTable(
   ]
 );
 
-// Staff catalogue status of a writer model alias (CHAT_MODELS). A row exists only once
+// Staff catalogue status of a writer model name (as chat-service accepts it, chat-model-catalogue.ts). A row exists only once
 // staff changed it: an alias with no row is `active`. Cross-org.
 export const modelStatuses = pgTable("model_statuses", {
   model: text("model").primaryKey(),

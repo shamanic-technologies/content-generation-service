@@ -1,6 +1,6 @@
 /**
  * Staff catalogue status of a template (`prompts.type`) or a writer model alias
- * (`CHAT_MODELS`), TEMPLATE-MODEL-STATUS-1019.
+ * (every name chat-service accepts, `chat-model-catalogue.ts`), TEMPLATE-MODEL-STATUS-1019.
  *
  * - `active` (default for every template and model) or `deprecated`.
  * - Deprecated means: no NEW workflow may name it. workflow-service reads the status on

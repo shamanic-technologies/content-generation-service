@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { ChatModelCatalogueError, UnknownModelError } from "../lib/chat-model-catalogue.js";
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailPreviews, prompts } from "../db/schema.js";
@@ -251,6 +252,11 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
       console.error("[content-generation-service] /preview-email workflow error:", error.message);
       traceEvent(runId, { service: "content-generation-service", event: "preview-email-error", detail: error.message, level: "error" }, req.headers).catch(() => {});
       return res.status(error.status).json({ error: error.message, ...(error.code ? { code: error.code } : {}) });
+    }
+    if (error instanceof UnknownModelError || error instanceof ChatModelCatalogueError) {
+      // The best workflow names a model chat-service does not accept, or its catalogue is unreadable: ours, never the caller's.
+      console.error("[content-generation-service] /preview-email model error:", error.message);
+      return res.status(502).json({ error: error.message, code: error.code });
     }
     if (error instanceof BrandIntelError || error instanceof BrandRowsError || error instanceof OfferGiveListsError) {
       // brand-service's own verdict on the brand (not found, several offers, bad
