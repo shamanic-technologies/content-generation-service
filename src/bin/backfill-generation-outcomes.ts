@@ -29,7 +29,7 @@ import {
 const RUNS_URL = process.env.RUNS_SERVICE_URL || "https://runs.mcpfactory.org";
 const RUNS_KEY = process.env.RUNS_SERVICE_API_KEY || "";
 const CHUNK = 400;
-const FETCH_CHUNK = 100;
+const FETCH_CHUNK = 25;
 
 interface Row {
   id: string;
@@ -55,11 +55,15 @@ async function runsFetch(
       const res = await fetch(`${RUNS_URL}${path}`, {
         ...init,
         headers: { "Content-Type": "application/json", "X-API-Key": RUNS_KEY, ...init.headers },
-        signal: AbortSignal.timeout(120_000),
+        signal: AbortSignal.timeout(retryServerErrors ? 120_000 : 45_000),
       });
       if (retryServerErrors && res.status >= 500 && attempt < 4) throw new Error(`runs-service ${path} ${res.status}: ${await res.text()}`);
       return res;
     } catch (err) {
+      // A read that times out is a tree too big to serve: the caller splits it, no retry.
+      if (!retryServerErrors && err instanceof Error && err.name === "TimeoutError") {
+        return new Response(JSON.stringify({ error: "timeout" }), { status: 504 });
+      }
       if (attempt >= 4) throw err;
       console.error(`[backfill] retry ${attempt} ${path}:`, err instanceof Error ? err.message : err);
       await new Promise((r) => setTimeout(r, 2000 * attempt));
@@ -202,7 +206,10 @@ async function main() {
       }
     }
     runsDeclared.push(...new Set(toDeclare.map((t) => t.runId)));
-    if (!apply) continue;
+    if (!apply) {
+      console.log(`[backfill] dry run up to ${last.created_at.toISOString()}: ${toDeclare.length} to declare, ${errors.size} unreadable/skipped`);
+      continue;
+    }
 
     const { declared, refused } = await declare(mergeByRun(toDeclare.map((t) => ({ runId: t.runId, declaration: t.declaration.declaration }))));
     let marked = 0;
