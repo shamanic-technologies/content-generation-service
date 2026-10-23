@@ -17,6 +17,13 @@
  * clears it. The one code path that deprecates on its own is a dynasty upgrade: the previous head
  * becomes `deprecated` with reason "Upgraded" (template-dynasties.ts, TPL-DYNASTY-1021-CG3).
  *
+ * A writer MODEL's status is stated per PIPE (LLM-STATUS-PER-PIPE-1023, owner 2026-10-23:
+ * "Il faut que la deprecation manuelle soit par pipe"): a model unfit for one pipe (too
+ * expensive for Lead -> Website visit) stays active on every other. A pipe is
+ * (featureSlug, legKey), the identity template dynasties use; any pair is accepted (no
+ * pipe list here). A template's status stays global: a template belongs to one dynasty,
+ * so to one pipe already.
+ *
  * Standalone leaf (schemas.ts reads the enum at module-eval).
  */
 export const CATALOGUE_STATUSES = ["active", "deprecated"] as const;
@@ -29,6 +36,25 @@ export const MAX_STATUS_REASON_LENGTH = 1000;
 
 /** Header the staff gateway (api-service) sets to the staff email it verified. */
 export const STAFF_EMAIL_HEADER = "x-staff-email";
+
+export interface ModelPipe {
+  featureSlug: string;
+  legKey: string;
+}
+
+/**
+ * The pipe named by `featureSlug` + `legKey` (query or body): both or neither.
+ * Returns the pipe, null for neither, or a refusal for only one of the two.
+ */
+export function resolveModelPipe(featureSlug: unknown, legKey: unknown): ModelPipe | null | { code: "PIPE_INCOMPLETE"; error: string } {
+  const f = typeof featureSlug === "string" ? featureSlug.trim() : "";
+  const l = typeof legKey === "string" ? legKey.trim() : "";
+  if (!f && !l) return null;
+  if (!f || !l) {
+    return { code: "PIPE_INCOMPLETE", error: "A pipe is `featureSlug` AND `legKey` (e.g. sales-cold-email-outreach + lead_found_to_website_visit): send both." };
+  }
+  return { featureSlug: f, legKey: l };
+}
 
 export interface StatusChange {
   status: CatalogueStatus;

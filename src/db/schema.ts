@@ -227,15 +227,22 @@ export const prompts = pgTable(
   ]
 );
 
-// Staff catalogue status of a writer model name (as chat-service accepts it, chat-model-catalogue.ts). A row exists only once
-// staff changed it: an alias with no row is `active`. Cross-org.
-export const modelStatuses = pgTable("model_statuses", {
-  model: text("model").primaryKey(),
-  status: text("status").$type<"active" | "deprecated">().notNull(),
-  statusChangedAt: timestamp("status_changed_at", { withTimezone: true }).notNull().defaultNow(),
-  statusReason: text("status_reason"),
-  statusChangedBy: text("status_changed_by"),
-});
+// Staff catalogue status of a writer model name (as chat-service accepts it, chat-model-catalogue.ts) on ONE pipe
+// (feature_slug x leg_key, LLM-STATUS-PER-PIPE-1023). A row exists only once staff changed it on that pipe: no row =
+// `active` there. Cross-org. There is no global model status.
+export const modelPipeStatuses = pgTable(
+  "model_pipe_statuses",
+  {
+    model: text("model").notNull(),
+    featureSlug: text("feature_slug").notNull(),
+    legKey: text("leg_key").notNull(),
+    status: text("status").$type<"active" | "deprecated">().notNull(),
+    statusChangedAt: timestamp("status_changed_at", { withTimezone: true }).notNull().defaultNow(),
+    statusReason: text("status_reason"),
+    statusChangedBy: text("status_changed_by"),
+  },
+  (table) => [primaryKey({ name: "model_pipe_statuses_pk", columns: [table.model, table.featureSlug, table.legKey] })]
+);
 
 // Brand/offer neutrality verdicts (src/lib/template-neutrality*.ts). One row per
 // distinct template content (rule version + body + variables): a template is judged

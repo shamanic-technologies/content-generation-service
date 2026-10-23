@@ -1877,6 +1877,30 @@ export const SetCatalogueStatusRequestSchema = registry.register(
     .openapi("SetCatalogueStatusRequest")
 );
 
+const PipeFields = {
+  featureSlug: z.string().min(1).describe("The pipe's feature slug (channel), e.g. `sales-cold-email-outreach`."),
+  legKey: z.string().min(1).describe("The pipe's leg, e.g. `lead_found_to_website_visit`."),
+};
+
+const SetModelStatusRequestSchema = registry.register(
+  "SetModelStatusRequest",
+  SetCatalogueStatusRequestSchema.extend(PipeFields)
+    .describe("A model's status is set on ONE pipe (featureSlug x legKey); every other pipe is untouched. Missing pipe → 400 `PIPE_REQUIRED`.")
+    .openapi("SetModelStatusRequest")
+);
+
+const ModelPipeStatusSchema = registry.register(
+  "ModelPipeStatus",
+  z
+    .object({
+      ...PipeFields,
+      status: CatalogueStatusField,
+      statusChangedAt: StatusChangedAtField,
+      ...StatusReasonFields,
+    })
+    .openapi("ModelPipeStatus")
+);
+
 const ModelStatusEntrySchema = registry.register(
   "ModelStatusEntry",
   z
@@ -1884,9 +1908,15 @@ const ModelStatusEntrySchema = registry.register(
       model: z.string().describe("A name accepted in `model` on POST /generate (dynasty slug, exact model id or legacy alias), as chat-service serves it."),
       provider: z.string().describe("Provider the name runs on, read from chat-service's catalogue (never sent by a caller)."),
       dynasty: z.string().nullable().describe("LLM dynasty slug of the model the name runs, from chat-service; null while chat-service serves none."),
-      status: CatalogueStatusField,
+      status: CatalogueStatusField.describe(
+        "Status on `pipe`. Asked without a pipe: always `active` (a model is never retired fleet-wide; read `pipeStatuses` or ask with a pipe)."
+      ),
       statusChangedAt: StatusChangedAtField,
       ...StatusReasonFields,
+      pipe: z.object(PipeFields).nullable().describe("The pipe the top-level status is for; null when asked without one."),
+      pipeStatuses: z
+        .array(ModelPipeStatusSchema)
+        .describe("Every pipe where staff stated this model's status (no entry = active on that pipe), oldest change first."),
     })
     .openapi("ModelStatusEntry")
 );
@@ -1969,10 +1999,19 @@ registry.registerPath({
   method: "get",
   path: "/internal/models",
   tags: ["Internal"],
-  summary: "Every writer model alias with its staff status",
-  description: `${staffNote} workflow-service reads it at workflow write time and refuses a deprecated model.`,
+  summary: "Every writer model alias with its staff status, per pipe",
+  description:
+    `${staffNote} A model's status is per pipe (featureSlug x legKey). With \`featureSlug\` + \`legKey\`, \`status\` = the model's status on that pipe ` +
+    "(is it usable there?). Without them, `status` is `active` and `pipeStatuses` lists every pipe it was deprecated or re-activated on.",
+  request: {
+    query: z.object({
+      featureSlug: z.string().optional().describe("With `legKey`: the pipe to read the status on."),
+      legKey: z.string().optional().describe("With `featureSlug`: the pipe to read the status on."),
+    }),
+  },
   responses: {
     200: { description: "All aliases", content: { "application/json": { schema: ModelStatusListResponseSchema } } },
+    400: { description: "Only one of `featureSlug` / `legKey` (`PIPE_INCOMPLETE`)", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });
 
@@ -1980,16 +2019,16 @@ registry.registerPath({
   method: "put",
   path: "/internal/models/{model}/status",
   tags: ["Internal"],
-  summary: "Set a writer model's staff status (active or deprecated)",
-  description: `${staffNote} Changes the status only; POST /generate keeps accepting the alias.`,
+  summary: "Set a writer model's staff status on ONE pipe (active or deprecated)",
+  description: `${staffNote} Changes the status on that pipe only, every other pipe untouched; POST /generate keeps accepting the alias.`,
   request: {
     params: z.object({ model: z.string().describe("Model alias, e.g. `glm-pro`") }),
     headers: staffEmailHeader,
-    body: { content: { "application/json": { schema: SetCatalogueStatusRequestSchema } } },
+    body: { content: { "application/json": { schema: SetModelStatusRequestSchema } } },
   },
   responses: {
     200: { description: "Status set", content: { "application/json": { schema: ModelStatusEntrySchema } } },
-    400: { description: "Missing or unknown status, or a deprecation without a reason (`DEPRECATION_REASON_REQUIRED`) or without who (`DEPRECATED_BY_REQUIRED`)", content: { "application/json": { schema: ErrorResponseSchema } } },
+    400: { description: "Missing or unknown status, a deprecation without a reason (`DEPRECATION_REASON_REQUIRED`) or without who (`DEPRECATED_BY_REQUIRED`), no pipe (`PIPE_REQUIRED`) or half a pipe (`PIPE_INCOMPLETE`)", content: { "application/json": { schema: ErrorResponseSchema } } },
     404: { description: "Not an alias this service accepts", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });
