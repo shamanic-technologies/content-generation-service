@@ -14,8 +14,8 @@
  *   scrape) lands on the email; children that declare their own outcome (the lead serve, the sends)
  *   keep theirs. Agreed with workflow-service (2026-10-23): it declares nothing on cold-email
  *   workflow runs. Several emails written in one workflow run = several occurrences, equal split.
- * - a generation run with no parent (Feb-Mar 2026, when the service paid Anthropic itself on its
- *   own run) is declared on its own run when that run spent.
+ * - a generation run that spent itself (Feb-Mar 2026, when the service paid Anthropic on its own
+ *   run) is declared on its own run.
  *
  * What is declared is P1's declaration (`messageWrittenDeclaration`). No lead id = unreadable,
  * never an invented subject. Pure: the I/O is `src/bin/backfill-generation-outcomes.ts`.
@@ -82,10 +82,9 @@ export function decideBackfill(
   if (!declaration) return { kind: "unreadable", reason: "no lead id stored on the email" };
   if (runUnreadable) return { kind: "unreadable", reason: runUnreadable };
 
-  if (!generationRun.parentRunId) {
-    if (spentCents(generationRun) > 0) return { kind: "declare", runId: generationRun.id, declaration, via: "own_run" };
-    return { kind: "unreadable", reason: "no parent run and no spend on our run" };
-  }
+  // Feb-Mar 2026 the service paid Anthropic on its own run: the money is there, declare there.
+  if (spentCents(generationRun) > 0) return { kind: "declare", runId: generationRun.id, declaration, via: "own_run" };
+  if (!generationRun.parentRunId) return { kind: "unreadable", reason: "no parent run and no spend on our run" };
   if (!parent) return { kind: "unreadable", reason: "parent run not readable under the email's org" };
   if (parent.serviceName !== WORKFLOW_SERVICE || parent.taskName !== WORKFLOW_TASK) {
     return { kind: "unreadable", reason: `parent run is ${parent.serviceName}/${parent.taskName}, not a workflow run` };

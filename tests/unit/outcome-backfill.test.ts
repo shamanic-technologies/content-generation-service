@@ -39,7 +39,12 @@ describe("decideBackfill", () => {
     expect(decideBackfill(row, gen, undefined)).toMatchObject({ kind: "unreadable", reason: "parent run not readable under the email's org" });
   });
 
-  it("Feb-Mar 2026: no parent, the service paid Anthropic on its own run, the declaration goes there", () => {
+  it("Feb-Mar 2026: the service paid Anthropic on its own run, the declaration goes there (even under a campaign run)", () => {
+    const underCampaign = run("gen-1", "camp-run", "content-generation-service", "single-generation", [
+      { costName: "anthropic-sonnet-4.6-tokens-input", quantity: 3000, totalCostInUsdCents: "0.9", status: "actual" },
+    ]);
+    expect(decideBackfill(row, underCampaign, run("camp-run", null, "campaign-service", "c-1"))).toMatchObject({ kind: "declare", runId: "gen-1", via: "own_run" });
+    expect(decideBackfill(row, { ...underCampaign, costs: [] }, run("camp-run", null, "campaign-service", "c-1"))).toMatchObject({ kind: "unreadable" });
     const own = run("gen-1", null, "content-generation-service", "single-generation", [
       { costName: "anthropic-sonnet-4.6-tokens-input", quantity: 3000, totalCostInUsdCents: "0.9", status: "actual" },
     ]);
