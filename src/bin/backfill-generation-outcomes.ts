@@ -1,6 +1,7 @@
 import { sql } from "../db/index.js";
 import {
   decideBackfill,
+  isRetiredFeature,
   mergeByRun,
   packBatches,
   type BackfillDecision,
@@ -44,7 +45,11 @@ interface FetchedRun extends BackfillRun {
   descendantRuns?: BackfillRun[];
 }
 
-async function runsFetch(path: string, init: RequestInit & { headers?: Record<string, string> }): Promise<Response> {
+async function runsFetch(
+  path: string,
+  init: RequestInit & { headers?: Record<string, string> },
+  retryServerErrors = true,
+): Promise<Response> {
   for (let attempt = 1; ; attempt++) {
     try {
       const res = await fetch(`${RUNS_URL}${path}`, {
@@ -52,7 +57,7 @@ async function runsFetch(path: string, init: RequestInit & { headers?: Record<st
         headers: { "Content-Type": "application/json", "X-API-Key": RUNS_KEY, ...init.headers },
         signal: AbortSignal.timeout(120_000),
       });
-      if (res.status >= 500 && attempt < 4) throw new Error(`runs-service ${path} ${res.status}: ${await res.text()}`);
+      if (retryServerErrors && res.status >= 500 && attempt < 4) throw new Error(`runs-service ${path} ${res.status}: ${await res.text()}`);
       return res;
     } catch (err) {
       if (attempt >= 4) throw err;
@@ -62,20 +67,37 @@ async function runsFetch(path: string, init: RequestInit & { headers?: Record<st
   }
 }
 
-/** Runs with their costs (and descendant tree) read under their org; missing ones are absent. */
-async function fetchRuns(orgId: string, runIds: string[]): Promise<Map<string, FetchedRun>> {
+/**
+ * Runs with their costs (and descendant tree) read under their org; missing ones are absent.
+ * runs-service answers 500 on a batch holding one huge tree (2026-10-24: drizzle "Maximum call
+ * stack size exceeded"), so a failing batch is split in halves down to the one run it cannot read,
+ * which is recorded in `unreadable` and stays undeclared.
+ */
+async function fetchRuns(orgId: string, runIds: string[], unreadable: Map<string, string>): Promise<Map<string, FetchedRun>> {
   const out = new Map<string, FetchedRun>();
-  for (let i = 0; i < runIds.length; i += FETCH_CHUNK) {
-    const ids = runIds.slice(i, i + FETCH_CHUNK);
-    const res = await runsFetch("/v1/runs/batch", {
-      method: "POST",
-      headers: { "x-org-id": orgId },
-      body: JSON.stringify({ runIds: ids }),
-    });
-    if (!res.ok) throw new Error(`runs-service POST /v1/runs/batch ${res.status}: ${await res.text()}`);
-    const body = (await res.json()) as { runs: FetchedRun[] };
-    for (const r of body.runs) out.set(r.id, r);
-  }
+  const read = async (ids: string[]): Promise<void> => {
+    const res = await runsFetch(
+      "/v1/runs/batch",
+      { method: "POST", headers: { "x-org-id": orgId }, body: JSON.stringify({ runIds: ids }) },
+      false,
+    );
+    if (res.ok) {
+      const body = (await res.json()) as { runs: FetchedRun[] };
+      for (const r of body.runs) out.set(r.id, r);
+      return;
+    }
+    const text = await res.text();
+    if (res.status < 500) throw new Error(`runs-service POST /v1/runs/batch ${res.status}: ${text}`);
+    if (ids.length === 1) {
+      console.error(`[backfill] run ${ids[0]} not readable: runs-service ${res.status} ${text.slice(0, 200)}`);
+      unreadable.set(ids[0], `runs-service ${res.status} reading run ${ids[0]}`);
+      return;
+    }
+    const half = Math.ceil(ids.length / 2);
+    await read(ids.slice(0, half));
+    await read(ids.slice(half));
+  };
+  for (let i = 0; i < runIds.length; i += FETCH_CHUNK) await read(runIds.slice(i, i + FETCH_CHUNK));
   return out;
 }
 
@@ -84,13 +106,26 @@ async function decideChunk(rows: Row[]): Promise<Map<string, BackfillDecision>> 
   const byOrg = new Map<string, Row[]>();
   for (const r of rows) byOrg.set(r.org_id, [...(byOrg.get(r.org_id) ?? []), r]);
   for (const [orgId, orgRows] of byOrg) {
-    const genRuns = await fetchRuns(orgId, [...new Set(orgRows.map((r) => r.generation_run_id))]);
+    // A row that can never be declared (retired product, no lead) needs no run read.
+    const readable = orgRows.filter((r) => !isRetiredFeature(r.feature_slug) && !!r.lead_id?.trim());
+    const unreadable = new Map<string, string>();
+    const genRuns = await fetchRuns(orgId, [...new Set(readable.map((r) => r.generation_run_id))], unreadable);
     const parentIds = [...new Set([...genRuns.values()].map((r) => r.parentRunId).filter((p): p is string => !!p))];
-    const parents = await fetchRuns(orgId, parentIds);
+    const parents = await fetchRuns(orgId, parentIds, unreadable);
     for (const row of orgRows) {
       const gen = genRuns.get(row.generation_run_id);
+      const failed = unreadable.get(row.generation_run_id) ?? (gen?.parentRunId ? unreadable.get(gen.parentRunId) : undefined);
+      if (failed) {
+        decisions.set(row.id, { kind: "unreadable", reason: failed });
+        continue;
+      }
       if (!gen) {
-        decisions.set(row.id, { kind: "unreadable", reason: "generation run not readable under the email's org" });
+        decisions.set(row.id, decideBackfill(
+          { id: row.id, leadId: row.lead_id, featureSlug: row.feature_slug, variables: row.variables_raw },
+          { id: row.generation_run_id, parentRunId: null, serviceName: "", taskName: "", startedAt: "", costs: [] },
+          undefined,
+          "generation run not readable under the email's org",
+        ));
         continue;
       }
       const parent = gen.parentRunId ? parents.get(gen.parentRunId) : undefined;
