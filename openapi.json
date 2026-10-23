@@ -1677,6 +1677,14 @@
                   "nullable": true,
                   "description": "This service's own runs-service run for the generation (child of runId)."
                 },
+                "channel": {
+                  "type": "string",
+                  "enum": [
+                    "email",
+                    "whatsapp"
+                  ],
+                  "description": "What was written: `email` = a cold email sequence (one per campaign x lead); `whatsapp` = ONE WhatsApp message a template wrote (POST /generate-whatsapp), served only when it was sent (decision write): a person gets several over follow-ups."
+                },
                 "firstEmail": {
                   "type": "object",
                   "nullable": true,
@@ -1715,7 +1723,7 @@
                     "opening",
                     "dash"
                   ],
-                  "description": "Deterministic classes of the FIRST email's stored text (no model involved). The stored text is the sent text. `null` when the generation carries no copy."
+                  "description": "Always null on a `whatsapp` entry."
                 }
               },
               "required": [
@@ -1729,6 +1737,7 @@
                 "createdAt",
                 "runId",
                 "generationRunId",
+                "channel",
                 "firstEmail"
               ]
             },
@@ -2743,6 +2752,128 @@
         "required": [
           "slug",
           "outputs"
+        ]
+      },
+      "GenerateWhatsAppRequest": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The template to write with: the head of the pipe's WhatsApp dynasty (GET /internal/template-dynasties/{slug}/head → `template.type`)."
+          },
+          "variables": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "description": "The template's `{{tokens}}`, each a string (\"\" when the piece does not apply). Every token the template declares is required (400 `VARIABLES_MISSING`); extra keys are ignored. The WhatsApp dynasties declare: writerRole, ownerName, brandName, conversationStance, relationshipStrategy, automatedLinesRule, timingRules, whyNowRule, voiceRules (descriptions: GET /platform-prompts?type=<type>)."
+          },
+          "context": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Everything about this run the writer reads, as one text: today, the instruction, why we write now, their local time, who we write to, who they are to us, who we are, the client's facts, the thread, the sender's own messages."
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "description": "LLM to write with. Preferred: an LLM dynasty slug (e.g. `claude-opus`, `gemini-flash`; the list is chat-service GET /internal/model-dynasties), which always runs the dynasty's newest version. Any name chat-service POST /complete accepts is accepted: a dynasty slug, a head's exact model id, or a legacy alias (`opus`, `flash-pro`, `pro`…, each a redirect to its dynasty's head). The list is chat-service's (GET /internal/models there, mirrored with statuses on GET /internal/models here), read live: a name it does not accept → 400 `UNKNOWN_MODEL`. Provider is read from that catalogue, never sent by the caller. The model that actually wrote is recorded per generation (`model`). Omit to use the default `gemini-pro` (the model the old `pro` default ran). Every name stays accepted here whatever its staff status: a NEW workflow must not name one whose status is `deprecated` on GET /internal/models, but a stored workflow that does keeps generating."
+          },
+          "brandIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Brand UUIDs. Falls back to x-brand-id."
+          },
+          "campaignId": {
+            "type": "string",
+            "description": "Falls back to x-campaign-id."
+          },
+          "leadId": {
+            "type": "string",
+            "description": "lead-service lead id of the person, when they have one."
+          },
+          "workflowSlug": {
+            "type": "string",
+            "description": "Falls back to x-workflow-slug."
+          },
+          "featureSlug": {
+            "type": "string",
+            "description": "Falls back to x-feature-slug (cold WhatsApp: `cold-whatsapp-outreach`)."
+          }
+        },
+        "required": [
+          "type",
+          "variables",
+          "context"
+        ]
+      },
+      "GenerateWhatsAppResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "This service's generation id."
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "write",
+              "later",
+              "stop"
+            ],
+            "description": "write = send the bubbles now; later = nothing is sent, look again at nextFollowUpAt; stop = their own words end it."
+          },
+          "bubbles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The message as the WhatsApp bubbles to send, in order, each its own message. Empty unless decision is write."
+          },
+          "message": {
+            "type": "string",
+            "description": "The bubbles joined by one empty line (\"\\n\\n\"). Empty unless decision is write."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "nextFollowUpAt": {
+            "type": "string",
+            "description": "ISO 8601 as the writer answered it, or empty. Not checked here."
+          },
+          "nextFollowUpWhy": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string",
+            "description": "The concrete model id that wrote."
+          },
+          "promptType": {
+            "type": "string",
+            "description": "The template version that wrote."
+          },
+          "tokensInput": {
+            "type": "number"
+          },
+          "tokensOutput": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "decision",
+          "bubbles",
+          "message",
+          "reason",
+          "nextFollowUpAt",
+          "nextFollowUpWhy",
+          "model",
+          "promptType",
+          "tokensInput",
+          "tokensOutput"
         ]
       },
       "OrgId": {
@@ -6009,6 +6140,135 @@
                   "additionalProperties": {
                     "nullable": true
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generate-whatsapp": {
+      "post": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "Write ONE WhatsApp message, as its bubbles, with a stored template",
+        "description": "Renders the template (`type`) with `variables` as the writer's rules, appends our voice (client-comms), sends `context` as the message to chat-service /complete (billed there on the caller's run) and answers the decision and the bubbles. The writer is trusted: no bubble count check, no retry on shape; bubbles are only trimmed and stripped of em/en dashes. Every completion is stored; a written one is served by GET /internal/sequences (channel `whatsapp`) and the template / dynasty outputs.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-workflow-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-feature-slug",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateWhatsAppRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Written (or later / stop)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateWhatsAppResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, `VARIABLES_MISSING` (with `missing`), or `UNKNOWN_MODEL`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Insufficient credits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsufficientCreditsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`TEMPLATE_NOT_FOUND`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`CLIENT_COMMS_UNAVAILABLE`, `MODEL_CATALOGUE_UNAVAILABLE`, or chat-service failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
