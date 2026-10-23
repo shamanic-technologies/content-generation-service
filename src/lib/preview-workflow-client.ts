@@ -1,7 +1,9 @@
 /**
  * Reads, at request time, which workflow writes the signed-out preview: features-service's
- * fleet ranking, then the winning workflow's DAG from workflow-service. The I/O half of
- * `preview-workflow.ts` (which holds the rules and is never mocked).
+ * fleet ranking, then the winning workflow's DAG from workflow-service, then (for a workflow
+ * that picks its writer at run time) features-service's template + LLM pick for the pipe and
+ * strategy and the picked template dynasty's head. The I/O half of `preview-workflow.ts`
+ * (which holds the rules and is never mocked).
  *
  * Cached in memory for a short while: the ranking itself is rebuilt by features-service
  * every 15 minutes, so a 5-minute cache never serves a choice the fleet has long
@@ -9,6 +11,8 @@
  * Any failure is LOUD (`PreviewWorkflowError`): there is no fallback template or model.
  */
 import { type Tracking, buildTrackingHeaders } from "./tracking.js";
+import { resolveDynastyHead } from "./template-dynasty-query.js";
+import { TemplateDynastyError } from "./template-dynasties.js";
 import {
   PREVIEW_FEATURE_SLUG,
   PREVIEW_LEG_KEY,
@@ -17,10 +21,14 @@ import {
   planPreviewWorkflow,
   playCandidates,
   previewPlayId,
+  withWriter,
+  writerFromRanking,
   type LegRanking,
   type LegRankingRow,
   type PreviewPlan,
+  type PreviewDagPlan,
   type PreviewPlay,
+  type WriterRanking,
 } from "./preview-workflow.js";
 
 const FEATURES_SERVICE_URL = process.env.FEATURES_SERVICE_URL || "http://localhost:3050";
@@ -82,6 +90,50 @@ async function readPlay(strategyId: string): Promise<PreviewPlay> {
   return { id, allowedWorkflowDynastySlugs: body.allowedWorkflowDynastySlugs, bestWorkflowSlug: body.bestWorkflowSlug ?? null };
 }
 
+/**
+ * features-service's template + LLM ranking of the cold-email pipe, narrowed by the strategy
+ * when there is one: the same ranking a run's `writer-pick` reads its best rows from.
+ */
+async function readWriterRanking(strategyId?: string): Promise<WriterRanking> {
+  const url = `${FEATURES_SERVICE_URL}/public/stats/leg-writer-ranking?featureSlug=${encodeURIComponent(PREVIEW_FEATURE_SLUG)}&leg=${encodeURIComponent(PREVIEW_LEG_KEY)}${strategyId ? `&strategyId=${encodeURIComponent(strategyId)}` : ""}`;
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { "X-Api-Key": FEATURES_SERVICE_API_KEY } });
+  } catch (err) {
+    throw new PreviewWorkflowError(502, `features-service leg-writer-ranking unreachable: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (res.status === 503) {
+    throw new PreviewWorkflowError(503, `features-service is still computing which template and LLM write cold emails: ${await res.text()}`, "WRITER_PICK_UNAVAILABLE");
+  }
+  if (!res.ok) {
+    throw new PreviewWorkflowError(502, `features-service leg-writer-ranking failed: ${res.status} - ${await res.text()}`);
+  }
+  const body = (await res.json()) as Partial<WriterRanking>;
+  if (!body.templates || !body.llms) {
+    throw new PreviewWorkflowError(502, "features-service leg-writer-ranking answered without templates or llms");
+  }
+  return { computedAt: body.computedAt ?? null, templates: body.templates, llms: body.llms };
+}
+
+/**
+ * The template + model a run of this workflow writes with: stated in the DAG, or picked by
+ * features-service and resolved to the dynasty head exactly as the run's `template-head` does.
+ */
+async function resolveWriter(plan: PreviewDagPlan, strategyId?: string): Promise<PreviewPlan> {
+  if (plan.writer.kind === "literal") return withWriter(plan, plan.writer.promptType, plan.writer.model);
+  const pick = writerFromRanking(await readWriterRanking(strategyId), strategyId);
+  let head: string;
+  try {
+    head = (await resolveDynastyHead(pick.templateDynastySlug)).template.type;
+  } catch (err) {
+    if (err instanceof TemplateDynastyError) {
+      throw new PreviewWorkflowError(503, `features-service picked template dynasty ${pick.templateDynastySlug}, which has no template to write with here: ${err.message}`, "WRITER_PICK_UNAVAILABLE");
+    }
+    throw err;
+  }
+  return withWriter(plan, head, pick.model);
+}
+
 interface WorkflowRow {
   workflowSlug: string;
   workflowDynastySlug: string;
@@ -135,9 +187,10 @@ export async function resolvePreviewWorkflow(identity: Tracking, strategyId?: st
       if (skipped.length > 0) {
         console.warn(`[content-generation-service] preview workflow: skipped ${skipped.length} better-ranked mature workflow(s): ${skipped.join(" | ")}`);
       }
-      console.log(`[content-generation-service] preview workflow${strategyId ? ` for play ${strategyId}` : ""}: ${result.plan.workflowSlug} (rank ${candidate.rank}), type=${result.plan.promptType}, model=${result.plan.model}`);
-      cached.set(cacheKey, { plan: result.plan, at: Date.now() });
-      return result.plan;
+      const plan = await resolveWriter(result.plan, strategyId);
+      console.log(`[content-generation-service] preview workflow${strategyId ? ` for play ${strategyId}` : ""}: ${plan.workflowSlug} (rank ${candidate.rank}), writer=${result.plan.writer.kind}, type=${plan.promptType}, model=${plan.model}`);
+      cached.set(cacheKey, { plan, at: Date.now() });
+      return plan;
     }
     skipped.push(result.reason);
   }

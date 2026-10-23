@@ -47,6 +47,7 @@ vi.mock("../../src/db/index.js", () => ({
 
 const mockFetchBrandIntel = vi.fn();
 const mockFetchBrandRows = vi.fn();
+const mockExtractBrandFields = vi.fn();
 vi.mock("../../src/lib/brand-client.js", () => {
   class BrandIntelError extends Error {
     constructor(public status: number, public body: string) {
@@ -63,6 +64,7 @@ vi.mock("../../src/lib/brand-client.js", () => {
     BrandRowsError,
     fetchBrandIntel: (...a: unknown[]) => mockFetchBrandIntel(...a),
     fetchBrandRows: (...a: unknown[]) => mockFetchBrandRows(...a),
+    extractBrandFields: (...a: unknown[]) => mockExtractBrandFields(...a),
   };
 });
 
@@ -182,6 +184,7 @@ beforeEach(() => {
   mockPromptFindFirst.mockResolvedValue({ type: PLAN.promptType, prompt: TEMPLATE });
   mockResolvePreviewWorkflow.mockResolvedValue(PLAN);
   mockFetchBrandRows.mockResolvedValue(BRAND_ROWS);
+  mockExtractBrandFields.mockResolvedValue(new Map());
   mockFetchBrandIntel.mockResolvedValue(INTEL);
   mockFetchGiveLists.mockResolvedValue({ giveForFree: [], neverGive: [] });
   mockGenerate.mockResolvedValue({
@@ -209,6 +212,20 @@ beforeEach(() => {
 });
 
 describe("POST /preview-email", () => {
+  it("fills a template input the workflow does not map from brand-service, as a campaign /generate does", async () => {
+    mockExtractBrandFields.mockResolvedValue(new Map([["landingPageContent", "Brand Co sells X"]]));
+    const res = await request(app).post("/preview-email").send(BODY);
+    expect(res.status).toBe(200);
+    expect(mockGenerate.mock.calls[0][0].variables.landingPageContent).toBe("Brand Co sells X");
+  });
+
+  it("never asks brand-service when the workflow maps every template input", async () => {
+    mockPromptFindFirst.mockResolvedValue({ type: PLAN.promptType, prompt: "Hi {{leadFirstName}} from {{clientName}}" });
+    const res = await request(app).post("/preview-email").send(BODY);
+    expect(res.status).toBe(200);
+    expect(mockExtractBrandFields).not.toHaveBeenCalled();
+  });
+
   it("writes with the best mature workflow's template, model, brand-intel request and input mapping", async () => {
     const res = await request(app).post("/preview-email").send(BODY);
 
@@ -244,9 +261,12 @@ describe("POST /preview-email", () => {
       brandExtractedFields: INTEL.fields,
       brands: BRAND_ROWS,
       leadCompanyIndustry: "",
-      // A template input the workflow maps from nothing a preview holds is empty, never invented.
+      // A template input the workflow does not map, and brand-service cannot answer, is empty, never invented.
       landingPageContent: "",
     });
+    // ...after asking brand-service for it, exactly as /generate does (Convention 1).
+    expect(mockExtractBrandFields.mock.calls[0][0]).toEqual([{ key: "landingPageContent", description: 'Value for the "landingPageContent" field needed in content generation' }]);
+    expect(mockExtractBrandFields.mock.calls[0][1]).toMatchObject({ orgId: "11111111-1111-1111-1111-111111111111", brandId: BRAND_ID });
     expect(params.variables.currentDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     // A lead fact the sample recipient lacks and the template never asks for is absent.
     expect("leadCity" in params.variables).toBe(false);

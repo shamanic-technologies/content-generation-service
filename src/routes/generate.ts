@@ -4,6 +4,7 @@ import { eq, and, inArray, arrayContains, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, prompts } from "../db/schema.js";
 import { serviceAuth, serviceAuthRunOptional, AuthenticatedRequest } from "../middleware/auth.js";
+import { unfilledBrandFieldRequests } from "../lib/unfilled-brand-fields.js";
 import { generateFromTemplate, generateExpertQuotePitchFromTemplate, substituteVariables, findUnfilledPlaceholders, InsufficientCreditsError, ExpertQuotePitchLengthError } from "../lib/chat-service-client.js";
 import { resolveAssignedPromptType } from "../lib/prompt-assignment.js";
 import { assertExpertQuotePitchVariables, ExpertQuotePitchInputError } from "../lib/expert-quote-pitch-template.js";
@@ -194,11 +195,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         const unfilled = findUnfilledPlaceholders(afterSubstitution);
         if (unfilled.length > 0) {
           traceEvent(req.runId!, { service: "content-generation-service", event: "brand-extract", detail: `Extracting ${unfilled.length} unfilled fields from brand-service: ${unfilled.join(", ")}`, data: { brandIds, fields: unfilled } }, req.headers).catch(() => {});
-          const fields = unfilled.map((key) => ({
-            key,
-            description: `Value for the "${key}" field needed in content generation`,
-          }));
-          const brandValues = await extractBrandFields(fields, serviceIdentity);
+          const brandValues = await extractBrandFields(unfilledBrandFieldRequests(unfilled), serviceIdentity);
           for (const [key, value] of brandValues) {
             variables[key] = value;
           }

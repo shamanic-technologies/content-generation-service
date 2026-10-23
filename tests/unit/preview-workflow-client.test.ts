@@ -1,4 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const mockResolveDynastyHead = vi.fn();
+vi.mock("../../src/lib/template-dynasty-query.js", () => ({
+  resolveDynastyHead: (...a: unknown[]) => mockResolveDynastyHead(...a),
+}));
 import { resolvePreviewWorkflow, __resetPreviewWorkflowCache } from "../../src/lib/preview-workflow-client.js";
 import { PreviewWorkflowError } from "../../src/lib/preview-workflow.js";
 
@@ -22,14 +27,46 @@ const dag = (type: string, model: string, inputMapping: Record<string, string>) 
 const workflows: Record<string, unknown> = {
   landing: { workflows: [{ workflowSlug: "landing-v2", workflowDynastySlug: "landing", dag: dag("cold-email-v39-landing", "pro", { "body.variables.landingPageContent": "$ref:landing-content.output.value" }) }] },
   plain: { workflows: [{ workflowSlug: "plain-v3", workflowDynastySlug: "plain", dag: dag("cold-email-v55", "flash-lite", { "body.variables.leadFirstName": "$ref:fetch-lead.output.lead.data.firstName" }) }] },
+  picked: {
+    workflows: [
+      {
+        workflowSlug: "picked-v5",
+        workflowDynastySlug: "picked",
+        dag: {
+          nodes: [
+            {
+              id: "email-generate",
+              config: { service: "content-generation", path: "/generate", body: {} },
+              inputMapping: {
+                "body.type": "$ref:template-head.output.template.type",
+                "body.model": "$ref:writer-plan.output.model",
+                "body.variables.leadFirstName": "$ref:fetch-lead.output.lead.data.firstName",
+              },
+            },
+          ],
+        },
+      },
+    ],
+  },
 };
+
+const writerRanking = (dynasty: string) => ({
+  computedAt: "2026-10-23T00:00:00Z",
+  templates: { best: { templateDynastySlug: dynasty }, unavailableReason: null },
+  llms: { best: { llmDynastySlug: "kimi-k2", aliases: [{ alias: "kimi-k2", status: "active" }] }, unavailableReason: null },
+});
 
 const plays: Record<string, unknown> = {
   "sales-cold-email-outreach|lead_found_to_conversation~plain-only": { allowedWorkflowDynastySlugs: ["plain"], bestWorkflowSlug: null },
+  "sales-cold-email-outreach|lead_found_to_conversation~blind-emails-only": { allowedWorkflowDynastySlugs: ["picked"], bestWorkflowSlug: "picked" },
 };
 
 function route(url: string) {
-  if (url.includes("/public/stats/leg-workflow-ranking")) return json(ranking);
+  if (url.includes("/public/stats/leg-workflow-ranking")) return json({ ...ranking, rows: [...ranking.rows, { rank: 3, workflowDynastySlug: "picked", selectable: true, isMature: false, basis: "flash", costPerOutcomeUsd: null, moneyGoesHere: false }] });
+  if (url.includes("/public/stats/leg-writer-ranking")) {
+    const strategy = new URL(url).searchParams.get("strategyId");
+    return json(writerRanking(strategy === "blind-emails-only" ? "cold-reply-pain-question-blind" : "cold-reply-brand-first-stack-named"));
+  }
   if (url.includes("/internal/catalogue/plays/")) {
     const id = decodeURIComponent(url.split("/internal/catalogue/plays/")[1]);
     return plays[id] ? json(plays[id]) : json({ error: "no play", reason: "play_not_found" }, 404);
@@ -42,6 +79,8 @@ beforeEach(() => {
   mockFetch.mockReset();
   __resetPreviewWorkflowCache();
   mockFetch.mockImplementation(async (url: string) => route(url));
+  mockResolveDynastyHead.mockReset();
+  mockResolveDynastyHead.mockImplementation(async (slug: string) => ({ dynasty: { slug }, template: { type: slug === "cold-reply-pain-question-blind" ? "blind-discovery-email-v4" : "cold-email-v61" } }));
 });
 
 describe("resolvePreviewWorkflow", () => {
@@ -94,5 +133,33 @@ describe("resolvePreviewWorkflow", () => {
 
   it("answers an unknown strategy 400 UNKNOWN_STRATEGY", async () => {
     await expect(resolvePreviewWorkflow(IDENTITY, "nope")).rejects.toMatchObject({ status: 400, code: "UNKNOWN_STRATEGY" });
+  });
+
+  it("for a workflow that picks its writer at run time, writes with features-service's pick for the strategy and the picked dynasty's head", async () => {
+    const plan = await resolvePreviewWorkflow(IDENTITY, "blind-emails-only");
+    expect(plan).toMatchObject({ workflowSlug: "picked-v5", promptType: "blind-discovery-email-v4", model: "kimi-k2" });
+    expect(mockResolveDynastyHead).toHaveBeenCalledWith("cold-reply-pain-question-blind");
+    const writerUrl = mockFetch.mock.calls.map(([u]) => String(u)).find((u) => u.includes("/public/stats/leg-writer-ranking"))!;
+    const params = new URL(writerUrl).searchParams;
+    expect(params.get("featureSlug")).toBe("sales-cold-email-outreach");
+    expect(params.get("leg")).toBe("lead_found_to_conversation");
+    expect(params.get("strategyId")).toBe("blind-emails-only");
+  });
+
+  it("a literal workflow never reads the writer pick", async () => {
+    await resolvePreviewWorkflow(IDENTITY);
+    expect(mockFetch.mock.calls.some(([u]) => String(u).includes("leg-writer-ranking"))).toBe(false);
+    expect(mockResolveDynastyHead).not.toHaveBeenCalled();
+  });
+
+  it("fails loud when the writer pick cannot be read or names a dynasty with no head", async () => {
+    mockFetch.mockImplementation(async (url: string) => (url.includes("leg-writer-ranking") ? json({ error: "x", reason: "writer_ranking_not_computed_yet" }, 503) : route(url)));
+    await expect(resolvePreviewWorkflow(IDENTITY, "blind-emails-only")).rejects.toMatchObject({ status: 503, code: "WRITER_PICK_UNAVAILABLE" });
+
+    __resetPreviewWorkflowCache();
+    mockFetch.mockImplementation(async (url: string) => route(url));
+    const { TemplateDynastyError } = await import("../../src/lib/template-dynasties.js");
+    mockResolveDynastyHead.mockRejectedValue(new TemplateDynastyError(409, "DYNASTY_HAS_NO_VERSION", "no version"));
+    await expect(resolvePreviewWorkflow(IDENTITY, "blind-emails-only")).rejects.toMatchObject({ status: 503, message: expect.stringContaining("cold-reply-pain-question-blind") });
   });
 });
