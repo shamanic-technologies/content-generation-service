@@ -80,3 +80,11 @@ vi.mock("../src/lib/chat-model-catalogue.js", async (importOriginal) => {
     }),
   };
 });
+
+// Outcome declarations to runs-service (COST-ACCOUNTING-1023-P1) are sent in the background after
+// a generation is stored. Unit suites count fetch calls and hand-roll db mocks, so the sender is
+// stubbed once here; the real module is exercised by tests/unit/outcome-declarations.test.ts.
+vi.mock("../src/lib/outcome-declarations.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/outcome-declarations.js")>();
+  return { ...actual, declareStoredOutcomes: vi.fn(async () => undefined), startOutcomeDeclarationSweep: vi.fn() };
+});

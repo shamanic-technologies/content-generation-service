@@ -9,6 +9,8 @@ import { generateFromTemplate, generateExpertQuotePitchFromTemplate, substituteV
 import { resolveAssignedPromptType } from "../lib/prompt-assignment.js";
 import { assertExpertQuotePitchVariables, ExpertQuotePitchInputError } from "../lib/expert-quote-pitch-template.js";
 import { createRun, updateRun } from "../lib/runs-client.js";
+import { messageWrittenDeclaration } from "../lib/run-outcomes.js";
+import { declareStoredOutcomes } from "../lib/outcome-declarations.js";
 import { getCampaignFeatureInputs } from "../lib/campaign-client.js";
 import { extractBrandFields, resolveBrandNames } from "../lib/brand-client.js";
 import { fetchOfferGiveLists } from "../lib/offer-give-lists-client.js";
@@ -246,10 +248,51 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       traceEvent(req.runId!, { service: "content-generation-service", event: "campaign-instruction-applied", detail: `Writing from the campaign's instruction (${instruction.length} chars)` }, req.headers).catch(() => {});
     }
 
+    // This service's run for the writing call, opened BEFORE the completion so chat-service's
+    // `/complete` run (and its cost) is its child: the run then declares the message it wrote
+    // (COST-ACCOUNTING-1023-P1, src/lib/run-outcomes.ts). Run tracking never blocks the email:
+    // if runs-service refuses, the completion runs under the caller's run, as before, and
+    // nothing is declared (logged loud).
+    let generationRunId: string | null = null;
+    try {
+      const genRun = await createRun({
+        brandId,
+        campaignId,
+        serviceName: "content-generation-service",
+        taskName: "single-generation",
+        workflowSlug,
+      }, serviceIdentity);
+      generationRunId = genRun.id;
+    } catch (err) {
+      console.error("[content-gen] RUN TRACKING FAILED.", {
+        runId: req.runId,
+        apolloEnrichmentId,
+        error: err instanceof Error ? err.message : err,
+      });
+    }
+    const finishGenerationRun = async (status: "completed" | "failed") => {
+      if (!generationRunId) return;
+      try {
+        await updateRun(generationRunId, status, { ...serviceIdentity, runId: generationRunId });
+      } catch (err) {
+        console.error("[content-gen] RUN TRACKING FAILED.", {
+          runId: req.runId,
+          generationRunId,
+          error: err instanceof Error ? err.message : err,
+        });
+      }
+    };
+    const outcomes = generationRunId ? messageWrittenDeclaration({ leadId, variables }) : null;
+    if (generationRunId && !outcomes) {
+      console.warn(`[content-gen] message written without a leadId: no outcome declared (run=${generationRunId})`);
+    }
+
     // Generate using the stored prompt + variable substitution + campaign context
     // Chat-service handles key resolution, billing, and cost tracking internally
     traceEvent(req.runId!, { service: "content-generation-service", event: "llm-call-start", detail: `Calling chat-service with prompt type=${type}, variableCount=${Object.keys(variables).length}, hasCampaignContext=${!!campaignContext}, language=${language ?? "english"}` }, req.headers).catch(() => {});
-    const result = await generateFromTemplate(
+    let result: Awaited<ReturnType<typeof generateFromTemplate>>;
+    try {
+      result = await generateFromTemplate(
       {
         promptTemplate: storedPrompt.prompt,
         variables,
@@ -262,8 +305,12 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
           traceEvent(req.runId!, { service: "content-generation-service", event: "llm-regenerate", detail: `Unusable sequence, regenerating (attempt ${attempt}): ${reason}`, level: "warn" }, req.headers).catch(() => {});
         },
       },
-      { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug, audienceId, offerId }
-    );
+      { ...serviceIdentity, runId: generationRunId ?? req.runId! }
+      );
+    } catch (err) {
+      await finishGenerationRun("failed");
+      throw err;
+    }
 
     traceEvent(req.runId!, { service: "content-generation-service", event: "llm-call-done", detail: `model=${result.model}, tokensIn=${result.tokensInput}, tokensOut=${result.tokensOutput}, sequenceLen=${result.sequence?.length ?? 0}`, data: { model: result.model, tokensInput: result.tokensInput, tokensOutput: result.tokensOutput } }, req.headers).catch(() => {});
 
@@ -300,6 +347,8 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       audienceId: audienceId ?? null,
       leadId: leadId ?? null,
       idempotencyKey: idempotencyKey ?? null,
+      generationRunId,
+      outcomes,
     };
 
     let generation;
@@ -311,7 +360,12 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       // campaign — so the winner's email is the correct answer, and the caller still gets
       // an email to push instead of a failed run. This completion is wasted; the lookup
       // above is what keeps that rare rather than routine. Anything else rethrows.
-      if (!leadId || !isLeadDuplicateError(err)) throw err;
+      if (!leadId || !isLeadDuplicateError(err)) {
+        await finishGenerationRun("failed");
+        throw err;
+      }
+      // The winner's run declared this person's message; ours wrote a discarded one.
+      await finishGenerationRun("completed");
 
       const winner = await db.query.emailGenerations.findFirst({
         where: and(
@@ -326,30 +380,9 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       return res.json(toGenerationResponse(winner));
     }
 
-    // Track run in runs-service (cost tracking is handled by chat-service)
-    try {
-      const genRun = await createRun({
-        brandId,
-        campaignId,
-        serviceName: "content-generation-service",
-        taskName: "single-generation",
-        workflowSlug,
-      }, { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug, audienceId, offerId });
-
-      // Link generation run to email record
-      await db.update(emailGenerations)
-        .set({ generationRunId: genRun.id })
-        .where(eq(emailGenerations.id, generation.id));
-
-      const runIdentity = { orgId: req.orgId!, userId: req.userId!, runId: genRun.id, campaignId, brandId, workflowSlug, featureSlug, audienceId, offerId };
-      await updateRun(genRun.id, "completed", runIdentity);
-    } catch (err) {
-      console.error("[content-gen] RUN TRACKING FAILED.", {
-        runId: req.runId,
-        apolloEnrichmentId,
-        error: err instanceof Error ? err.message : err,
-      });
-    }
+    await finishGenerationRun("completed");
+    // The declaration is stored on the row; one attempt now, the sweep retries until it lands.
+    if (outcomes) void declareStoredOutcomes("email_generations", generation.id);
 
     traceEvent(req.runId!, { service: "content-generation-service", event: "generate-done", detail: `generationId=${generation.id}, subject="${result.subject?.slice(0, 60) ?? ""}"` }, req.headers).catch(() => {});
 

@@ -166,7 +166,8 @@ describe("POST /generate — billing authorization (via chat-service)", () => {
       expect.objectContaining({
         orgId: "org-123",
         userId: "user-456",
-        runId: "run-caller-123",
+        // this service's own generation run (child of run-caller-123): chat-service's cost lands on it
+        runId: "run-456",
         campaignId: "camp-1",
         brandId: "brand-1",
         workflowSlug: "my-workflow",
