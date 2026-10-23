@@ -32,6 +32,13 @@ import { extractTemplateVariableNames } from "./template-vars.js";
  *   (NOT_DYNASTY_HEAD); creating a dynasty over stored templates deprecates its non-head versions;
  *   a fork (`PUT /prompts`, `PUT /prompt-assignments`) of a dynasty version is refused
  *   (SOURCE_IN_DYNASTY): a new version of a dynasty is added to the dynasty, never left orphan.
+ *
+ * Merge (MERGE-TEMPLATE-DYNASTY-1023, owner 2026-10-23: « plutôt que de le deprecated, merge »): staff fold
+ * dynasty X INTO dynasty Y of the SAME pipe and SAME identity (blind never mixed with named). Every version of X
+ * becomes an OLDER version of Y (positions 1..n, Y's own shifted after them), deprecated with the merge reason
+ * when still active; Y's head, so what Y's workflows write with, never changes. X's row stays, marked
+ * `merged_into` + who/when/why: it leaves the list, and its slug resolves to Y on every read (a workflow still
+ * naming X writes with Y's head). Nothing is ever written to a merged dynasty again.
  */
 
 export const UPGRADED_REASON = "Upgraded";
@@ -71,6 +78,15 @@ export interface DynastyStatus {
   statusChangedAt: string | null;
 }
 
+/** A dynasty staff merged INTO this one (MERGE-TEMPLATE-DYNASTY-1023): its versions are now this one's older versions. */
+export interface MergedDynasty {
+  slug: string;
+  name: string;
+  mergedAt: string;
+  mergedBy: string;
+  reason: string;
+}
+
 export interface DynastyResponse extends DynastyStatus {
   slug: string;
   name: string;
@@ -82,6 +98,8 @@ export interface DynastyResponse extends DynastyStatus {
   /** Latest version's type; null only for a dynasty with no version (never in prod). */
   head: string | null;
   versions: DynastyVersion[];
+  /** Dynasties merged into this one, oldest merge first. Their slugs resolve to this dynasty. */
+  mergedDynasties: MergedDynasty[];
   createdAt: string;
   updatedAt: string;
 }
@@ -237,4 +255,48 @@ export function sourceInDynasty(type: string, slugs: ReadonlyArray<string>): Tem
       `add the new text to the dynasty (POST /internal/template-dynasties/{slug}/versions), never as a loose copy.`,
     { dynasties: [...slugs] },
   );
+}
+
+/** Why a merge is refused before anything is written. */
+export function assertMergeable(
+  source: { slug: string; featureSlug: string; legKey: string; identity: string; mergedInto: string | null },
+  target: { slug: string; featureSlug: string; legKey: string; identity: string; mergedInto: string | null },
+): void {
+  if (source.slug === target.slug) {
+    throw new TemplateDynastyError(400, "SAME_DYNASTY", `A dynasty cannot be merged into itself ("${source.slug}")`);
+  }
+  for (const d of [source, target]) {
+    if (d.mergedInto) throw dynastyMerged(d.slug, d.mergedInto);
+  }
+  if (source.featureSlug !== target.featureSlug || source.legKey !== target.legKey) {
+    throw new TemplateDynastyError(
+      409,
+      "DIFFERENT_PIPE",
+      `"${source.slug}" (${source.featureSlug} x ${source.legKey}) and "${target.slug}" (${target.featureSlug} x ${target.legKey}) are on different pipes: a dynasty is merged only into one of its own pipe.`,
+      { source: { featureSlug: source.featureSlug, legKey: source.legKey }, target: { featureSlug: target.featureSlug, legKey: target.legKey } },
+    );
+  }
+  if (source.identity !== target.identity) {
+    throw new TemplateDynastyError(
+      409,
+      "DIFFERENT_IDENTITY",
+      `"${source.slug}" is ${source.identity} and "${target.slug}" is ${target.identity}: blind and named dynasties are never merged.`,
+      { source: { identity: source.identity }, target: { identity: target.identity } },
+    );
+  }
+}
+
+/** A write on a dynasty already merged into another: write on the one it was merged into. */
+export function dynastyMerged(slug: string, into: string): TemplateDynastyError {
+  return new TemplateDynastyError(
+    409,
+    "DYNASTY_MERGED",
+    `Template dynasty "${slug}" was merged into "${into}": it takes no write any more, use "${into}".`,
+    { mergedInto: into },
+  );
+}
+
+/** The deprecation reason a merge writes on a source version that was still active. */
+export function mergedReason(into: string, reason: string): string {
+  return `Merged into ${into}: ${reason}`;
 }

@@ -3,6 +3,7 @@ import {
   AddTemplateDynastyVersionRequestSchema,
   CreateTemplateDynastyRequestSchema,
   ListTemplateDynastiesQuerySchema,
+  MergeTemplateDynastyRequestSchema,
   TemplateOutputsQuerySchema,
 } from "../schemas.js";
 import { TemplateDynastyError, UPGRADED_BY_SYSTEM } from "../lib/template-dynasties.js";
@@ -12,6 +13,7 @@ import {
   createDynasty,
   getDynasty,
   listDynasties,
+  mergeDynasty,
   readDynastyOutputs,
   resolveDynastyHead,
 } from "../lib/template-dynasty-query.js";
@@ -96,6 +98,20 @@ router.post("/internal/template-dynasties/:slug/versions", handle(async (req, re
     changedBy: req.header(STAFF_EMAIL_HEADER)?.trim().toLowerCase() || UPGRADED_BY_SYSTEM,
   });
   res.status(201).json({ dynasty, template: formatPromptResponse(template) });
+}));
+
+/**
+ * Merge this dynasty INTO `into` (same pipe, same identity; MERGE-TEMPLATE-DYNASTY-1023). Staff only: the
+ * api-service gateway decides who is staff and sends the verified `x-staff-email`, recorded as who merged.
+ */
+router.post("/internal/template-dynasties/:slug/merge", handle(async (req, res) => {
+  const parsed = MergeTemplateDynastyRequestSchema.safeParse(req.body);
+  if (!parsed.success) return badRequest(res, parsed.error.issues);
+  const mergedBy = req.header(STAFF_EMAIL_HEADER)?.trim().toLowerCase();
+  if (!mergedBy) {
+    return res.status(400).json({ error: `${STAFF_EMAIL_HEADER} header is required: a merge records which staff member did it`, code: "MERGED_BY_REQUIRED" });
+  }
+  res.json(await mergeDynasty({ source: req.params.slug, into: parsed.data.into, reason: parsed.data.reason.trim(), mergedBy }));
 }));
 
 export default router;
