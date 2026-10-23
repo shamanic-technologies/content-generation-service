@@ -1,3 +1,4 @@
+import { readWhatsAppOutputs, newestFirst } from "./whatsapp-outputs.js";
 import { asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, modelStatuses, prompts } from "../db/schema.js";
@@ -119,7 +120,7 @@ export async function readTemplateOutputs(type: string, limit: number): Promise<
     .orderBy(desc(g.createdAt), desc(g.id))
     .limit(limit);
 
-  return rows.map((r) => ({
+  const emails = rows.map((r) => ({
     generationId: r.id,
     createdAt: new Date(r.createdAt).toISOString(),
     workflowSlug: r.workflowSlug,
@@ -127,6 +128,9 @@ export async function readTemplateOutputs(type: string, limit: number): Promise<
     subject: r.subject,
     emails: outputEmails(r),
   }));
+  // A WhatsApp template's messages (WA-TEMPLATES-1023); empty for an email template.
+  const whatsapp = (await readWhatsAppOutputs([type], limit)).map(({ promptType: _, ...o }) => o);
+  return newestFirst(emails, whatsapp, limit);
 }
 
 /** Each step of the stored sequence; a pre-sequence row (copy in the body columns) is one email. */

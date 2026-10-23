@@ -148,6 +148,43 @@ export const emailPreviews = pgTable(
   ]
 );
 
+// WhatsApp messages written with a template (POST /generate-whatsapp, WA-TEMPLATES-1023). One row per
+// completion (a person gets several over follow-ups); served beside email_generations by
+// GET /internal/sequences and the template / dynasty outputs, so a WhatsApp template is ranked like
+// an email one. Append-only like email_generations.
+export const whatsappGenerations = pgTable(
+  "whatsapp_generations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    runId: text("run_id").notNull(),
+    brandIds: text("brand_ids").array().notNull(),
+    campaignId: text("campaign_id").notNull(),
+    leadId: text("lead_id"),
+    workflowSlug: text("workflow_slug"),
+    featureSlug: text("feature_slug"),
+    promptType: text("prompt_type").notNull(),
+    model: text("model").notNull(),
+    decision: text("decision").$type<"write" | "later" | "stop">().notNull(),
+    bubbles: jsonb("bubbles").$type<string[]>().notNull(),
+    reason: text("reason"),
+    nextFollowUpAt: text("next_follow_up_at"),
+    nextFollowUpWhy: text("next_follow_up_why"),
+    tokensInput: integer("tokens_input"),
+    tokensOutput: integer("tokens_output"),
+    systemPromptRaw: text("system_prompt_raw"),
+    contextRaw: text("context_raw"),
+    variablesRaw: jsonb("variables_raw"),
+    responseRaw: jsonb("response_raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_wagen_feature_created").on(table.featureSlug, table.createdAt, table.id),
+    index("idx_wagen_prompt_type_created").on(table.promptType, table.createdAt),
+    index("idx_wagen_campaign_lead").on(table.campaignId, table.leadId),
+  ]
+);
+
 // Prompt templates — type is the unique identifier (like an ID).
 // orgId is optional traceability: records who created the prompt, but does NOT scope visibility.
 // All prompts are globally accessible regardless of orgId.

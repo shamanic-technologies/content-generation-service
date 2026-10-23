@@ -1675,7 +1675,13 @@ const SequenceFeedEntrySchema = z.object({
   createdAt: z.string().describe("When the sequence was written (ISO 8601)."),
   runId: z.string().describe("The caller's run (the workflow run) that asked for the sequence."),
   generationRunId: z.string().nullable().describe("This service's own runs-service run for the generation (child of runId)."),
-  firstEmail: FirstEmailShapeSchema.nullable(),
+  channel: z
+    .enum(["email", "whatsapp"])
+    .describe(
+      "What was written: `email` = a cold email sequence (one per campaign x lead); `whatsapp` = ONE WhatsApp message a " +
+        "template wrote (POST /generate-whatsapp), served only when it was sent (decision write): a person gets several over follow-ups."
+    ),
+  firstEmail: FirstEmailShapeSchema.nullable().describe("Always null on a `whatsapp` entry."),
 });
 
 const SequenceFeedResponseSchema = registry.register(
@@ -2332,5 +2338,91 @@ registry.registerPath({
     409: { description: "`TEMPLATE_TWIN`: the text is byte-identical to another stored template `twinType`; `ALREADY_IN_DYNASTY`; `TEMPLATE_IN_OTHER_DYNASTY` (a template belongs to one dynasty); or `DYNASTY_HAS_NO_VERSION`", content: { "application/json": { schema: DynastyErrorSchema } } },
     422: { description: "`TEMPLATE_NOT_NEUTRAL` or `BLIND_TEMPLATE_REVEALS_CLIENT`, with the passages", content: { "application/json": { schema: DynastyErrorSchema } } },
     502: { description: "`TEMPLATE_NEUTRALITY_CHECK_FAILED`: nothing stored", content: { "application/json": { schema: DynastyErrorSchema } } },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// POST /generate-whatsapp — ONE WhatsApp message (its bubbles) with a stored template (WA-TEMPLATES-1023)
+// ---------------------------------------------------------------------------
+
+export const GenerateWhatsAppRequestSchema = registry.register(
+  "GenerateWhatsAppRequest",
+  z
+    .object({
+      type: z
+        .string()
+        .min(1)
+        .describe(
+          "The template to write with: the head of the pipe's WhatsApp dynasty " +
+            "(GET /internal/template-dynasties/{slug}/head → `template.type`)."
+        ),
+      variables: z
+        .record(z.string(), z.unknown())
+        .describe(
+          "The template's `{{tokens}}`, each a string (\"\" when the piece does not apply). Every token the template declares " +
+            "is required (400 `VARIABLES_MISSING`); extra keys are ignored. The WhatsApp dynasties declare: writerRole, ownerName, " +
+            "brandName, conversationStance, relationshipStrategy, automatedLinesRule, timingRules, whyNowRule, voiceRules " +
+            "(descriptions: GET /platform-prompts?type=<type>)."
+        ),
+      context: z
+        .string()
+        .min(1)
+        .describe(
+          "Everything about this run the writer reads, as one text: today, the instruction, why we write now, their local time, " +
+            "who we write to, who they are to us, who we are, the client's facts, the thread, the sender's own messages."
+        ),
+      model: ModelField,
+      brandIds: z.array(z.string()).optional().describe("Brand UUIDs. Falls back to x-brand-id."),
+      campaignId: z.string().optional().describe("Falls back to x-campaign-id."),
+      leadId: z.string().optional().describe("lead-service lead id of the person, when they have one."),
+      workflowSlug: z.string().optional().describe("Falls back to x-workflow-slug."),
+      featureSlug: z.string().optional().describe("Falls back to x-feature-slug (cold WhatsApp: `cold-whatsapp-outreach`)."),
+    })
+    .openapi("GenerateWhatsAppRequest")
+);
+
+const GenerateWhatsAppResponseSchema = registry.register(
+  "GenerateWhatsAppResponse",
+  z
+    .object({
+      id: z.string().uuid().describe("This service's generation id."),
+      decision: z
+        .enum(["write", "later", "stop"])
+        .describe("write = send the bubbles now; later = nothing is sent, look again at nextFollowUpAt; stop = their own words end it."),
+      bubbles: z
+        .array(z.string())
+        .describe("The message as the WhatsApp bubbles to send, in order, each its own message. Empty unless decision is write."),
+      message: z.string().describe("The bubbles joined by one empty line (\"\\n\\n\"). Empty unless decision is write."),
+      reason: z.string(),
+      nextFollowUpAt: z.string().describe("ISO 8601 as the writer answered it, or empty. Not checked here."),
+      nextFollowUpWhy: z.string(),
+      model: z.string().describe("The concrete model id that wrote."),
+      promptType: z.string().describe("The template version that wrote."),
+      tokensInput: z.number(),
+      tokensOutput: z.number(),
+    })
+    .openapi("GenerateWhatsAppResponse")
+);
+
+registry.registerPath({
+  method: "post",
+  path: "/generate-whatsapp",
+  tags: ["Content Generation"],
+  summary: "Write ONE WhatsApp message, as its bubbles, with a stored template",
+  description:
+    "Renders the template (`type`) with `variables` as the writer's rules, appends our voice (client-comms), sends `context` as the " +
+    "message to chat-service /complete (billed there on the caller's run) and answers the decision and the bubbles. The writer is " +
+    "trusted: no bubble count check, no retry on shape; bubbles are only trimmed and stripped of em/en dashes. Every completion is " +
+    "stored; a written one is served by GET /internal/sequences (channel `whatsapp`) and the template / dynasty outputs.",
+  request: {
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
+    body: { required: true, content: { "application/json": { schema: GenerateWhatsAppRequestSchema } } },
+  },
+  responses: {
+    200: { description: "Written (or later / stop)", content: { "application/json": { schema: GenerateWhatsAppResponseSchema } } },
+    400: { description: "Invalid body, `VARIABLES_MISSING` (with `missing`), or `UNKNOWN_MODEL`", content: { "application/json": { schema: ErrorResponseSchema } } },
+    402: { description: "Insufficient credits", content: { "application/json": { schema: InsufficientCreditsResponseSchema } } },
+    404: { description: "`TEMPLATE_NOT_FOUND`", content: { "application/json": { schema: ErrorResponseSchema } } },
+    502: { description: "`CLIENT_COMMS_UNAVAILABLE`, `MODEL_CATALOGUE_UNAVAILABLE`, or chat-service failed", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });
