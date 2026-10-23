@@ -1,6 +1,6 @@
 import { and, asc, eq, isNotNull, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { emailGenerations } from "../db/schema.js";
+import { emailGenerations, whatsappGenerations } from "../db/schema.js";
 import { resolveGenerationBody } from "./generation-body.js";
 import { firstEmailShape, type FirstEmailShape } from "./first-email-shape.js";
 
@@ -18,6 +18,9 @@ import { firstEmailShape, type FirstEmailShape } from "./first-email-shape.js";
  *   A short settle window makes the cursor safe without any extra state.
  * - Only the columns the entry needs are selected: never prompt_raw / response_raw /
  *   variables_raw (the bulk of a ~52 KB row).
+ * - WhatsApp messages written with a template (whatsapp_generations, WA-TEMPLATES-1023) are served
+ *   in the same feed, channel `whatsapp`, when they were sent (decision write). Both tables are read
+ *   from the same cursor and merged in (created_at, id) order, so one cursor covers both.
  */
 
 export interface SequenceCursor {
@@ -53,6 +56,7 @@ export interface SequenceFeedEntry {
   createdAt: string;
   runId: string;
   generationRunId: string | null;
+  channel: "email" | "whatsapp";
   firstEmail: FirstEmailShape | null;
 }
 
@@ -80,7 +84,7 @@ export async function readSequenceFeed(opts: {
     );
   }
 
-  const rows = await db
+  const emailRows = await db
     .select({
       id: g.id,
       orgId: g.orgId,
@@ -103,12 +107,55 @@ export async function readSequenceFeed(opts: {
     .orderBy(asc(g.createdAt), asc(g.id))
     .limit(opts.limit + 1);
 
-  const hasMore = rows.length > opts.limit;
-  const page = hasMore ? rows.slice(0, opts.limit) : rows;
+  const w = whatsappGenerations;
+  const waConditions: SQL[] = [
+    eq(w.featureSlug, opts.featureSlug),
+    eq(w.decision, "write"),
+    isNotNull(w.leadId),
+    sql`${w.createdAt} < now() - make_interval(secs => ${opts.settleSeconds})`,
+  ];
+  if (opts.cursor) {
+    waConditions.push(
+      sql`(${w.createdAt}, ${w.id}) > (${opts.cursor.createdAt}::timestamptz, ${opts.cursor.id}::uuid)`,
+    );
+  }
+  const waRows = await db
+    .select({
+      id: w.id,
+      orgId: w.orgId,
+      campaignId: w.campaignId,
+      leadId: w.leadId,
+      model: w.model,
+      promptType: w.promptType,
+      workflowSlug: w.workflowSlug,
+      createdAt: w.createdAt,
+      createdAtText: sql<string>`${w.createdAt}::text`,
+      runId: w.runId,
+    })
+    .from(w)
+    .where(and(...waConditions))
+    .orderBy(asc(w.createdAt), asc(w.id))
+    .limit(opts.limit + 1);
 
-  const sequences = page.map((r): SequenceFeedEntry => {
-    const body = resolveGenerationBody({ bodyText: r.bodyText, bodyHtml: r.bodyHtml, sequence: r.sequence });
-    return {
+  const merged = [
+    ...emailRows.map((r) => ({ r, entry: (): SequenceFeedEntry => {
+      const body = resolveGenerationBody({ bodyText: r.bodyText, bodyHtml: r.bodyHtml, sequence: r.sequence });
+      return {
+        generationId: r.id,
+        orgId: r.orgId,
+        campaignId: r.campaignId,
+        leadId: r.leadId as string,
+        model: r.model,
+        promptType: r.promptType,
+        workflowSlug: r.workflowSlug,
+        createdAt: new Date(r.createdAt).toISOString(),
+        runId: r.runId,
+        generationRunId: r.generationRunId,
+        channel: "email",
+        firstEmail: firstEmailShape(body.bodyText, r.leadFirstName),
+      };
+    } })),
+    ...waRows.map((r) => ({ r, entry: (): SequenceFeedEntry => ({
       generationId: r.id,
       orgId: r.orgId,
       campaignId: r.campaignId,
@@ -118,10 +165,16 @@ export async function readSequenceFeed(opts: {
       workflowSlug: r.workflowSlug,
       createdAt: new Date(r.createdAt).toISOString(),
       runId: r.runId,
-      generationRunId: r.generationRunId,
-      firstEmail: firstEmailShape(body.bodyText, r.leadFirstName),
-    };
-  });
+      generationRunId: null,
+      channel: "whatsapp",
+      firstEmail: null,
+    }) })),
+  ].sort((a, b) => compareKeys(a.r, b.r));
+
+  const hasMore = merged.length > opts.limit;
+  const kept = merged.slice(0, opts.limit);
+  const page = kept.map((x) => x.r);
+  const sequences = kept.map((x) => x.entry());
 
   const last = page[page.length - 1];
   const nextCursor = last
@@ -131,4 +184,20 @@ export async function readSequenceFeed(opts: {
       : null;
 
   return { sequences, nextCursor, hasMore };
+}
+
+/** (created_at, id) order, as postgres compares them (microsecond text, then uuid). */
+function compareKeys(a: { createdAt: Date | string; createdAtText: string; id: string }, b: { createdAt: Date | string; createdAtText: string; id: string }): number {
+  const ta = new Date(a.createdAt).getTime();
+  const tb = new Date(b.createdAt).getTime();
+  if (ta !== tb) return ta - tb;
+  const ma = micros(a.createdAtText);
+  const mb = micros(b.createdAtText);
+  if (ma !== mb) return ma - mb;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+function micros(text: string): number {
+  const m = /\.(\d{1,6})/.exec(text);
+  return m ? Number(m[1].padEnd(6, "0")) : 0;
 }

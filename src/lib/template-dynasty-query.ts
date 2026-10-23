@@ -1,3 +1,4 @@
+import { readWhatsAppOutputs, newestFirst } from "./whatsapp-outputs.js";
 import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, prompts, templateDynasties, templateDynastyVersions } from "../db/schema.js";
@@ -370,16 +371,15 @@ export async function readDynastyOutputs(slug: string, limit: number): Promise<{
     .where(inArray(g.promptType, types))
     .orderBy(desc(g.createdAt), desc(g.id))
     .limit(limit);
-  return {
-    dynasty,
-    outputs: rows.map((r) => ({
-      generationId: r.id,
-      createdAt: new Date(r.createdAt).toISOString(),
-      promptType: r.promptType!,
-      workflowSlug: r.workflowSlug,
-      model: r.model,
-      subject: r.subject,
-      emails: outputEmails(r),
-    })),
-  };
+  const emails = rows.map((r) => ({
+    generationId: r.id,
+    createdAt: new Date(r.createdAt).toISOString(),
+    promptType: r.promptType!,
+    workflowSlug: r.workflowSlug,
+    model: r.model,
+    subject: r.subject,
+    emails: outputEmails(r),
+  }));
+  // A WhatsApp dynasty's messages (WA-TEMPLATES-1023); empty for an email dynasty.
+  return { dynasty, outputs: newestFirst(emails, await readWhatsAppOutputs(types, limit), limit) };
 }
