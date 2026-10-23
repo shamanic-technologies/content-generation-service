@@ -32,6 +32,12 @@ export const emailGenerations = pgTable(
     // Link to runs-service generation run for cost tracking
     generationRunId: text("generation_run_id"),
 
+    // Outcome declaration sent to runs-service for generationRunId (COST-ACCOUNTING-1023-P1,
+    // src/lib/outcome-declarations.ts). NULL on rows written before it: never declared.
+    outcomes: jsonb("outcomes"),
+    outcomesDeclaredAt: timestamp("outcomes_declared_at", { withTimezone: true }),
+    outcomesError: text("outcomes_error"),
+
     // Generated email sequence
     subject: text("subject"),
     bodyHtml: text("body_html"),
@@ -176,6 +182,11 @@ export const whatsappGenerations = pgTable(
     contextRaw: text("context_raw"),
     variablesRaw: jsonb("variables_raw"),
     responseRaw: jsonb("response_raw"),
+    // This service's run for the completion + its outcome declaration (COST-ACCOUNTING-1023-P1).
+    generationRunId: text("generation_run_id"),
+    outcomes: jsonb("outcomes"),
+    outcomesDeclaredAt: timestamp("outcomes_declared_at", { withTimezone: true }),
+    outcomesError: text("outcomes_error"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

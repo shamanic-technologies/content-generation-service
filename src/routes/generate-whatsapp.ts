@@ -9,6 +9,9 @@ import { ChatModelCatalogueError, UnknownModelError } from "../lib/chat-model-ca
 import { ClientCommsVoiceError } from "../lib/client-comms-voice.js";
 import { WhatsAppInsufficientCreditsError, WhatsAppVariablesMissingError, writeWhatsApp } from "../lib/whatsapp-writer.js";
 import { traceEvent } from "../lib/trace-event.js";
+import { createRun, updateRun } from "../lib/runs-client.js";
+import { messageWrittenDeclaration } from "../lib/run-outcomes.js";
+import { declareStoredOutcomes } from "../lib/outcome-declarations.js";
 
 const router = Router();
 
@@ -44,10 +47,47 @@ router.post("/generate-whatsapp", (req, res, next) => serviceAuth(req as Authent
       featureSlug,
       audienceId: req.audienceId,
     };
-    const result = await writeWhatsApp(
-      { type: body.type, promptTemplate: template.prompt, variables: body.variables, context: body.context, model },
-      identity,
-    );
+    // This service's run for the writing call, opened BEFORE the completion so chat-service's
+    // `/complete` run (and its cost) is its child; a message written declares `message_written`
+    // on it (COST-ACCOUNTING-1023-P1). Never blocks the message: a runs-service refusal leaves
+    // the completion under the caller's run, as before, and nothing is declared (logged loud).
+    let generationRunId: string | null = null;
+    try {
+      const run = await createRun(
+        { brandId: identity.brandId, campaignId: identity.campaignId, serviceName: "content-generation-service", taskName: "whatsapp-generation", workflowSlug },
+        identity,
+      );
+      generationRunId = run.id;
+    } catch (err) {
+      console.error("[content-gen] RUN TRACKING FAILED (whatsapp).", { runId: req.runId, error: err instanceof Error ? err.message : err });
+    }
+    const finishRun = async (status: "completed" | "failed") => {
+      if (!generationRunId) return;
+      try {
+        await updateRun(generationRunId, status, { ...identity, runId: generationRunId });
+      } catch (err) {
+        console.error("[content-gen] RUN TRACKING FAILED (whatsapp).", { runId: req.runId, generationRunId, error: err instanceof Error ? err.message : err });
+      }
+    };
+
+    let result: Awaited<ReturnType<typeof writeWhatsApp>>;
+    try {
+      result = await writeWhatsApp(
+        { type: body.type, promptTemplate: template.prompt, variables: body.variables, context: body.context, model },
+        { ...identity, runId: generationRunId ?? identity.runId },
+      );
+    } catch (err) {
+      await finishRun("failed");
+      throw err;
+    }
+    // Only a message actually written for a person is an outcome; later/stop write nothing.
+    const outcomes =
+      generationRunId && result.decision === "write"
+        ? messageWrittenDeclaration({ leadId: body.leadId, variables: body.variables })
+        : null;
+    if (generationRunId && result.decision === "write" && !outcomes) {
+      console.warn(`[content-gen] WhatsApp message written without a leadId: no outcome declared (run=${generationRunId})`);
+    }
 
     const [row] = await db
       .insert(whatsappGenerations)
@@ -72,8 +112,12 @@ router.post("/generate-whatsapp", (req, res, next) => serviceAuth(req as Authent
         contextRaw: body.context,
         variablesRaw: body.variables,
         responseRaw: result.responseRaw,
+        generationRunId,
+        outcomes,
       })
       .returning();
+    await finishRun("completed");
+    if (outcomes) void declareStoredOutcomes("whatsapp_generations", row.id);
 
     traceEvent(req.runId!, { service: "content-generation-service", event: "generate-whatsapp-done", detail: `id=${row.id} type=${body.type} model=${result.model} decision=${result.decision} bubbles=${result.bubbles.length}` }, req.headers).catch(() => {});
 
