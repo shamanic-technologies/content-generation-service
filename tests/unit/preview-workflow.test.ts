@@ -6,6 +6,9 @@ import {
   planPreviewWorkflow,
   planNeedsBrandRows,
   resolvePreviewVariables,
+  withWriter,
+  writerFromRanking,
+  type WriterRanking,
   PreviewWorkflowError,
   type LegRankingRow,
 } from "../../src/lib/preview-workflow.js";
@@ -79,7 +82,7 @@ describe("planPreviewWorkflow", () => {
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.plan).toMatchObject({ workflowSlug: "wf-v5", promptType: "blind-discovery-email-v33", model: "glm-pro" });
+    expect(result.plan).toMatchObject({ workflowSlug: "wf-v5", writer: { kind: "literal", promptType: "blind-discovery-email-v33", model: "glm-pro" } });
     expect(result.plan.brandIntelFields).toEqual([{ key: "companyOverview", description: "Overview" }]);
     expect(result.plan.sources).toEqual({
       leadFirstName: { kind: "recipient", field: "firstName" },
@@ -109,6 +112,46 @@ describe("planPreviewWorkflow", () => {
     expect(planPreviewWorkflow(wf([])).ok).toBe(false);
   });
 
+  it("reads a workflow that picks its writer at run time (template-head + writer-plan), and skips the lead's enrichment link", () => {
+    const result = planPreviewWorkflow(
+      wf([
+        generateNode(
+          {},
+          {
+            "body.type": "$ref:template-head.output.template.type",
+            "body.model": "$ref:writer-plan.output.model",
+            "body.leadId": "$ref:fetch-lead.output.lead.leadId",
+            "body.apolloEnrichmentId": "$ref:fetch-lead.output.lead.data.apolloEnrichmentId",
+            "body.variables.leadFirstName": "$ref:fetch-lead.output.lead.data.firstName",
+          }
+        ),
+      ])
+    );
+    expect(result).toMatchObject({ ok: true, plan: { writer: { kind: "pick" }, sources: { leadFirstName: { kind: "recipient", field: "firstName" } } } });
+    if (!result.ok) return;
+    expect(withWriter(result.plan, "cold-email-v61", "kimi-k2")).toMatchObject({ promptType: "cold-email-v61", model: "kimi-k2", workflowSlug: "wf-v5" });
+    expect("writer" in withWriter(result.plan, "t", "pro")).toBe(false);
+  });
+
+  it("calls unusable a template or model mapped from anything but the writer pick, or a literal mixed with a pick", () => {
+    const pick = { "body.type": "$ref:template-head.output.template.type", "body.model": "$ref:writer-plan.output.model" };
+    expect(planPreviewWorkflow(wf([generateNode({}, { ...pick, "body.model": "$ref:other.output.model" })])).ok).toBe(false);
+    expect(planPreviewWorkflow(wf([generateNode({}, { "body.type": pick["body.type"] })])).ok).toBe(false);
+    expect(planPreviewWorkflow(wf([generateNode({ model: "pro" }, pick)])).ok).toBe(false);
+  });
+
+  it("reads one value inside the brand intel (brand-extract-fields.output.fields.<key>.value)", () => {
+    const result = planPreviewWorkflow(
+      wf([extractNode, generateNode({ type: "t", model: "pro" }, { "body.variables.brandProfile": "$ref:brand-extract-fields.output.fields.companyOverview.value" })])
+    );
+    expect(result).toMatchObject({ ok: true, plan: { sources: { brandProfile: { kind: "brand-intel-path", path: "fields.companyOverview.value" } }, brandIntelFields: [{ key: "companyOverview" }] } });
+    if (!result.ok) return;
+    const plan = withWriter(result.plan, "t", "pro");
+    const values = { recipient: { firstName: "A", lastName: "B", title: "C", companyName: "D" }, brandIntel: { fields: { companyOverview: { value: "We sell X" } } }, brands: null, currentDate: "2026-10-23" };
+    expect(resolvePreviewVariables(plan, values, ["brandProfile"])).toEqual({ brandProfile: "We sell X" });
+    expect(resolvePreviewVariables(plan, { ...values, brandIntel: {} }, ["brandProfile"])).toEqual({ brandProfile: "" });
+  });
+
   it("calls unusable a brand-intel workflow whose extract node states no literal field list", () => {
     expect(planPreviewWorkflow(wf([generateNode({ type: "t", model: "pro" }, { "body.variables.brandExtractedFields": "$ref:brand-extract-fields.output" })])).ok).toBe(false);
   });
@@ -133,7 +176,7 @@ describe("resolvePreviewVariables", () => {
     },
   } as const;
 
-  it("resolves what the preview holds, leaves unknown template inputs empty, and omits unknown non-template facts", () => {
+  it("resolves what the preview holds, leaves unknown template inputs empty, omits unknown non-template facts, and leaves unmapped tokens to brand-service", () => {
     const intel = { brands: [], fields: { a: 1 } };
     const v = resolvePreviewVariables(
       plan as never,
@@ -153,8 +196,8 @@ describe("resolvePreviewVariables", () => {
       clientName: "Brand Co",
       clientWebsite: "",
       currentDate: "2026-10-06",
-      leadHeadline: "",
     });
+    expect("leadHeadline" in v).toBe(false);
   });
 });
 
@@ -179,5 +222,39 @@ describe("playCandidates", () => {
 
   it("names the play on the cold-email pipe", () => {
     expect(previewPlayId("blind-emails-only")).toBe("sales-cold-email-outreach|lead_found_to_conversation~blind-emails-only");
+  });
+});
+
+describe("writerFromRanking", () => {
+  const ranking = (o: Partial<WriterRanking> = {}): WriterRanking => ({
+    computedAt: "2026-10-23T00:00:00Z",
+    templates: { best: { templateDynastySlug: "cold-reply-pain-question-blind" }, unavailableReason: null },
+    llms: {
+      best: { llmDynastySlug: "kimi-k2", aliases: [{ alias: "kimi-flash", status: "active" }, { alias: "kimi-k2", status: "active" }] },
+      unavailableReason: null,
+    },
+    ...o,
+  });
+
+  it("serves the best template dynasty and the LLM by its dynasty slug, as writer-pick names it", () => {
+    expect(writerFromRanking(ranking())).toEqual({ templateDynastySlug: "cold-reply-pain-question-blind", model: "kimi-k2" });
+  });
+
+  it("falls to the first active alias when the dynasty slug is not an active name, as writer-pick does", () => {
+    const r = ranking({ llms: { best: { llmDynastySlug: "gemini-pro", aliases: [{ alias: "gemini-pro", status: "deprecated" }, { alias: "pro", status: "active" }] }, unavailableReason: null } });
+    expect(writerFromRanking(r).model).toBe("pro");
+  });
+
+  it("fails loud, in plain words, when features-service picks no template or no LLM", () => {
+    expect(() => writerFromRanking(ranking({ computedAt: null }))).toThrow(/has not computed which template and LLM/);
+    expect(() => writerFromRanking(ranking({ templates: { best: null, unavailableReason: "every_template_excluded" } }), "blind-emails-only")).toThrow(
+      /picks no template to write with on the cold-email pipe under strategy blind-emails-only \(every_template_excluded\)/
+    );
+    expect(() => writerFromRanking(ranking({ llms: { best: { llmDynastySlug: "x", aliases: [{ alias: "x", status: "deprecated" }] }, unavailableReason: null } }))).toThrow(/picks no LLM/);
+    try {
+      writerFromRanking(ranking({ llms: { best: null, unavailableReason: "no_llm" } }));
+    } catch (e) {
+      expect(e).toMatchObject({ status: 503, code: "WRITER_PICK_UNAVAILABLE" });
+    }
   });
 });

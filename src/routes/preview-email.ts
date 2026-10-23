@@ -5,7 +5,8 @@ import { db } from "../db/index.js";
 import { emailPreviews, prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { generateFromTemplate, InsufficientCreditsError } from "../lib/chat-service-client.js";
-import { fetchBrandIntel, fetchBrandRows, BrandIntelError, BrandRowsError } from "../lib/brand-client.js";
+import { extractBrandFields, fetchBrandIntel, fetchBrandRows, BrandIntelError, BrandRowsError } from "../lib/brand-client.js";
+import { unfilledBrandFieldRequests } from "../lib/unfilled-brand-fields.js";
 import { fetchOfferGiveLists, OfferGiveListsError } from "../lib/offer-give-lists-client.js";
 import { extractTemplateVariableNames } from "../lib/template-vars.js";
 import { IncompleteSequenceError } from "../lib/sequence-delays.js";
@@ -167,15 +168,25 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
       throw new Error(`Preview prompt type=${plan.promptType} (workflow ${plan.workflowSlug}) is not registered`);
     }
 
+    const templateTokens = extractTemplateVariableNames(storedPrompt.prompt);
     const variables = resolvePreviewVariables(
       plan,
       { recipient, brandIntel: intel as unknown as Record<string, unknown>, brands, currentDate: new Date().toISOString().split("T")[0] },
-      extractTemplateVariableNames(storedPrompt.prompt)
+      templateTokens
     );
     // The recipient company's check results ride in `leadQualification`, exactly as
     // workflow-service hands a campaign /generate its served lead's qualification.
     const leadQualification = previewQualificationVariable(qualification);
     if (leadQualification) variables.leadQualification = leadQualification;
+    // A template input the workflow does not map is asked of brand-service, exactly as
+    // /generate does (Convention 1); anything still missing is "" so no {{token}} leaks.
+    const unmapped = templateTokens.filter((t) => !(t in variables));
+    if (unmapped.length > 0) {
+      for (const [key, value] of await extractBrandFields(unfilledBrandFieldRequests(unmapped), identity)) variables[key] = value;
+    }
+    for (const token of templateTokens) {
+      if (!(token in variables)) variables[token] = "";
+    }
 
     // Everything the email could rest on, from the inputs actually sent. A second
     // completion, after the email is written, reports which of these each sentence uses.

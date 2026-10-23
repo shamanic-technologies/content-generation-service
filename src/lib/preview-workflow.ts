@@ -12,9 +12,15 @@
  *    row with `moneyGoesHere` is "the best mature workflow" (owner rule 2026-09-30, its
  *    `lib/leg-workflow-ranking.ts`); the other selectable mature rows follow it in rank
  *    order, cheapest first. Learning rows are never candidates.
- *  - The template + model are the `type` + `model` the DAG's content-generation
- *    `POST /generate` node states, exactly as a campaign run sends them. No thinking /
- *    reasoning override: `/generate` sends none, so neither does the preview.
+ *  - The template + model are what a campaign run of that workflow writes with. An older
+ *    workflow states them as a literal `type` + `model` on its content-generation
+ *    `POST /generate` node. A workflow upgraded since BEST-TPL-LLM-1022 (2026-10-22) states
+ *    neither: it maps `body.type` from the `template-head` node (the head of the template
+ *    dynasty features-service's `writer-pick` chose) and `body.model` from `writer-plan`
+ *    (the LLM the same pick chose). For those the preview asks features-service the same
+ *    question (`writerFromRanking`, PREVIEW-PICK-1023) and writes with that dynasty's head,
+ *    exactly as the run's `template-head` call resolves it. No thinking / reasoning
+ *    override: `/generate` sends none, so neither does the preview.
  *  - The node's `body.variables.*` input mapping says where each template input comes
  *    from. A preview has no lead, so every source is resolved from what it DOES hold
  *    (`resolvePreviewVariables`). A lead field the sample recipient lacks is "" (unknown,
@@ -118,6 +124,8 @@ export type PreviewSource =
   /** A lead fact the sample recipient never carries: "" when the template asks for it, else absent. */
   | { kind: "lead-unknown"; path: string }
   | { kind: "brand-intel"; part: "whole" | "fields" }
+  /** One value inside the extract-fields response (`brand-extract-fields.output.<path>`). */
+  | { kind: "brand-intel-path"; path: string }
   | { kind: "brands" }
   | { kind: "brand"; path: string | null }
   | { kind: "current-date" }
@@ -153,7 +161,28 @@ export interface PreviewPlan {
   brandIntelFields: Array<{ key: string; description: string }> | null;
 }
 
-export type PlanResult = { ok: true; plan: PreviewPlan } | { ok: false; reason: string };
+/**
+ * Who writes, as the DAG states it: a literal template + model, or features-service's
+ * run-time pick (template dynasty head + LLM), read per preview by the client.
+ */
+export type PreviewWriter = { kind: "literal"; promptType: string; model: ChatModel } | { kind: "pick" };
+
+/** What the DAG alone says; `promptType` + `model` are known once the writer is resolved. */
+export type PreviewDagPlan = Omit<PreviewPlan, "promptType" | "model"> & { writer: PreviewWriter };
+
+export type PlanResult = { ok: true; plan: PreviewDagPlan } | { ok: false; reason: string };
+
+/** The refs an upgraded workflow's `/generate` node reads its template + model from (workflow-service BEST-TPL-LLM-1022). */
+const PICKED_TYPE_REF = "$ref:template-head.output.template.type";
+const PICKED_MODEL_REF = "$ref:writer-plan.output.model";
+
+/**
+ * `/generate` keys that tie the email to the lead it is for, not to what it says. A preview
+ * has no lead: `leadId` only tells /generate which lead to read the language off (no lead =
+ * English, as the route documents), `apolloEnrichmentId` only links the stored row to the
+ * lead's enrichment.
+ */
+const LEAD_LINK_KEYS = new Set(["body.leadId", "body.apolloEnrichmentId"]);
 
 export interface WorkflowForPlan {
   workflowSlug: string;
@@ -174,6 +203,7 @@ function sourceOf(value: unknown): PreviewSource | null {
   if (ref === "flow_input.currentDate") return { kind: "current-date" };
   if (ref === "brand-extract-fields.output") return { kind: "brand-intel", part: "whole" };
   if (ref === "brand-extract-fields.output.fields") return { kind: "brand-intel", part: "fields" };
+  if (ref.startsWith("brand-extract-fields.output.")) return { kind: "brand-intel-path", path: ref.slice("brand-extract-fields.output.".length) };
   if (ref === "brands-fetch.output.brands") return { kind: "brands" };
   if (ref === "brand-profile.output.brand") return { kind: "brand", path: null };
   if (ref.startsWith("brand-profile.output.brand.")) return { kind: "brand", path: ref.slice("brand-profile.output.brand.".length) };
@@ -204,20 +234,32 @@ export function planPreviewWorkflow(workflow: WorkflowForPlan): PlanResult {
   if (extraBodyKeys.length > 0) {
     return { ok: false, reason: `${workflow.workflowSlug} /generate states ${extraBodyKeys.join(", ")}, which the preview does not reproduce` };
   }
-  const promptType = body.type;
-  if (typeof promptType !== "string" || promptType.length === 0) {
-    return { ok: false, reason: `${workflow.workflowSlug} /generate states no literal template type` };
-  }
-  const model = body.model;
-  if (typeof model !== "string" || model.length === 0) {
-    return { ok: false, reason: `${workflow.workflowSlug} /generate states no literal model (got ${JSON.stringify(model)})` };
+  const mapping = node.inputMapping ?? {};
+  const mappedType = mapping["body.type"];
+  const mappedModel = mapping["body.model"];
+  let writer: PreviewWriter;
+  if (mappedType === undefined && mappedModel === undefined) {
+    const promptType = body.type;
+    if (typeof promptType !== "string" || promptType.length === 0) {
+      return { ok: false, reason: `${workflow.workflowSlug} /generate states no template type` };
+    }
+    const model = body.model;
+    if (typeof model !== "string" || model.length === 0) {
+      return { ok: false, reason: `${workflow.workflowSlug} /generate states no model (got ${JSON.stringify(model)})` };
+    }
+    writer = { kind: "literal", promptType, model: model as ChatModel };
+  } else if (mappedType === PICKED_TYPE_REF && mappedModel === PICKED_MODEL_REF && body.type === undefined && body.model === undefined) {
+    writer = { kind: "pick" };
+  } else {
+    return {
+      ok: false,
+      reason: `${workflow.workflowSlug} /generate takes its template from ${JSON.stringify(mappedType ?? body.type)} and its model from ${JSON.stringify(mappedModel ?? body.model)}, which is neither a stated template + model nor features-service's writer pick`,
+    };
   }
 
   const sources: Record<string, PreviewSource> = {};
-  for (const [key, value] of Object.entries(node.inputMapping ?? {})) {
-    // The lead id only tells /generate which lead to read the language off; a preview has
-    // no lead, so it writes without a language directive (English), as the route documents.
-    if (key === "body.leadId") continue;
+  for (const [key, value] of Object.entries(mapping)) {
+    if (key === "body.type" || key === "body.model" || LEAD_LINK_KEYS.has(key)) continue;
     if (!key.startsWith("body.variables.")) {
       return { ok: false, reason: `${workflow.workflowSlug} /generate maps ${key}, which the preview does not reproduce` };
     }
@@ -230,7 +272,7 @@ export function planPreviewWorkflow(workflow: WorkflowForPlan): PlanResult {
   }
 
   let brandIntelFields: PreviewPlan["brandIntelFields"] = null;
-  if (Object.values(sources).some((s) => s.kind === "brand-intel")) {
+  if (Object.values(sources).some((s) => s.kind === "brand-intel" || s.kind === "brand-intel-path")) {
     const extract = nodes.find((n) => n?.id === "brand-extract-fields");
     const fields = (extract?.config?.body as { fields?: unknown } | undefined)?.fields;
     const valid = Array.isArray(fields) && fields.length > 0 && fields.every((f) => typeof f?.key === "string" && typeof f?.description === "string");
@@ -242,8 +284,52 @@ export function planPreviewWorkflow(workflow: WorkflowForPlan): PlanResult {
 
   return {
     ok: true,
-    plan: { workflowSlug: workflow.workflowSlug, workflowDynastySlug: workflow.workflowDynastySlug, promptType, model: model as ChatModel, sources, brandIntelFields },
+    plan: { workflowSlug: workflow.workflowSlug, workflowDynastySlug: workflow.workflowDynastySlug, writer, sources, brandIntelFields },
   };
+}
+
+/**
+ * One side (templates or LLMs) of features-service's `GET /public/stats/leg-writer-ranking`,
+ * as far as the preview reads it. `best` is the row a run's `writer-pick` serves: both come
+ * out of the same ranking for the same pipe and strategy (features-service `servedRankings`).
+ */
+export interface WriterRanking {
+  computedAt: string | null;
+  templates: { best: { templateDynastySlug: string } | null; unavailableReason: string | null };
+  llms: {
+    best: { llmDynastySlug: string; aliases: Array<{ alias: string; status: string }> } | null;
+    unavailableReason: string | null;
+  };
+}
+
+/**
+ * The template dynasty + model name a run on this pipe (and strategy) writes with today.
+ * The model name follows `writer-pick`'s own rule: the LLM dynasty slug when it is an active
+ * alias, else the first active alias of that dynasty. No pick = 503 in plain words, never
+ * another template or model.
+ */
+export function writerFromRanking(ranking: WriterRanking, strategyId?: string): { templateDynastySlug: string; model: ChatModel } {
+  const scope = strategyId ? `the cold-email pipe under strategy ${strategyId}` : "the cold-email pipe";
+  if (!ranking.computedAt) {
+    throw new PreviewWorkflowError(503, `features-service has not computed which template and LLM write on ${scope} yet`, "WRITER_PICK_UNAVAILABLE");
+  }
+  const t = ranking.templates.best;
+  if (!t?.templateDynastySlug) {
+    throw new PreviewWorkflowError(503, `features-service picks no template to write with on ${scope} (${ranking.templates.unavailableReason ?? "no reason given"}), so no preview can be written`, "WRITER_PICK_UNAVAILABLE");
+  }
+  const l = ranking.llms.best;
+  const active = (l?.aliases ?? []).filter((a) => a.status === "active");
+  const alias = active.find((a) => a.alias === l?.llmDynastySlug) ?? active[0];
+  if (!l || !alias) {
+    throw new PreviewWorkflowError(503, `features-service picks no LLM to write with on ${scope} (${ranking.llms.unavailableReason ?? (l ? `no active name for ${l.llmDynastySlug}` : "no reason given")}), so no preview can be written`, "WRITER_PICK_UNAVAILABLE");
+  }
+  return { templateDynastySlug: t.templateDynastySlug, model: alias.alias as ChatModel };
+}
+
+/** The final plan once the writer is known (literal, or the dynasty head + picked model). */
+export function withWriter(plan: PreviewDagPlan, promptType: string, model: ChatModel): PreviewPlan {
+  const { writer: _writer, ...rest } = plan;
+  return { ...rest, promptType, model };
 }
 
 export interface PreviewSourceValues {
@@ -257,7 +343,7 @@ export interface PreviewSourceValues {
 }
 
 /** True when the plan needs brand-service's brand rows (`brands-fetch` / `brand-profile`). */
-export function planNeedsBrandRows(plan: PreviewPlan): boolean {
+export function planNeedsBrandRows(plan: Pick<PreviewPlan, "sources">): boolean {
   return Object.values(plan.sources).some((s) => s.kind === "brands" || s.kind === "brand");
 }
 
@@ -274,7 +360,11 @@ function readPath(obj: unknown, path: string): unknown {
  * The template variables for one preview, resolved through the workflow's own input
  * mapping. A value the preview does not hold is "" when the template asks for it
  * (`templateTokens`) and absent otherwise, so the recipient-context block only shows
- * facts that are real. Every declared token ends up present, so no `{{token}}` leaks.
+ * facts that are real. A token the workflow does not map at all is left out: `/generate`
+ * asks brand-service for it (Convention 1), and so does the preview route, which then
+ * fills whatever is still missing with "" so no `{{token}}` leaks. A run-time-picked
+ * template is not authored with its workflow, so it commonly declares inputs the workflow
+ * never maps (a named template's client name and website on a workflow written for another).
  */
 export function resolvePreviewVariables(plan: PreviewPlan, values: PreviewSourceValues, templateTokens: readonly string[]): Record<string, unknown> {
   const tokens = new Set(templateTokens);
@@ -290,6 +380,9 @@ export function resolvePreviewVariables(plan: PreviewPlan, values: PreviewSource
         break;
       case "brand-intel":
         value = source.part === "fields" ? values.brandIntel.fields : values.brandIntel;
+        break;
+      case "brand-intel-path":
+        value = readPath(values.brandIntel, source.path);
         break;
       case "brands":
         value = values.brands;
@@ -311,9 +404,6 @@ export function resolvePreviewVariables(plan: PreviewPlan, values: PreviewSource
       continue;
     }
     variables[name] = value;
-  }
-  for (const token of tokens) {
-    if (!(token in variables)) variables[token] = "";
   }
   return variables;
 }
