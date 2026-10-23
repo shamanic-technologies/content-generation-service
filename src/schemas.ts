@@ -2098,6 +2098,17 @@ export const TemplateDynastySchema = registry.register(
           })
         )
         .describe("Oldest first. A template belongs to ONE dynasty: no type appears in two."),
+      mergedDynasties: z
+        .array(
+          z.object({
+            slug: z.string().describe("The merged dynasty's slug; it now resolves to this dynasty."),
+            name: z.string(),
+            mergedAt: z.string(),
+            mergedBy: z.string().describe("Staff email of who merged it."),
+            reason: z.string().describe("Why it was merged, as stated by staff."),
+          })
+        )
+        .describe("Dynasties staff merged INTO this one (their versions are now this one's older versions), oldest merge first."),
       createdAt: z.string(),
       updatedAt: z.string(),
     })
@@ -2166,6 +2177,33 @@ export const AddTemplateDynastyVersionRequestSchema = registry.register(
     ])
     .describe("Either a new text (`prompt` + `variables`) or an existing template (`type`).")
     .openapi("AddTemplateDynastyVersionRequest")
+);
+
+export const MergeTemplateDynastyRequestSchema = registry.register(
+  "MergeTemplateDynastyRequest",
+  z
+    .object({
+      into: z.string().min(1).describe("Slug of the dynasty to merge INTO: same pipe (featureSlug x legKey), same identity. Its head does not change."),
+      reason: z
+        .string()
+        .max(1000)
+        .refine((r) => r.trim().length > 0, "reason must not be blank")
+        .describe("Why (shown with the merge; also the deprecation reason of a merged version that was still active)."),
+    })
+    .strict()
+    .openapi("MergeTemplateDynastyRequest")
+);
+
+const MergeTemplateDynastyResponseSchema = registry.register(
+  "MergeTemplateDynastyResponse",
+  z
+    .object({
+      merged: z.string().describe("The merged dynasty's slug (it now resolves to `dynasty`)."),
+      movedVersions: z.array(z.string()).describe("Its versions, now the oldest versions of `dynasty`, oldest first."),
+      deprecated: z.array(z.string()).describe("Moved versions that were still active and were deprecated by the merge."),
+      dynasty: TemplateDynastySchema.describe("The dynasty merged into, after the merge (same head as before)."),
+    })
+    .openapi("MergeTemplateDynastyResponse")
 );
 
 const TemplateDynastyWithTemplateSchema = registry.register(
@@ -2246,7 +2284,7 @@ registry.registerPath({
   path: "/internal/template-dynasties",
   tags: ["Template dynasties"],
   summary: "List template dynasties, optionally of one pipe",
-  description: dynastyNote,
+  description: `${dynastyNote} A dynasty merged into another is not listed (its versions are listed under the one it was merged into).`,
   request: { query: ListTemplateDynastiesQuerySchema },
   responses: {
     200: {
@@ -2281,7 +2319,7 @@ registry.registerPath({
   path: "/internal/template-dynasties/{slug}",
   tags: ["Template dynasties"],
   summary: "One dynasty with its versions and head",
-  description: dynastyNote,
+  description: `${dynastyNote} A merged dynasty's slug answers the dynasty it was merged into.`,
   request: { params: DynastySlugParam },
   responses: {
     200: { description: "Dynasty", content: { "application/json": { schema: TemplateDynastySchema } } },
@@ -2335,9 +2373,32 @@ registry.registerPath({
     201: { description: "Version added; `template` is the new head", content: { "application/json": { schema: TemplateDynastyWithTemplateSchema } } },
     400: { description: "Invalid body, a token the head does not declare (`VARIABLE_NOT_IN_HEAD`), variables not matching the text (`VARIABLES_MISMATCH`), or an unknown `type` (`UNKNOWN_TEMPLATE`)", content: { "application/json": { schema: DynastyErrorSchema } } },
     404: { description: "`DYNASTY_NOT_FOUND`", content: { "application/json": { schema: DynastyErrorSchema } } },
-    409: { description: "`TEMPLATE_TWIN`: the text is byte-identical to another stored template `twinType`; `ALREADY_IN_DYNASTY`; `TEMPLATE_IN_OTHER_DYNASTY` (a template belongs to one dynasty); or `DYNASTY_HAS_NO_VERSION`", content: { "application/json": { schema: DynastyErrorSchema } } },
+    409: { description: "`TEMPLATE_TWIN`: the text is byte-identical to another stored template `twinType`; `ALREADY_IN_DYNASTY`; `TEMPLATE_IN_OTHER_DYNASTY` (a template belongs to one dynasty); `DYNASTY_HAS_NO_VERSION`; or `DYNASTY_MERGED` (the dynasty was merged into another: write there)", content: { "application/json": { schema: DynastyErrorSchema } } },
     422: { description: "`TEMPLATE_NOT_NEUTRAL` or `BLIND_TEMPLATE_REVEALS_CLIENT`, with the passages", content: { "application/json": { schema: DynastyErrorSchema } } },
     502: { description: "`TEMPLATE_NEUTRALITY_CHECK_FAILED`: nothing stored", content: { "application/json": { schema: DynastyErrorSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/template-dynasties/{slug}/merge",
+  tags: ["Template dynasties"],
+  summary: "Merge a dynasty INTO another of the same pipe and identity (staff)",
+  description:
+    `${dynastyNote} Staff only (the gateway checks staff and sends \`x-staff-email\`, recorded as who merged). ` +
+    "Every version of {slug} becomes an OLDER version of `into` (positions 1..n, `into`'s own shifted after them), so " +
+    "`into`'s head and what its workflows write with never change; a moved version still active is deprecated with reason " +
+    "`Merged into <into>: <reason>`. {slug} then leaves the list and its slug resolves to `into` on every read; it takes no write. " +
+    "Its stats and outputs read as `into`'s. Nothing is judged or billed.",
+  request: {
+    params: DynastySlugParam,
+    body: { content: { "application/json": { schema: MergeTemplateDynastyRequestSchema } } },
+  },
+  responses: {
+    200: { description: "Merged", content: { "application/json": { schema: MergeTemplateDynastyResponseSchema } } },
+    400: { description: "Invalid body, blank `reason`, missing `x-staff-email` (`MERGED_BY_REQUIRED`), or merging into itself (`SAME_DYNASTY`)", content: { "application/json": { schema: DynastyErrorSchema } } },
+    404: { description: "`DYNASTY_NOT_FOUND` (either slug)", content: { "application/json": { schema: DynastyErrorSchema } } },
+    409: { description: "`DIFFERENT_PIPE`, `DIFFERENT_IDENTITY` (blind and named are never merged), or `DYNASTY_MERGED` (either one was already merged)", content: { "application/json": { schema: DynastyErrorSchema } } },
   },
 });
 

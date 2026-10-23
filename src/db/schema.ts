@@ -258,6 +258,13 @@ export const templateDynasties = pgTable(
     identity: text("identity").$type<"blind" | "named">().notNull(),
     featureSlug: text("feature_slug").notNull(),
     legKey: text("leg_key").notNull(),
+    // Set when staff merged this dynasty INTO another of the same pipe and identity
+    // (MERGE-TEMPLATE-DYNASTY-1023): its versions now sit in that one, older than its own.
+    // The row stays so the slug resolves to the target; it is no longer listed.
+    mergedInto: text("merged_into"),
+    mergedAt: timestamp("merged_at", { withTimezone: true }),
+    mergedBy: text("merged_by"),
+    mergeReason: text("merge_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

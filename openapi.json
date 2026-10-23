@@ -2383,6 +2383,40 @@
             },
             "description": "Oldest first. A template belongs to ONE dynasty: no type appears in two."
           },
+          "mergedDynasties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "slug": {
+                  "type": "string",
+                  "description": "The merged dynasty's slug; it now resolves to this dynasty."
+                },
+                "name": {
+                  "type": "string"
+                },
+                "mergedAt": {
+                  "type": "string"
+                },
+                "mergedBy": {
+                  "type": "string",
+                  "description": "Staff email of who merged it."
+                },
+                "reason": {
+                  "type": "string",
+                  "description": "Why it was merged, as stated by staff."
+                }
+              },
+              "required": [
+                "slug",
+                "name",
+                "mergedAt",
+                "mergedBy",
+                "reason"
+              ]
+            },
+            "description": "Dynasties staff merged INTO this one (their versions are now this one's older versions), oldest merge first."
+          },
           "createdAt": {
             "type": "string"
           },
@@ -2404,6 +2438,7 @@
           "statusChangedAt",
           "head",
           "versions",
+          "mergedDynasties",
           "createdAt",
           "updatedAt"
         ]
@@ -2533,6 +2568,65 @@
           }
         ],
         "description": "Either a new text (`prompt` + `variables`) or an existing template (`type`)."
+      },
+      "MergeTemplateDynastyRequest": {
+        "type": "object",
+        "properties": {
+          "into": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Slug of the dynasty to merge INTO: same pipe (featureSlug x legKey), same identity. Its head does not change."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "Why (shown with the merge; also the deprecation reason of a merged version that was still active)."
+          }
+        },
+        "required": [
+          "into",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "MergeTemplateDynastyResponse": {
+        "type": "object",
+        "properties": {
+          "merged": {
+            "type": "string",
+            "description": "The merged dynasty's slug (it now resolves to `dynasty`)."
+          },
+          "movedVersions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Its versions, now the oldest versions of `dynasty`, oldest first."
+          },
+          "deprecated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Moved versions that were still active and were deprecated by the merge."
+          },
+          "dynasty": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TemplateDynasty"
+              },
+              {
+                "description": "The dynasty merged into, after the merge (same head as before)."
+              }
+            ]
+          }
+        },
+        "required": [
+          "merged",
+          "movedVersions",
+          "deprecated",
+          "dynasty"
+        ]
       },
       "TemplateDynastyWithTemplate": {
         "type": "object",
@@ -5582,7 +5676,7 @@
           "Template dynasties"
         ],
         "summary": "List template dynasties, optionally of one pipe",
-        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`).",
+        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`). A dynasty merged into another is not listed (its versions are listed under the one it was merged into).",
         "parameters": [
           {
             "schema": {
@@ -5760,7 +5854,7 @@
           "Template dynasties"
         ],
         "summary": "One dynasty with its versions and head",
-        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`).",
+        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`). A merged dynasty's slug answers the dynasty it was merged into.",
         "parameters": [
           {
             "schema": {
@@ -6073,7 +6167,7 @@
             }
           },
           "409": {
-            "description": "`TEMPLATE_TWIN`: the text is byte-identical to another stored template `twinType`; `ALREADY_IN_DYNASTY`; `TEMPLATE_IN_OTHER_DYNASTY` (a template belongs to one dynasty); or `DYNASTY_HAS_NO_VERSION`",
+            "description": "`TEMPLATE_TWIN`: the text is byte-identical to another stored template `twinType`; `ALREADY_IN_DYNASTY`; `TEMPLATE_IN_OTHER_DYNASTY` (a template belongs to one dynasty); `DYNASTY_HAS_NO_VERSION`; or `DYNASTY_MERGED` (the dynasty was merged into another: write there)",
             "content": {
               "application/json": {
                 "schema": {
@@ -6122,6 +6216,120 @@
           },
           "502": {
             "description": "`TEMPLATE_NEUTRALITY_CHECK_FAILED`: nothing stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/template-dynasties/{slug}/merge": {
+      "post": {
+        "tags": [
+          "Template dynasties"
+        ],
+        "summary": "Merge a dynasty INTO another of the same pipe and identity (staff)",
+        "description": "Service/staff route: API key only, no identity headers. A template dynasty is one email strategy on ONE pipe (featureSlug x legKey), cross-org. Its versions are stored templates in order; the HEAD (latest) is the template every workflow on the dynasty writes with, and stats pool across its versions. Each generation still records the exact version it used (`promptType`). Staff only (the gateway checks staff and sends `x-staff-email`, recorded as who merged). Every version of {slug} becomes an OLDER version of `into` (positions 1..n, `into`'s own shifted after them), so `into`'s head and what its workflows write with never change; a moved version still active is deprecated with reason `Merged into <into>: <reason>`. {slug} then leaves the list and its slug resolves to `into` on every read; it takes no write. Its stats and outputs read as `into`'s. Nothing is judged or billed.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Dynasty slug, e.g. `cold-reply-intro-offer-blind`"
+            },
+            "required": true,
+            "description": "Dynasty slug, e.g. `cold-reply-intro-offer-blind`",
+            "name": "slug",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeTemplateDynastyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Merged",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MergeTemplateDynastyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, blank `reason`, missing `x-staff-email` (`MERGED_BY_REQUIRED`), or merging into itself (`SAME_DYNASTY`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`DYNASTY_NOT_FOUND` (either slug)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`DIFFERENT_PIPE`, `DIFFERENT_IDENTITY` (blind and named are never merged), or `DYNASTY_MERGED` (either one was already merged)",
             "content": {
               "application/json": {
                 "schema": {
