@@ -2067,21 +2067,45 @@
           "status"
         ]
       },
-      "ModelStatusEntry": {
+      "SetModelStatusRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SetCatalogueStatusRequest"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "featureSlug": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The pipe's feature slug (channel), e.g. `sales-cold-email-outreach`."
+              },
+              "legKey": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The pipe's leg, e.g. `lead_found_to_website_visit`."
+              }
+            },
+            "required": [
+              "featureSlug",
+              "legKey"
+            ]
+          }
+        ],
+        "description": "A model's status is set on ONE pipe (featureSlug x legKey); every other pipe is untouched. Missing pipe → 400 `PIPE_REQUIRED`."
+      },
+      "ModelPipeStatus": {
         "type": "object",
         "properties": {
-          "model": {
+          "featureSlug": {
             "type": "string",
-            "description": "A name accepted in `model` on POST /generate (dynasty slug, exact model id or legacy alias), as chat-service serves it."
+            "minLength": 1,
+            "description": "The pipe's feature slug (channel), e.g. `sales-cold-email-outreach`."
           },
-          "provider": {
+          "legKey": {
             "type": "string",
-            "description": "Provider the name runs on, read from chat-service's catalogue (never sent by a caller)."
-          },
-          "dynasty": {
-            "type": "string",
-            "nullable": true,
-            "description": "LLM dynasty slug of the model the name runs, from chat-service; null while chat-service serves none."
+            "minLength": 1,
+            "description": "The pipe's leg, e.g. `lead_found_to_website_visit`."
           },
           "status": {
             "type": "string",
@@ -2108,13 +2132,92 @@
           }
         },
         "required": [
+          "featureSlug",
+          "legKey",
+          "status",
+          "statusChangedAt",
+          "statusReason",
+          "statusChangedBy"
+        ]
+      },
+      "ModelStatusEntry": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "A name accepted in `model` on POST /generate (dynasty slug, exact model id or legacy alias), as chat-service serves it."
+          },
+          "provider": {
+            "type": "string",
+            "description": "Provider the name runs on, read from chat-service's catalogue (never sent by a caller)."
+          },
+          "dynasty": {
+            "type": "string",
+            "nullable": true,
+            "description": "LLM dynasty slug of the model the name runs, from chat-service; null while chat-service serves none."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deprecated"
+            ],
+            "description": "Status on `pipe`. Asked without a pipe: always `active` (a model is never retired fleet-wide; read `pipeStatuses` or ask with a pipe)."
+          },
+          "statusChangedAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "When staff last changed the status (ISO 8601). Null = never changed (active since creation)."
+          },
+          "statusReason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why it is deprecated, in plain words, as staff wrote it. `Not specified` = deprecated before a reason was required. Null when active."
+          },
+          "statusChangedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Staff email of who last changed the status. Null = unknown (never changed, or changed before this was recorded)."
+          },
+          "pipe": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "featureSlug": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The pipe's feature slug (channel), e.g. `sales-cold-email-outreach`."
+              },
+              "legKey": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The pipe's leg, e.g. `lead_found_to_website_visit`."
+              }
+            },
+            "required": [
+              "featureSlug",
+              "legKey"
+            ],
+            "description": "The pipe the top-level status is for; null when asked without one."
+          },
+          "pipeStatuses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelPipeStatus"
+            },
+            "description": "Every pipe where staff stated this model's status (no entry = active on that pipe), oldest change first."
+          }
+        },
+        "required": [
           "model",
           "provider",
           "dynasty",
           "status",
           "statusChangedAt",
           "statusReason",
-          "statusChangedBy"
+          "statusChangedBy",
+          "pipe",
+          "pipeStatuses"
         ]
       },
       "ModelStatusListResponse": {
@@ -5323,8 +5426,30 @@
         "tags": [
           "Internal"
         ],
-        "summary": "Every writer model alias with its staff status",
-        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. workflow-service reads it at workflow write time and refuses a deprecated model.",
+        "summary": "Every writer model alias with its staff status, per pipe",
+        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. A model's status is per pipe (featureSlug x legKey). With `featureSlug` + `legKey`, `status` = the model's status on that pipe (is it usable there?). Without them, `status` is `active` and `pipeStatuses` lists every pipe it was deprecated or re-activated on.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "With `legKey`: the pipe to read the status on."
+            },
+            "required": false,
+            "description": "With `legKey`: the pipe to read the status on.",
+            "name": "featureSlug",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "With `featureSlug`: the pipe to read the status on."
+            },
+            "required": false,
+            "description": "With `featureSlug`: the pipe to read the status on.",
+            "name": "legKey",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "All aliases",
@@ -5332,6 +5457,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ModelStatusListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Only one of `featureSlug` / `legKey` (`PIPE_INCOMPLETE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -5344,8 +5479,8 @@
         "tags": [
           "Internal"
         ],
-        "summary": "Set a writer model's staff status (active or deprecated)",
-        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. Changes the status only; POST /generate keeps accepting the alias.",
+        "summary": "Set a writer model's staff status on ONE pipe (active or deprecated)",
+        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. Changes the status on that pipe only, every other pipe untouched; POST /generate keeps accepting the alias.",
         "parameters": [
           {
             "schema": {
@@ -5372,7 +5507,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SetCatalogueStatusRequest"
+                "$ref": "#/components/schemas/SetModelStatusRequest"
               }
             }
           }
@@ -5389,7 +5524,7 @@
             }
           },
           "400": {
-            "description": "Missing or unknown status, or a deprecation without a reason (`DEPRECATION_REASON_REQUIRED`) or without who (`DEPRECATED_BY_REQUIRED`)",
+            "description": "Missing or unknown status, a deprecation without a reason (`DEPRECATION_REASON_REQUIRED`) or without who (`DEPRECATED_BY_REQUIRED`), no pipe (`PIPE_REQUIRED`) or half a pipe (`PIPE_INCOMPLETE`)",
             "content": {
               "application/json": {
                 "schema": {

@@ -1,10 +1,10 @@
 import { readWhatsAppOutputs, newestFirst } from "./whatsapp-outputs.js";
 import { asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { emailGenerations, modelStatuses, prompts } from "../db/schema.js";
+import { emailGenerations, modelPipeStatuses, prompts } from "../db/schema.js";
 import type { ChatModel, ChatProvider } from "./chat-models.js";
 import { listChatModels, type ChatModelEntry } from "./chat-model-catalogue.js";
-import { servedStatus, type ServedStatus, type StatusChange } from "./catalogue-status.js";
+import { servedStatus, type ModelPipe, type ServedStatus, type StatusChange } from "./catalogue-status.js";
 import { resolveGenerationBody } from "./generation-body.js";
 
 /**
@@ -12,37 +12,61 @@ import { resolveGenerationBody } from "./generation-body.js";
  * See src/lib/catalogue-status.ts for what a status means and who reads it.
  */
 
+export interface ModelPipeStatus extends ServedStatus {
+  featureSlug: string;
+  legKey: string;
+}
+
 export interface ModelStatusEntry extends ServedStatus {
   model: ChatModel;
   provider: ChatProvider;
   dynasty: string | null;
+  /** The pipe the top-level status is for; null = asked without a pipe (always active: no global status). */
+  pipe: ModelPipe | null;
+  /** Every pipe where staff stated this model's status, oldest change first. */
+  pipeStatuses: ModelPipeStatus[];
 }
 
-/** Every name chat-service accepts, in its catalogue order. No row = active (never changed). */
-export async function listModelStatuses(): Promise<ModelStatusEntry[]> {
-  const [catalogue, rows] = await Promise.all([listChatModels(), db.select().from(modelStatuses)]);
-  const byModel = new Map(rows.map((r) => [r.model, r]));
+const ACTIVE = { status: "active" as const, statusReason: null, statusChangedBy: null, statusChangedAt: null };
+
+type PipeRow = typeof modelPipeStatuses.$inferSelect;
+
+const toPipeStatus = (r: PipeRow): ModelPipeStatus => ({ featureSlug: r.featureSlug, legKey: r.legKey, ...servedStatus(r) });
+
+/**
+ * Every name chat-service accepts, in its catalogue order, with its status on `pipe`
+ * (no row = active there) and every pipe staff stated a status on. Without a pipe the
+ * top-level status is `active`: a model is never retired fleet-wide (LLM-STATUS-PER-PIPE-1023).
+ */
+export async function listModelStatuses(pipe: ModelPipe | null = null): Promise<ModelStatusEntry[]> {
+  const [catalogue, rows] = await Promise.all([
+    listChatModels(),
+    db.select().from(modelPipeStatuses).orderBy(asc(modelPipeStatuses.statusChangedAt)),
+  ]);
+  const byModel = new Map<string, PipeRow[]>();
+  for (const r of rows) byModel.set(r.model, [...(byModel.get(r.model) ?? []), r]);
   return catalogue.map(({ model, provider, dynasty }) => {
-    const row = byModel.get(model);
-    return {
-      model,
-      provider,
-      dynasty,
-      ...servedStatus(row ?? { status: "active", statusReason: null, statusChangedBy: null, statusChangedAt: null }),
-    };
+    const own = byModel.get(model) ?? [];
+    const onPipe = pipe ? own.find((r) => r.featureSlug === pipe.featureSlug && r.legKey === pipe.legKey) : undefined;
+    return { model, provider, dynasty, ...servedStatus(onPipe ?? ACTIVE), pipe, pipeStatuses: own.map(toPipeStatus) };
   });
 }
 
-export async function setModelStatus(entry: ChatModelEntry, change: StatusChange): Promise<ModelStatusEntry> {
+/** Sets the model's status on ONE pipe; every other pipe is untouched. */
+export async function setModelStatus(entry: ChatModelEntry, pipe: ModelPipe, change: StatusChange): Promise<ModelStatusEntry> {
   const { model, provider, dynasty } = entry;
-  const now = new Date();
-  const set = { status: change.status, statusReason: change.reason, statusChangedBy: change.changedBy, statusChangedAt: now };
+  const set = { status: change.status, statusReason: change.reason, statusChangedBy: change.changedBy, statusChangedAt: new Date() };
   const [row] = await db
-    .insert(modelStatuses)
-    .values({ model, ...set })
-    .onConflictDoUpdate({ target: modelStatuses.model, set })
+    .insert(modelPipeStatuses)
+    .values({ model, featureSlug: pipe.featureSlug, legKey: pipe.legKey, ...set })
+    .onConflictDoUpdate({ target: [modelPipeStatuses.model, modelPipeStatuses.featureSlug, modelPipeStatuses.legKey], set })
     .returning();
-  return { model, provider, dynasty, ...servedStatus(row) };
+  const all = await db
+    .select()
+    .from(modelPipeStatuses)
+    .where(eq(modelPipeStatuses.model, model))
+    .orderBy(asc(modelPipeStatuses.statusChangedAt));
+  return { model, provider, dynasty, ...servedStatus(row), pipe, pipeStatuses: all.map(toPipeStatus) };
 }
 
 export interface TemplateStatusEntry extends ServedStatus {
