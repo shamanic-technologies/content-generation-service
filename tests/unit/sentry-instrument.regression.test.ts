@@ -35,6 +35,12 @@ describe("Sentry ESM instrumentation", () => {
     expect(source).toContain("Sentry.init(");
   });
 
+  it("instrument.ts leaves ESM loader hooks on the Sentry >=9 default (boolean only, wraps only instrumented modules)", () => {
+    const source = readFileSync(instrumentPath, "utf-8");
+    expect(source).not.toMatch(/registerEsmLoaderHooks:\s*\{/);
+    expect(source).toContain("sendDefaultPii: true");
+  });
+
   it("index.ts does not have inline Sentry.init()", () => {
     const source = readFileSync(indexPath, "utf-8");
     expect(source).not.toContain("Sentry.init(");
