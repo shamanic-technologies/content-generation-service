@@ -25,6 +25,7 @@ import sequenceRoutes from "./routes/sequences.js";
 import previewEmailRoutes from "./routes/preview-email.js";
 import industryDebriefVideoRoutes from "./routes/industry-debrief-videos.js";
 import { resumeDebriefJobs } from "./lib/debrief/jobs.js";
+import { startOutcomeDeclarationSweep } from "./lib/outcome-declarations.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -115,6 +116,8 @@ if (process.env.NODE_ENV !== "test") {
         console.log(`Content generation service running on port ${PORT}`);
         // After the port binds: renders a restart interrupted are re-queued in the background.
         resumeDebriefJobs().catch((err) => console.error("[debrief] resume at boot failed:", err));
+        // Outcome declarations still pending (runs-service down at write time) are re-sent.
+        startOutcomeDeclarationSweep();
       });
     })
     .catch((err) => {

@@ -22,6 +22,14 @@ vi.mock("../../src/db/index.js", () => ({
 }));
 vi.mock("../../src/db/schema.js", () => ({ prompts: { type: {} }, whatsappGenerations: {} }));
 
+const mockCreateRun = vi.fn();
+const mockUpdateRun = vi.fn();
+vi.mock("../../src/lib/runs-client.js", () => ({
+  createRun: (...a: unknown[]) => mockCreateRun(...a),
+  updateRun: (...a: unknown[]) => mockUpdateRun(...a),
+}));
+import { declareStoredOutcomes } from "../../src/lib/outcome-declarations.js";
+
 const vars = Object.fromEntries(WHATSAPP_TEMPLATE_VARIABLES.map((v) => [v.name, `<${v.name}>`]));
 const body = (over: Record<string, unknown> = {}) => ({
   type: "whatsapp-signup-v2",
@@ -53,6 +61,8 @@ describe("POST /generate-whatsapp", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     mockFindFirst.mockResolvedValue({ type: "whatsapp-signup-v2", prompt: WHATSAPP_TEMPLATE_V2, variables: [] });
     mockValues.mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "gen-1" }]) });
+    mockCreateRun.mockResolvedValue({ id: "wa-run-1" });
+    mockUpdateRun.mockResolvedValue({});
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
   });
@@ -84,17 +94,42 @@ describe("POST /generate-whatsapp", () => {
     expect(sent.provider).toBe("anthropic");
     expect(sent.responseSchema.additionalProperties).toBe(false);
     expect(sent.responseSchema.required).toEqual(["decision", "bubbles", "reason", "nextFollowUpAt", "nextFollowUpWhy"]);
-    expect(init.headers["x-run-id"]).toBe("run-1");
+    // The completion runs under this service's own run (child of the caller's), so its cost
+    // lands on the message_written this run declares (COST-ACCOUNTING-1023-P1).
+    expect(mockCreateRun).toHaveBeenCalledWith(
+      expect.objectContaining({ serviceName: "content-generation-service", taskName: "whatsapp-generation" }),
+      expect.objectContaining({ runId: "run-1" }),
+    );
+    expect(init.headers["x-run-id"]).toBe("wa-run-1");
     expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({
       promptType: "whatsapp-signup-v2", decision: "write", leadId: "lead-1", campaignId: "camp-1",
       featureSlug: "cold-whatsapp-outreach", model: "claude-opus-5-5",
+      generationRunId: "wa-run-1",
+      outcomes: {
+        produced: [{ outcomeKey: "message_written", subjectService: "lead-service", subjectId: "lead-1" }],
+        consumed: [{ outcomeKey: "lead_found", subjectService: "lead-service", subjectId: "lead-1" }],
+      },
     }));
+    expect(mockUpdateRun).toHaveBeenCalledWith("wa-run-1", "completed", expect.objectContaining({ runId: "wa-run-1" }));
+    expect(declareStoredOutcomes).toHaveBeenCalledWith("whatsapp_generations", "gen-1");
+  });
+
+  it("runs-service down: the message is still written under the caller's run, nothing declared", async () => {
+    mockCreateRun.mockRejectedValue(new Error("runs-service 503"));
+    fetchMock.mockResolvedValue(completion({ decision: "write", bubbles: ["hi"], reason: "r", nextFollowUpAt: "2026-10-27T09:00:00Z", nextFollowUpWhy: "w" }));
+    await request(await app()).post("/generate-whatsapp").send(body()).expect(200);
+    expect(fetchMock.mock.calls[0][1].headers["x-run-id"]).toBe("run-1");
+    expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({ generationRunId: null, outcomes: null }));
+    expect(declareStoredOutcomes).not.toHaveBeenCalled();
   });
 
   it("later: nothing to send, no bubbles", async () => {
     fetchMock.mockResolvedValue(completion({ decision: "later", bubbles: ["x"], reason: "night there", nextFollowUpAt: "2026-10-24T08:00:00Z", nextFollowUpWhy: "w" }));
     const res = await request(await app()).post("/generate-whatsapp").send(body()).expect(200);
     expect(res.body).toMatchObject({ decision: "later", bubbles: [], message: "" });
+    // No message written = no outcome; the run's cost rolls into the nearest declaring ancestor.
+    expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({ generationRunId: "wa-run-1", outcomes: null }));
+    expect(declareStoredOutcomes).not.toHaveBeenCalled();
   });
 
   it("400 VARIABLES_MISSING before any completion", async () => {
