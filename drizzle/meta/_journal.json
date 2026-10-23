@@ -288,6 +288,13 @@
       "when": 1780320000000,
       "tag": "0040_whatsapp_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1780330000000,
+      "tag": "0041_template_dynasty_merges",
+      "breakpoints": true
     }
   ]
 }

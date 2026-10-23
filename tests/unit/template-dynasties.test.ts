@@ -11,11 +11,12 @@ const q = vi.hoisted(() => ({
   addDynastyVersion: vi.fn(),
   createDynasty: vi.fn(),
   readDynastyOutputs: vi.fn(),
+  mergeDynasty: vi.fn(),
 }));
 vi.mock("../../src/lib/template-dynasty-query.js", () => q);
 
 const { default: routes } = await import("../../src/routes/template-dynasties.js");
-const { assertVersionVariables, assertVariablesMatchText, headOf, templateTwin, dynastyNotFound, TemplateDynastyError } = await import(
+const { assertMergeable, assertVersionVariables, assertVariablesMatchText, headOf, templateTwin, dynastyNotFound, TemplateDynastyError } = await import(
   "../../src/lib/template-dynasties.js"
 );
 const { TemplateNotNeutralError } = await import("../../src/lib/template-neutrality.js");
@@ -241,5 +242,60 @@ describe("the seed migration matches the owner-validated dynasties (2026-10-21)"
     }
     const seeded = sqlText.match(/^\s+\('[^']+', '[^']+', \d+\)/gm) ?? [];
     expect(seeded).toHaveLength(fixture.reduce((n, d) => n + d.versions.length, 0));
+  });
+});
+
+describe("merge a dynasty into another (MERGE-TEMPLATE-DYNASTY-1023)", () => {
+  beforeEach(() => vi.clearAllMocks());
+  const d = (slug: string, over: Record<string, unknown> = {}) => ({
+    slug, featureSlug: "sales-cold-email-outreach", legKey: "lead_found_to_conversation", identity: "blind", mergedInto: null, ...over,
+  });
+  const code = (fn: () => void) => {
+    try {
+      fn();
+      return null;
+    } catch (e) {
+      return (e as InstanceType<typeof TemplateDynastyError>).code;
+    }
+  };
+
+  it("refuses another pipe, another identity, itself, an already-merged dynasty on either side", () => {
+    expect(code(() => assertMergeable(d("x"), d("y")))).toBeNull();
+    expect(code(() => assertMergeable(d("x"), d("y", { legKey: "lead_found_to_website_visit" })))).toBe("DIFFERENT_PIPE");
+    expect(code(() => assertMergeable(d("x"), d("y", { featureSlug: "other" })))).toBe("DIFFERENT_PIPE");
+    expect(code(() => assertMergeable(d("x"), d("y", { identity: "named" })))).toBe("DIFFERENT_IDENTITY");
+    expect(code(() => assertMergeable(d("x", { identity: "named" }), d("y")))).toBe("DIFFERENT_IDENTITY");
+    expect(code(() => assertMergeable(d("x"), d("x")))).toBe("SAME_DYNASTY");
+    expect(code(() => assertMergeable(d("x", { mergedInto: "z" }), d("y")))).toBe("DYNASTY_MERGED");
+    expect(code(() => assertMergeable(d("x"), d("y", { mergedInto: "z" })))).toBe("DYNASTY_MERGED");
+  });
+
+  it("POST /internal/template-dynasties/:slug/merge merges with the staff email and reason", async () => {
+    q.mergeDynasty.mockResolvedValue({ merged: "x", movedVersions: ["a"], deprecated: [], dynasty: DYNASTY });
+    const res = await request(app())
+      .post("/internal/template-dynasties/x/merge")
+      .set("x-staff-email", "Kevin@Distribute.you")
+      .send({ into: DYNASTY.slug, reason: "  Same approach " });
+    expect(res.status).toBe(200);
+    expect(res.body.merged).toBe("x");
+    expect(q.mergeDynasty).toHaveBeenCalledWith({ source: "x", into: DYNASTY.slug, reason: "Same approach", mergedBy: "kevin@distribute.you" });
+  });
+
+  it("refuses without x-staff-email, a blank reason or an unknown field, before any write", async () => {
+    const noStaff = await request(app()).post("/internal/template-dynasties/x/merge").send({ into: "y", reason: "r" });
+    expect(noStaff.status).toBe(400);
+    expect(noStaff.body.code).toBe("MERGED_BY_REQUIRED");
+    const blank = await request(app()).post("/internal/template-dynasties/x/merge").set("x-staff-email", "k@d.you").send({ into: "y", reason: "  " });
+    expect(blank.status).toBe(400);
+    const extra = await request(app()).post("/internal/template-dynasties/x/merge").set("x-staff-email", "k@d.you").send({ into: "y", reason: "r", head: "z" });
+    expect(extra.status).toBe(400);
+    expect(q.mergeDynasty).not.toHaveBeenCalled();
+  });
+
+  it("answers a refusal with its status and code", async () => {
+    q.mergeDynasty.mockRejectedValue(new TemplateDynastyError(409, "DIFFERENT_IDENTITY", "blind and named"));
+    const res = await request(app()).post("/internal/template-dynasties/x/merge").set("x-staff-email", "k@d.you").send({ into: "y", reason: "r" });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("DIFFERENT_IDENTITY");
   });
 });

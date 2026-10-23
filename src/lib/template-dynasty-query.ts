@@ -1,5 +1,5 @@
 import { readWhatsAppOutputs, newestFirst } from "./whatsapp-outputs.js";
-import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, prompts, templateDynasties, templateDynastyVersions } from "../db/schema.js";
 import { servedStatus } from "./catalogue-status.js";
@@ -14,12 +14,16 @@ import {
   UPGRADED_BY_SYSTEM,
   UPGRADED_REASON,
   applyDynastyStatus,
+  assertMergeable,
   assertVariablesMatchText,
   assertVersionVariables,
+  dynastyMerged,
   dynastyNotFound,
+  mergedReason,
   templateTwin,
   type DynastyIdentity,
   type DynastyResponse,
+  type MergedDynasty,
   type TemplateVariable,
   templateInOtherDynasty,
 } from "./template-dynasties.js";
@@ -81,7 +85,22 @@ async function withVersions(rows: DynastyRow[]): Promise<DynastyResponse[]> {
     .where(inArray(templateDynastyVersions.dynastySlug, rows.map((r) => r.slug)))
     .orderBy(asc(templateDynastyVersions.dynastySlug), asc(templateDynastyVersions.position));
 
+  const merged = await db
+    .select()
+    .from(templateDynasties)
+    .where(inArray(templateDynasties.mergedInto, rows.map((r) => r.slug)))
+    .orderBy(asc(templateDynasties.mergedAt), asc(templateDynasties.slug));
+
   return rows.map((row) => {
+    const mergedDynasties = merged
+      .filter((m) => m.mergedInto === row.slug)
+      .map((m): MergedDynasty => ({
+        slug: m.slug,
+        name: m.name,
+        mergedAt: (m.mergedAt ?? m.updatedAt).toISOString(),
+        mergedBy: m.mergedBy ?? "",
+        reason: m.mergeReason ?? "",
+      }));
     const { head, versions: own, status } = applyDynastyStatus(
       versions
         .filter((v) => v.dynastySlug === row.slug)
@@ -98,28 +117,39 @@ async function withVersions(rows: DynastyRow[]): Promise<DynastyResponse[]> {
       ...status,
       head,
       versions: own,
+      mergedDynasties,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };
   });
 }
 
-/** Every dynasty, optionally of one pipe (feature slug, leg key, or both), by slug. */
+/** Every dynasty not merged into another, optionally of one pipe (feature slug, leg key, or both), by slug. */
 export async function listDynasties(filter: { featureSlug?: string; legKey?: string }): Promise<DynastyResponse[]> {
-  const conditions = [];
+  const conditions = [isNull(templateDynasties.mergedInto)];
   if (filter.featureSlug) conditions.push(eq(templateDynasties.featureSlug, filter.featureSlug));
   if (filter.legKey) conditions.push(eq(templateDynasties.legKey, filter.legKey));
   const rows = await db
     .select()
     .from(templateDynasties)
-    .where(conditions.length ? and(...conditions) : undefined)
+    .where(and(...conditions))
     .orderBy(asc(templateDynasties.slug));
   return withVersions(rows);
 }
 
-export async function getDynasty(slug: string): Promise<DynastyResponse> {
+async function readDynastyRow(slug: string): Promise<DynastyRow> {
   const [row] = await db.select().from(templateDynasties).where(eq(templateDynasties.slug, slug));
   if (!row) throw dynastyNotFound(slug);
+  return row;
+}
+
+/** A dynasty by slug; a merged slug resolves to the dynasty it was merged into (MERGE-TEMPLATE-DYNASTY-1023). */
+export async function getDynasty(slug: string): Promise<DynastyResponse> {
+  let row = await readDynastyRow(slug);
+  for (let hops = 0; row.mergedInto; hops++) {
+    if (hops >= 20) throw new Error(`Template dynasty "${slug}" merge chain does not end`);
+    row = await readDynastyRow(row.mergedInto);
+  }
   const [dynasty] = await withVersions([row]);
   return dynasty;
 }
@@ -167,6 +197,8 @@ export async function addDynastyVersion(params: {
   changedBy: string;
 }): Promise<{ dynasty: DynastyResponse; template: PromptRow }> {
   const { slug, version, orgId, caller, changedBy } = params;
+  const own = await readDynastyRow(slug);
+  if (own.mergedInto) throw dynastyMerged(slug, own.mergedInto);
   const { dynasty, template: head } = await resolveDynastyHead(slug);
   const headVariables = (head.variables ?? []) as TemplateVariable[];
 
@@ -220,6 +252,78 @@ export async function addDynastyVersion(params: {
       (written.deprecated.length ? `; deprecated ${head.type} (${UPGRADED_REASON})` : `; ${head.type} kept (heads another dynasty or already deprecated)`),
   );
   return { dynasty: await getDynasty(slug), template: written.row };
+}
+
+/**
+ * Merge dynasty `source` INTO dynasty `into` (MERGE-TEMPLATE-DYNASTY-1023, staff). Refused before any write:
+ * unknown dynasty (404), itself (400 SAME_DYNASTY), either already merged (409 DYNASTY_MERGED), another pipe
+ * (409 DIFFERENT_PIPE), another identity (409 DIFFERENT_IDENTITY). One transaction, both rows locked:
+ * - every version of `source` becomes a version of `into`, oldest first at positions 1..n, `into`'s own
+ *   versions shifted after them, so `into`'s head (what its workflows write with) is unchanged;
+ * - a source version still active is deprecated, reason `Merged into <into>: <reason>`, by `mergedBy`
+ *   (an already-deprecated one keeps its stated reason);
+ * - `source` is marked merged (who, when, why): it leaves the list and its slug resolves to `into`.
+ * No text is judged: no template is created and the head does not move.
+ */
+export async function mergeDynasty(params: {
+  source: string;
+  into: string;
+  reason: string;
+  mergedBy: string;
+}): Promise<{ merged: string; movedVersions: string[]; deprecated: string[]; dynasty: DynastyResponse }> {
+  const { source, into, reason, mergedBy } = params;
+  const result = await db.transaction(async (tx) => {
+    // Lock both rows (fixed order) so two merges, or a merge and a new version, never interleave.
+    const locked = (await tx.execute(sql`
+      SELECT slug, feature_slug AS "featureSlug", leg_key AS "legKey", identity, merged_into AS "mergedInto"
+      FROM template_dynasties WHERE slug IN (${source}, ${into}) ORDER BY slug FOR UPDATE`)) as unknown as Array<{
+      slug: string; featureSlug: string; legKey: string; identity: string; mergedInto: string | null;
+    }>;
+    const src = locked.find((r) => r.slug === source);
+    const dst = locked.find((r) => r.slug === into);
+    if (!src) throw dynastyNotFound(source);
+    if (!dst) throw dynastyNotFound(into);
+    assertMergeable(src, dst);
+
+    const moved = (await tx.execute(sql`
+      SELECT prompt_type AS type FROM template_dynasty_versions WHERE dynasty_slug = ${source} ORDER BY position`)) as unknown as Array<{ type: string }>;
+    const n = moved.length;
+
+    const deprecated = n === 0 ? [] : ((await tx.execute(sql`
+      UPDATE prompts SET status = 'deprecated', status_reason = ${mergedReason(into, reason)},
+        status_changed_by = ${mergedBy}, status_changed_at = now()
+      WHERE status = 'active' AND type IN (SELECT prompt_type FROM template_dynasty_versions WHERE dynasty_slug = ${source})
+      RETURNING type`)) as unknown as Array<{ type: string }>).map((r) => r.type).sort();
+
+    if (n > 0) {
+      // (dynasty_slug, position) is unique and checked per row: park the target's positions below zero,
+      // move the source's in at 1..n, then put the target's back after them in their order.
+      await tx.execute(sql`UPDATE template_dynasty_versions SET position = -position WHERE dynasty_slug = ${into}`);
+      await tx.execute(sql`
+        UPDATE template_dynasty_versions v SET dynasty_slug = ${into}, position = r.rn
+        FROM (SELECT prompt_type, row_number() OVER (ORDER BY position) AS rn
+              FROM template_dynasty_versions WHERE dynasty_slug = ${source}) r
+        WHERE v.dynasty_slug = ${source} AND v.prompt_type = r.prompt_type`);
+      await tx.execute(sql`
+        UPDATE template_dynasty_versions v SET position = ${n} + r.rn
+        FROM (SELECT prompt_type, row_number() OVER (ORDER BY position DESC) AS rn
+              FROM template_dynasty_versions WHERE dynasty_slug = ${into} AND position < 0) r
+        WHERE v.dynasty_slug = ${into} AND v.prompt_type = r.prompt_type`);
+    }
+
+    await tx.execute(sql`
+      UPDATE template_dynasties SET merged_into = ${into}, merged_at = now(), merged_by = ${mergedBy},
+        merge_reason = ${reason}, updated_at = now()
+      WHERE slug = ${source}`);
+    await tx.execute(sql`UPDATE template_dynasties SET updated_at = now() WHERE slug = ${into}`);
+    return { movedVersions: moved.map((m) => m.type), deprecated };
+  });
+
+  console.log(
+    `[template-dynasty] ${source} merged into ${into} by ${mergedBy}: ${result.movedVersions.length} version(s) moved` +
+      (result.deprecated.length ? `, deprecated ${result.deprecated.join(", ")}` : "") + ` (${reason})`,
+  );
+  return { merged: source, ...result, dynasty: await getDynasty(into) };
 }
 
 /** A brand-new template to store as a new dynasty's first (and head) version. */
