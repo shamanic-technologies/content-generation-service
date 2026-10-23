@@ -69,12 +69,18 @@ export function spentCents(run: Pick<BackfillRun, "costs">): number {
 
 /**
  * Where (if anywhere) one past email's declaration goes. `generationRun` = our run of the row,
- * `parent` = its parent run when readable.
+ * `parent` = its parent run when readable; `runUnreadable` = why our run could not be read at all.
  */
-export function decideBackfill(row: BackfillRow, generationRun: BackfillRun, parent: BackfillRun | undefined): BackfillDecision {
+export function decideBackfill(
+  row: BackfillRow,
+  generationRun: BackfillRun,
+  parent: BackfillRun | undefined,
+  runUnreadable?: string,
+): BackfillDecision {
   if (isRetiredFeature(row.featureSlug)) return { kind: "skipped", reason: `retired product (${row.featureSlug})` };
   const declaration = messageWrittenDeclaration({ leadId: row.leadId, variables: row.variables });
   if (!declaration) return { kind: "unreadable", reason: "no lead id stored on the email" };
+  if (runUnreadable) return { kind: "unreadable", reason: runUnreadable };
 
   if (!generationRun.parentRunId) {
     if (spentCents(generationRun) > 0) return { kind: "declare", runId: generationRun.id, declaration, via: "own_run" };
