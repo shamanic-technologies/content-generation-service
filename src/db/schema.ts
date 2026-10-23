@@ -33,10 +33,13 @@ export const emailGenerations = pgTable(
     generationRunId: text("generation_run_id"),
 
     // Outcome declaration sent to runs-service for generationRunId (COST-ACCOUNTING-1023-P1,
-    // src/lib/outcome-declarations.ts). NULL on rows written before it: never declared.
+    // src/lib/outcome-declarations.ts). NULL on rows written before it until the backfill (src/lib/outcome-backfill.ts) marks them.
     outcomes: jsonb("outcomes"),
     outcomesDeclaredAt: timestamp("outcomes_declared_at", { withTimezone: true }),
     outcomesError: text("outcomes_error"),
+    // The run the declaration was made ON when it is not generationRunId: the pre-P1 completion
+    // run the backfill matched (COST-BACKFILL-1023-CONTENTGEN, src/lib/outcome-backfill.ts).
+    outcomesRunId: text("outcomes_run_id"),
 
     // Generated email sequence
     subject: text("subject"),
