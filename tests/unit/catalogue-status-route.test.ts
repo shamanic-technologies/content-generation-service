@@ -30,10 +30,31 @@ function app() {
 describe("staff catalogue status routes", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("GET /internal/models lists every alias with its status", async () => {
+  const VISIT = { featureSlug: "sales-cold-email-outreach", legKey: "lead_found_to_website_visit" };
+
+  it("GET /internal/models lists every alias with its status (old read: no pipe)", async () => {
     q.listModelStatuses.mockResolvedValue([{ model: "pro", provider: "google", status: "active", statusChangedAt: null }]);
     const res = await request(app()).get("/internal/models").expect(200);
     expect(res.body.models[0].status).toBe("active");
+    expect(q.listModelStatuses).toHaveBeenLastCalledWith(null);
+  });
+
+  it("GET /internal/models?featureSlug&legKey reads the status on that pipe; half a pipe is 400", async () => {
+    q.listModelStatuses.mockResolvedValue([]);
+    await request(app()).get("/internal/models").query(VISIT).expect(200);
+    expect(q.listModelStatuses).toHaveBeenLastCalledWith(VISIT);
+    const half = await request(app()).get("/internal/models").query({ legKey: VISIT.legKey }).expect(400);
+    expect(half.body.code).toBe("PIPE_INCOMPLETE");
+  });
+
+  it("PUT a model status without a pipe is refused: never a fleet-wide retirement", async () => {
+    const res = await request(app()).put("/internal/models/glm-pro/status").set(WHO)
+      .send({ status: "deprecated", reason: "Too expensive" }).expect(400);
+    expect(res.body.code).toBe("PIPE_REQUIRED");
+    const half = await request(app()).put("/internal/models/glm-pro/status").set(WHO)
+      .send({ status: "deprecated", reason: "Too expensive", featureSlug: VISIT.featureSlug }).expect(400);
+    expect(half.body.code).toBe("PIPE_INCOMPLETE");
+    expect(q.setModelStatus).not.toHaveBeenCalled();
   });
 
   const WHO = { "x-staff-email": "Kevin@Distribute.you" };
@@ -42,15 +63,15 @@ describe("staff catalogue status routes", () => {
   });
 
   it("PUT a model status: deprecated with why + who, and back without a reason", async () => {
-    q.setModelStatus.mockImplementation(async (entry, change) => ({ ...entry, ...served(change.status, change.reason) }));
+    q.setModelStatus.mockImplementation(async (entry, _pipe, change) => ({ ...entry, ...served(change.status, change.reason) }));
     const dep = await request(app()).put("/internal/models/glm-pro/status").set(WHO)
-      .send({ status: "deprecated", reason: "  Writes one block, no line breaks  " }).expect(200);
-    expect(q.setModelStatus).toHaveBeenLastCalledWith(expect.objectContaining({ model: "glm-pro", provider: "zai" }), {
+      .send({ status: "deprecated", reason: "  Writes one block, no line breaks  ", ...VISIT }).expect(200);
+    expect(q.setModelStatus).toHaveBeenLastCalledWith(expect.objectContaining({ model: "glm-pro", provider: "zai" }), VISIT, {
       status: "deprecated", reason: "Writes one block, no line breaks", changedBy: "kevin@distribute.you",
     });
     expect(dep.body.statusReason).toBe("Writes one block, no line breaks");
-    await request(app()).put("/internal/models/glm-pro/status").send({ status: "active", reason: "x" }).expect(200);
-    expect(q.setModelStatus).toHaveBeenLastCalledWith(expect.objectContaining({ model: "glm-pro", provider: "zai" }), { status: "active", reason: null, changedBy: null });
+    await request(app()).put("/internal/models/glm-pro/status").send({ status: "active", reason: "x", ...VISIT }).expect(200);
+    expect(q.setModelStatus).toHaveBeenLastCalledWith(expect.objectContaining({ model: "glm-pro", provider: "zai" }), VISIT, { status: "active", reason: null, changedBy: null });
   });
 
   it("refuses a deprecation without a reason or without who, nothing written", async () => {
@@ -67,9 +88,9 @@ describe("staff catalogue status routes", () => {
   });
 
   it("PUT a dynasty slug's status: any name chat-service accepts, with its provider and dynasty", async () => {
-    q.setModelStatus.mockImplementation(async (entry, change) => ({ ...entry, ...served(change.status, change.reason) }));
+    q.setModelStatus.mockImplementation(async (entry, _pipe, change) => ({ ...entry, ...served(change.status, change.reason) }));
     const dep = await request(app()).put("/internal/models/claude-opus/status").set(WHO)
-      .send({ status: "deprecated", reason: "Too slow" }).expect(200);
+      .send({ status: "deprecated", reason: "Too slow", ...VISIT }).expect(200);
     expect(dep.body).toMatchObject({ model: "claude-opus", provider: "anthropic", dynasty: "claude-opus", status: "deprecated" });
   });
 

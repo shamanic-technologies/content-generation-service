@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/db/index.js";
-import { emailGenerations, modelStatuses, prompts } from "../../src/db/schema.js";
+import { emailGenerations, modelPipeStatuses, prompts } from "../../src/db/schema.js";
 import {
   listModelStatuses,
   listTemplateStatuses,
@@ -17,11 +17,13 @@ const MODEL = "kimi-flash";
 const ENTRY = { model: MODEL, provider: "moonshot" as const, dynasty: "kimi-k2" };
 const DEPRECATE = { status: "deprecated" as const, reason: "Writes one block", changedBy: "kevin@distribute.you" };
 const ACTIVATE = { status: "active" as const, reason: null, changedBy: "kevin@distribute.you" };
+const VISIT = { featureSlug: "sales-cold-email-outreach", legKey: "lead_found_to_website_visit" };
+const REPLY = { featureSlug: "sales-cold-email-outreach", legKey: "lead_found_to_conversation" };
 
 const cleanup = async () => {
   await db.delete(emailGenerations).where(inArray(emailGenerations.promptType, [TYPE, OTHER_TYPE]));
   await db.delete(prompts).where(inArray(prompts.type, [TYPE, OTHER_TYPE]));
-  await db.delete(modelStatuses).where(eq(modelStatuses.model, MODEL));
+  await db.delete(modelPipeStatuses).where(eq(modelPipeStatuses.model, MODEL));
 };
 
 async function insertGen(promptType: string, subject: string, createdAt: Date) {
@@ -83,18 +85,30 @@ describe("catalogue status (templates + models)", () => {
     expect(await setTemplateStatus(`${TYPE}-missing`, DEPRECATE)).toBeNull();
   });
 
-  it("every model reads active until staff changes it, both ways", async () => {
+  it("every model reads active on every pipe until staff changes it, both ways", async () => {
     const initial = (await listModelStatuses()).find((m) => m.model === MODEL)!;
     expect(initial).toEqual({
       model: MODEL, provider: "moonshot", dynasty: "kimi-k2", status: "active", statusChangedAt: null, statusReason: null, statusChangedBy: null,
+      pipe: null, pipeStatuses: [],
     });
 
-    expect((await setModelStatus(ENTRY, DEPRECATE)).statusReason).toBe("Writes one block");
-    expect((await listModelStatuses()).find((m) => m.model === MODEL)).toMatchObject({
-      status: "deprecated", statusReason: "Writes one block", statusChangedBy: "kevin@distribute.you",
+    expect((await setModelStatus(ENTRY, VISIT, DEPRECATE)).statusReason).toBe("Writes one block");
+    expect((await listModelStatuses(VISIT)).find((m) => m.model === MODEL)).toMatchObject({
+      status: "deprecated", statusReason: "Writes one block", statusChangedBy: "kevin@distribute.you", pipe: VISIT,
     });
-    expect((await setModelStatus(ENTRY, ACTIVATE)).statusReason).toBeNull();
-    expect((await listModelStatuses()).find((m) => m.model === MODEL)!.status).toBe("active");
+    expect((await setModelStatus(ENTRY, VISIT, ACTIVATE)).statusReason).toBeNull();
+    expect((await listModelStatuses(VISIT)).find((m) => m.model === MODEL)!.status).toBe("active");
+  });
+
+  it("deprecating a model on one pipe leaves it active on every other, and without a pipe", async () => {
+    await setModelStatus(ENTRY, VISIT, DEPRECATE);
+    expect((await listModelStatuses(VISIT)).find((m) => m.model === MODEL)!.status).toBe("deprecated");
+    expect((await listModelStatuses(REPLY)).find((m) => m.model === MODEL)).toMatchObject({ status: "active", statusReason: null, pipe: REPLY });
+    const noPipe = (await listModelStatuses()).find((m) => m.model === MODEL)!;
+    expect(noPipe).toMatchObject({ status: "active", statusReason: null, pipe: null });
+    expect(noPipe.pipeStatuses).toEqual([
+      expect.objectContaining({ ...VISIT, status: "deprecated", statusReason: "Writes one block", statusChangedBy: "kevin@distribute.you" }),
+    ]);
   });
 
   it("reads the last N outputs of one template, newest first, nothing private", async () => {

@@ -8,7 +8,7 @@ import {
   setTemplateStatus,
   templateExists,
 } from "../lib/catalogue-status-query.js";
-import { resolveStatusChange, STAFF_EMAIL_HEADER, type StatusChange } from "../lib/catalogue-status.js";
+import { resolveModelPipe, resolveStatusChange, STAFF_EMAIL_HEADER, type StatusChange } from "../lib/catalogue-status.js";
 import { SetCatalogueStatusRequestSchema, TemplateOutputsQuerySchema } from "../schemas.js";
 import { assertMayActivate } from "../lib/dynasty-membership.js";
 import { TemplateDynastyError } from "../lib/template-dynasties.js";
@@ -47,8 +47,10 @@ function parseStatusChange(req: Request, res: Response): StatusChange | null {
   return change;
 }
 
-router.get("/internal/models", handle(async (_req: Request, res: Response) => {
-  res.json({ models: await listModelStatuses() });
+router.get("/internal/models", handle(async (req: Request, res: Response) => {
+  const pipe = resolveModelPipe(req.query.featureSlug, req.query.legKey);
+  if (pipe && "code" in pipe) return res.status(400).json(pipe);
+  res.json({ models: await listModelStatuses(pipe) });
 }));
 
 router.put("/internal/models/:model/status", handle(async (req: Request, res: Response) => {
@@ -60,7 +62,16 @@ router.put("/internal/models/:model/status", handle(async (req: Request, res: Re
   }
   const change = parseStatusChange(req, res);
   if (!change) return;
-  res.json(await setModelStatus(entry, change));
+  // A model's status is per pipe (LLM-STATUS-PER-PIPE-1023): never a fleet-wide retirement.
+  const pipe = resolveModelPipe(req.body?.featureSlug, req.body?.legKey);
+  if (!pipe) {
+    return res.status(400).json({
+      code: "PIPE_REQUIRED",
+      error: "A model's status is set on ONE pipe: send `featureSlug` and `legKey` (e.g. sales-cold-email-outreach + lead_found_to_website_visit).",
+    });
+  }
+  if ("code" in pipe) return res.status(400).json(pipe);
+  res.json(await setModelStatus(entry, pipe, change));
 }));
 
 router.get("/internal/templates", handle(async (_req: Request, res: Response) => {
