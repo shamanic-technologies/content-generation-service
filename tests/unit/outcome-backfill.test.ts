@@ -30,6 +30,11 @@ describe("decideBackfill", () => {
     expect(decideBackfill(row, gen, run("wf-1", null, "content-generation-service", "staff-dry-run-preview-no-send"))).toMatchObject({ kind: "unreadable" });
   });
 
+  it("our run not readable: unreadable with the reason, unless the row is skipped first", () => {
+    expect(decideBackfill(row, gen, workflow, "runs-service 500 reading run gen-1")).toEqual({ kind: "unreadable", reason: "runs-service 500 reading run gen-1" });
+    expect(decideBackfill({ ...row, leadId: null }, gen, workflow, "x")).toMatchObject({ reason: "no lead id stored on the email" });
+  });
+
   it("parent not readable under the email's org: unreadable", () => {
     expect(decideBackfill(row, gen, undefined)).toMatchObject({ kind: "unreadable", reason: "parent run not readable under the email's org" });
   });
