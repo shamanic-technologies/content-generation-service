@@ -8,6 +8,7 @@ import {
   type BackfillRun,
   type BatchRunEntry,
 } from "../lib/outcome-backfill.js";
+import { cursorAfter, readUnhandledGenerations, type GenerationCursor, type UnhandledGeneration } from "../lib/outcome-backfill-query.js";
 
 /**
  * One-shot backfill (COST-BACKFILL-1023-CONTENTGEN): declares `message_written` on the past run that
@@ -31,15 +32,7 @@ const RUNS_KEY = process.env.RUNS_SERVICE_API_KEY || "";
 const CHUNK = 400;
 const FETCH_CHUNK = 25;
 
-interface Row {
-  id: string;
-  org_id: string;
-  lead_id: string | null;
-  feature_slug: string | null;
-  variables_raw: Record<string, unknown> | null;
-  generation_run_id: string;
-  created_at: Date;
-}
+type Row = UnhandledGeneration;
 
 interface FetchedRun extends BackfillRun {
   descendantRuns?: BackfillRun[];
@@ -180,17 +173,12 @@ async function main() {
   const add = (key: string) => totals.set(key, (totals.get(key) ?? 0) + 1);
   const runsDeclared: string[] = [];
 
-  let cursor: { createdAt: Date; id: string } | null = null;
+  let cursor: GenerationCursor | null = null;
   for (;;) {
-    const rows: Row[] = await sql<Row[]>`
-      SELECT id::text, org_id::text, lead_id, feature_slug, variables_raw, generation_run_id, created_at
-      FROM email_generations
-      WHERE generation_run_id IS NOT NULL AND outcomes IS NULL AND outcomes_declared_at IS NULL AND outcomes_error IS NULL
-        ${cursor ? sql`AND (created_at, id) > (${cursor.createdAt}, ${cursor.id}::uuid)` : sql``}
-      ORDER BY created_at, id LIMIT ${CHUNK}`;
+    const rows: Row[] = await readUnhandledGenerations(cursor, CHUNK);
     if (rows.length === 0) break;
-    const last = rows[rows.length - 1];
-    cursor = { createdAt: last.created_at, id: last.id };
+    cursor = cursorAfter(rows);
+    const upTo = cursor.createdAt;
 
     const decisions = await decideChunk(rows);
     const toDeclare: Array<{ rowId: string; runId: string; declaration: BackfillDecision & { kind: "declare" } }> = [];
@@ -207,7 +195,7 @@ async function main() {
     }
     runsDeclared.push(...new Set(toDeclare.map((t) => t.runId)));
     if (!apply) {
-      console.log(`[backfill] dry run up to ${last.created_at.toISOString()}: ${toDeclare.length} to declare, ${errors.size} unreadable/skipped`);
+      console.log(`[backfill] dry run up to ${upTo}: ${toDeclare.length} to declare, ${errors.size} unreadable/skipped`);
       continue;
     }
 
@@ -222,7 +210,7 @@ async function main() {
     for (const [id, reason] of errors) {
       await sql`UPDATE email_generations SET outcomes_error = ${reason.slice(0, 1000)} WHERE id = ${id}::uuid`;
     }
-    console.log(`[backfill] up to ${last.created_at.toISOString()}: declared ${marked} emails on ${declared.size} runs, refused runs ${refused.size}, unreadable/skipped ${errors.size}`);
+    console.log(`[backfill] up to ${upTo}: declared ${marked} emails on ${declared.size} runs, refused runs ${refused.size}, unreadable/skipped ${errors.size}`);
   }
 
   console.log(`${apply ? "APPLIED" : "DRY RUN"}: emails per decision (${new Set(runsDeclared).size} distinct runs to declare on)`);
