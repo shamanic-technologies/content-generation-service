@@ -13,7 +13,12 @@
  * - anything else → logged loud, retried by the next sweep
  */
 import { sql } from "../db/index.js";
-import { postRunOutcomes, PermanentDeclarationError, type OutcomeDeclaration } from "./run-outcomes.js";
+import {
+  industryUpdateVideoDeclaration,
+  postRunOutcomes,
+  PermanentDeclarationError,
+  type OutcomeDeclaration,
+} from "./run-outcomes.js";
 
 export type GenerationTable = "email_generations" | "whatsapp_generations";
 
@@ -59,9 +64,58 @@ export async function declareStoredOutcomes(table: GenerationTable, id: string):
   }
 }
 
-/** Sends every pending declaration of both tables, oldest first, one batch per table. */
+interface PendingRender {
+  id: string;
+  org_id: string;
+  run_id: string;
+  /** finished_at as postgres prints it: the instant the video was delivered. */
+  finished_at: string;
+}
+
+/**
+ * One delivered industry debrief video (LEDGER-HISTORY-1024): `industry_update_video` produced on
+ * the render's own run, dated when it was delivered (`occurredAt` = finished_at), so a render
+ * delivered before this existed counts on its own day. The declaration is derived from the row
+ * (`status = 'done'`), never stored apart: the row IS the record of what was made.
+ */
+async function declareRender(row: PendingRender): Promise<"declared" | "refused" | "failed"> {
+  const occurredAt = new Date(row.finished_at).toISOString();
+  try {
+    await postRunOutcomes(row.run_id, row.org_id, industryUpdateVideoDeclaration(row.id), occurredAt);
+    await sql`UPDATE industry_debrief_videos SET outcomes_declared_at = now() WHERE id = ${row.id}`;
+    return "declared";
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (err instanceof PermanentDeclarationError) {
+      console.error(`[outcomes] DECLARATION REFUSED industry_debrief_videos ${row.id} run=${row.run_id}: ${message}`);
+      await sql`UPDATE industry_debrief_videos SET outcomes_error = ${message.slice(0, 1000)} WHERE id = ${row.id}`;
+      return "refused";
+    }
+    console.error(`[outcomes] DECLARATION FAILED (will retry) industry_debrief_videos ${row.id} run=${row.run_id}: ${message}`);
+    return "failed";
+  }
+}
+
+const pendingRenders = (id?: string) => sql<PendingRender[]>`
+  SELECT id::text, org_id::text AS org_id, run_id, finished_at::text AS finished_at FROM industry_debrief_videos
+  WHERE status = 'done' AND finished_at IS NOT NULL AND outcomes_declared_at IS NULL AND outcomes_error IS NULL
+    ${id ? sql`AND id = ${id}::uuid` : sql``}
+  ORDER BY created_at LIMIT ${SWEEP_BATCH}`;
+
+/** One background attempt for a render just delivered. Never throws. */
+export async function declareRenderOutcomes(id: string): Promise<void> {
+  try {
+    const [row] = await pendingRenders(id);
+    if (row) await declareRender(row);
+  } catch (err) {
+    console.error(`[outcomes] DECLARATION FAILED (will retry) industry_debrief_videos ${id}:`, err instanceof Error ? err.message : err);
+  }
+}
+
+/** Sends every pending declaration (both generation tables, delivered renders), oldest first, one batch each. */
 export async function sweepPendingOutcomes(): Promise<{ declared: number; refused: number; failed: number }> {
   const totals = { declared: 0, refused: 0, failed: 0 };
+  for (const row of await pendingRenders()) totals[await declareRender(row)]++;
   for (const table of ["email_generations", "whatsapp_generations"] as const) {
     const rows = await sql<PendingRow[]>`
       SELECT id, org_id::text AS org_id, generation_run_id, outcomes FROM ${sql(table)}
