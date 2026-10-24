@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MAX_WORKFLOW_TREE_RUNS, decideBackfill, mergeByRun, packBatches, isRetiredFeature, type BackfillRun, type BackfillRow } from "../../src/lib/outcome-backfill.js";
+import { MAX_WORKFLOW_TREE_RUNS, decideBackfill, ownSubtreeSize, mergeByRun, packBatches, isRetiredFeature, type BackfillRun, type BackfillRow } from "../../src/lib/outcome-backfill.js";
 
 // COST-BACKFILL-1023-CONTENTGEN: where a past email's declaration goes, read from the run tree.
 // Shape of a pre-P1 email (measured in prod, 2026-08-10): workflow-service's execute-workflow run
@@ -13,7 +13,8 @@ const run = (id: string, parentRunId: string | null, serviceName: string, taskNa
   startedAt: "2026-08-10T00:00:18Z",
   costs,
 });
-const tree = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `d-${i}` }));
+const tree = (n: number, root = "wf-1") =>
+  Array.from({ length: n }, (_, i) => ({ id: `${root}-d-${i}`, parentRunId: root, serviceName: "chat-service", taskName: "complete" }));
 const workflow = { ...run("wf-1", "campaign-run", "workflow", "execute-workflow"), descendantRuns: tree(5) };
 const gen = run("gen-1", "wf-1", "content-generation-service", "single-generation");
 const row: BackfillRow = { id: "row-1", leadId: "lead-1", featureSlug: "sales-cold-email-outreach", variables: {} };
@@ -27,6 +28,20 @@ describe("decideBackfill", () => {
     expect(decideBackfill(row, gen, { ...workflow, descendantRuns: tree(MAX_WORKFLOW_TREE_RUNS) })).toMatchObject({ kind: "declare", runId: "wf-1" });
     expect(decideBackfill(row, gen, { ...workflow, descendantRuns: tree(MAX_WORKFLOW_TREE_RUNS + 1) })).toMatchObject({ kind: "unreadable" });
     expect(decideBackfill(row, gen, { ...workflow, descendantRuns: undefined })).toMatchObject({ kind: "unreadable" });
+  });
+
+  it("a chain of workflow runs (each starting the next) is declared on: each nested run declares its own email", () => {
+    // wf-1 -> wf-2 -> wf-3 ..., each with its own completion: thousands of descendants, a handful of its own.
+    const chain = Array.from({ length: 800 }, (_, i) => [
+      { id: `wf-${i + 2}`, parentRunId: `wf-${i + 1}`, serviceName: "workflow", taskName: "execute-workflow" },
+      ...tree(8, `wf-${i + 2}`),
+    ]).flat();
+    expect(chain.length).toBeGreaterThan(MAX_WORKFLOW_TREE_RUNS);
+    expect(ownSubtreeSize(workflow, chain)).toBe(1);
+    expect(decideBackfill(row, gen, { ...workflow, descendantRuns: [...tree(5), ...chain] })).toMatchObject({ kind: "declare", runId: "wf-1" });
+    // A huge subtree under a non-workflow child still counts.
+    const deep = [{ id: "x", parentRunId: "wf-1", serviceName: "lead-service", taskName: "lead-serve" }, ...tree(MAX_WORKFLOW_TREE_RUNS, "x")];
+    expect(decideBackfill(row, gen, { ...workflow, descendantRuns: deep })).toMatchObject({ kind: "unreadable" });
   });
 
   it("declares on the workflow run that called us: the completion and the brand intel beside us roll into it", () => {
