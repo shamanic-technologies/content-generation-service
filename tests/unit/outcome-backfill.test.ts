@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { decideBackfill, mergeByRun, packBatches, isRetiredFeature, type BackfillRun, type BackfillRow } from "../../src/lib/outcome-backfill.js";
+import { MAX_WORKFLOW_TREE_RUNS, decideBackfill, mergeByRun, packBatches, isRetiredFeature, type BackfillRun, type BackfillRow } from "../../src/lib/outcome-backfill.js";
 
 // COST-BACKFILL-1023-CONTENTGEN: where a past email's declaration goes, read from the run tree.
 // Shape of a pre-P1 email (measured in prod, 2026-08-10): workflow-service's execute-workflow run
@@ -13,7 +13,8 @@ const run = (id: string, parentRunId: string | null, serviceName: string, taskNa
   startedAt: "2026-08-10T00:00:18Z",
   costs,
 });
-const workflow = run("wf-1", "campaign-run", "workflow", "execute-workflow");
+const tree = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `d-${i}` }));
+const workflow = { ...run("wf-1", "campaign-run", "workflow", "execute-workflow"), descendantRuns: tree(5) };
 const gen = run("gen-1", "wf-1", "content-generation-service", "single-generation");
 const row: BackfillRow = { id: "row-1", leadId: "lead-1", featureSlug: "sales-cold-email-outreach", variables: {} };
 const declaration = {
@@ -22,6 +23,12 @@ const declaration = {
 };
 
 describe("decideBackfill", () => {
+  it("a workflow run whose tree is too big to be emails' is never declared on (its whole spend would land on them)", () => {
+    expect(decideBackfill(row, gen, { ...workflow, descendantRuns: tree(MAX_WORKFLOW_TREE_RUNS) })).toMatchObject({ kind: "declare", runId: "wf-1" });
+    expect(decideBackfill(row, gen, { ...workflow, descendantRuns: tree(MAX_WORKFLOW_TREE_RUNS + 1) })).toMatchObject({ kind: "unreadable" });
+    expect(decideBackfill(row, gen, { ...workflow, descendantRuns: undefined })).toMatchObject({ kind: "unreadable" });
+  });
+
   it("declares on the workflow run that called us: the completion and the brand intel beside us roll into it", () => {
     expect(decideBackfill(row, gen, workflow)).toEqual({ kind: "declare", runId: "wf-1", declaration, via: "workflow_run" });
   });
