@@ -47,16 +47,36 @@ export interface BackfillRun {
   startedAt: string;
   costs: BackfillCost[];
   /** Every run under this one, as runs-service's batch read serves it (read on the workflow parent). */
-  descendantRuns?: Array<{ id: string }>;
+  descendantRuns?: Array<{ id: string; parentRunId: string | null; serviceName: string; taskName: string }>;
 }
 
 /**
  * A cold-email workflow run that wrote emails holds 2 to ~360 direct children (measured 2026-10-24
- * over 61,855 of them); one held 2,392 and a tree of 150k+ descendants. Declaring on a run makes every
- * descendant that declares nothing land on it, so such a tree would put its whole spend on a few
- * emails: above this many descendants the email stays unreadable instead.
+ * over 61,855 of them). Declaring on a run makes every descendant that declares nothing land on it,
+ * so a run whose OWN subtree is huge would put that whole spend on a few emails: above this many runs
+ * the email stays unreadable instead. The own subtree stops at a nested workflow run: some workflow
+ * runs start the next one as a child (chains ~700 deep, ~7,000 descendants, 2026-10-24), and each
+ * nested run declares its own email, so its subtree rolls into it, never into the ancestor.
  */
 export const MAX_WORKFLOW_TREE_RUNS = 1000;
+
+/** Runs under `root` reached without passing through a nested workflow run (that run included, its subtree not). */
+export function ownSubtreeSize(root: Pick<BackfillRun, "id">, descendants: NonNullable<BackfillRun["descendantRuns"]>): number {
+  const children = new Map<string, typeof descendants>();
+  for (const d of descendants) {
+    if (!d.parentRunId) continue;
+    children.set(d.parentRunId, [...(children.get(d.parentRunId) ?? []), d]);
+  }
+  let n = 0;
+  const stack = [...(children.get(root.id) ?? [])];
+  while (stack.length > 0) {
+    const d = stack.pop()!;
+    n++;
+    if (d.serviceName === WORKFLOW_SERVICE && d.taskName === WORKFLOW_TASK) continue;
+    stack.push(...(children.get(d.id) ?? []));
+  }
+  return n;
+}
 
 export interface BackfillRow {
   id: string;
@@ -100,7 +120,7 @@ export function decideBackfill(
     return { kind: "unreadable", reason: `parent run is ${parent.serviceName}/${parent.taskName}, not a workflow run` };
   }
   if (!parent.descendantRuns) return { kind: "unreadable", reason: "workflow run's descendant tree not served" };
-  if (parent.descendantRuns.length > MAX_WORKFLOW_TREE_RUNS) {
+  if (ownSubtreeSize(parent, parent.descendantRuns) > MAX_WORKFLOW_TREE_RUNS) {
     return { kind: "unreadable", reason: `workflow run tree too large to be emails' (over ${MAX_WORKFLOW_TREE_RUNS} runs)` };
   }
   return { kind: "declare", runId: parent.id, declaration, via: "workflow_run" };
