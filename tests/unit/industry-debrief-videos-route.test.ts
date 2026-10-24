@@ -70,6 +70,30 @@ describe("POST /industry-debrief-videos", () => {
     expect(mockEnqueue).toHaveBeenCalledWith(ID);
   });
 
+  it("a live render under a campaign opens a plain run (it ships)", async () => {
+    mockSelectRows.mockReturnValue([]);
+    await request(app()).post("/industry-debrief-videos").set(H).send(fixture);
+    expect(mockCreateRun.mock.calls[0][0]).not.toHaveProperty("support");
+  });
+
+  it("a dry run opens its run marked staff_experiment (DRY-RUN-RENDER-1024)", async () => {
+    mockSelectRows.mockReturnValue([]);
+    const res = await request(app()).post("/industry-debrief-videos").set(H).send({ ...fixture, dryRun: true });
+    expect(res.status).toBe(202);
+    expect(mockCreateRun).toHaveBeenCalledWith(
+      expect.objectContaining({ support: expect.objectContaining({ kind: "staff_experiment" }) }),
+      expect.anything(),
+    );
+    expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({ request: expect.objectContaining({ dryRun: true }) }));
+  });
+
+  it("a render with no campaign is a staff test too (DRY-RUN-RENDER-1024)", async () => {
+    mockSelectRows.mockReturnValue([]);
+    const { "x-campaign-id": _, ...noCampaign } = H;
+    await request(app()).post("/industry-debrief-videos").set(noCampaign).send(fixture);
+    expect(mockCreateRun.mock.calls[0][0]).toMatchObject({ support: { kind: "staff_experiment" } });
+  });
+
   it("answers the existing render for a repeated idempotencyKey (no second render)", async () => {
     mockSelectRows.mockReturnValue([{ id: ID, status: "rendering" }]);
     const res = await request(app()).post("/industry-debrief-videos").set(H).send(fixture);

@@ -8,6 +8,7 @@ import { extractTracking } from "../lib/tracking.js";
 import { createRun, updateRun } from "../lib/runs-client.js";
 import { enqueueDebrief, toDebriefResponse } from "../lib/debrief/jobs.js";
 import { isUniqueViolation } from "../lib/pg-error.js";
+import { renderShips, DRY_RUN_SUPPORT } from "../lib/debrief/ships.js";
 
 const router = Router();
 
@@ -40,12 +41,16 @@ router.post(
     }
 
     const tracking = extractTracking(req);
+    // A dry run (or a render with no campaign) is a staff test: its run opens marked support and
+    // never declares industry_update_video (DRY-RUN-RENDER-1024).
+    const ships = renderShips({ dryRun: body.dryRun, campaignId: tracking.campaignId });
     const run = await createRun({
       serviceName: "content-generation-service",
       taskName: "industry-debrief-video",
       brandId: tracking.brandId,
       campaignId: tracking.campaignId,
       workflowSlug: tracking.workflowSlug,
+      ...(ships ? {} : { support: DRY_RUN_SUPPORT }),
     }, tracking);
 
     try {

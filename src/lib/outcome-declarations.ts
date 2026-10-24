@@ -96,9 +96,12 @@ async function declareRender(row: PendingRender): Promise<"declared" | "refused"
   }
 }
 
+// `renderShips` (lib/debrief/ships.ts) on the stored row: never a dry run, always under a campaign
+// (DRY-RUN-RENDER-1024). A render that does not ship is a staff test, never an outcome.
 const pendingRenders = (id?: string) => sql<PendingRender[]>`
   SELECT id::text, org_id::text AS org_id, run_id, finished_at::text AS finished_at FROM industry_debrief_videos
   WHERE status = 'done' AND finished_at IS NOT NULL AND outcomes_declared_at IS NULL AND outcomes_error IS NULL
+    AND COALESCE(request->>'dryRun', 'false') <> 'true' AND COALESCE(tracking->>'campaignId', '') <> ''
     ${id ? sql`AND id = ${id}::uuid` : sql``}
   ORDER BY created_at LIMIT ${SWEEP_BATCH}`;
 

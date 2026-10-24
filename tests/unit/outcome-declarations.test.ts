@@ -96,6 +96,13 @@ describe("outcome declarations", () => {
       expect(read.text).toContain("outcomes_declared_at IS NULL AND outcomes_error IS NULL");
     });
 
+    it("a dry run or a render with no campaign is never read: a staff test, not an outcome (DRY-RUN-RENDER-1024)", async () => {
+      await sweepPendingOutcomes();
+      const read = queries.find((q) => q.text.includes("FROM industry_debrief_videos"))!;
+      expect(read.text).toContain("COALESCE(request->>'dryRun', 'false') <> 'true'");
+      expect(read.text).toContain("COALESCE(tracking->>'campaignId', '') <> ''");
+    });
+
     it("a refusal is stored on the render, never retried", async () => {
       renderRows = [render];
       mockPost.mockRejectedValue(new PermanentDeclarationError(400, "unknown_outcome_key"));
