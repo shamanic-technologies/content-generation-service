@@ -23,6 +23,9 @@ export const LEAD_SUBJECT_SERVICE = "lead-service";
 export const MESSAGE_WRITTEN = "message_written";
 export const LEAD_FOUND = "lead_found";
 export const COMPANY_RESEARCHED = "company_researched";
+export const INDUSTRY_UPDATE_VIDEO = "industry_update_video";
+/** An object this service made (a render) is its own subject: this service holds the row. */
+export const OWN_SUBJECT_SERVICE = "content-generation-service";
 
 export interface OutcomeOccurrence {
   outcomeKey: string;
@@ -62,6 +65,16 @@ export function messageWrittenDeclaration(input: {
   return { produced: [{ outcomeKey: MESSAGE_WRITTEN, ...lead }], consumed };
 }
 
+/**
+ * The declaration of one industry debrief video delivered (LEDGER-HISTORY-1024): the render run
+ * PRODUCES one `industry_update_video` on the render row (`industry_debrief_videos.id`). It
+ * consumes no catalogue outcome: the stories are public posts it reads, not occurrences a pipe made.
+ * Only a `done` render produces; a failed render is a run with no output (loss).
+ */
+export function industryUpdateVideoDeclaration(renderId: string): OutcomeDeclaration {
+  return { produced: [{ outcomeKey: INDUSTRY_UPDATE_VIDEO, subjectService: OWN_SUBJECT_SERVICE, subjectId: renderId }], consumed: [] };
+}
+
 /** A refusal runs-service will repeat on every retry (bad key, unknown run, wrong org, conflict). */
 export class PermanentDeclarationError extends Error {
   constructor(readonly status: number, message: string) {
@@ -75,7 +88,13 @@ export class PermanentDeclarationError extends Error {
  * throw `PermanentDeclarationError`; anything else (5xx, 502 catalogue unreadable, network)
  * throws a plain Error and is retried by the sweep.
  */
-export async function postRunOutcomes(runId: string, orgId: string, declaration: OutcomeDeclaration): Promise<number> {
+export async function postRunOutcomes(
+  runId: string,
+  orgId: string,
+  declaration: OutcomeDeclaration,
+  /** When the outcome happened, if not now (ISO, between the run's start and now): a past fact keeps its day. */
+  occurredAt?: string,
+): Promise<number> {
   const base = process.env.RUNS_SERVICE_URL || "https://runs.mcpfactory.org";
   const response = await fetch(`${base}/v1/runs/${encodeURIComponent(runId)}/outcomes`, {
     method: "POST",
@@ -84,7 +103,7 @@ export async function postRunOutcomes(runId: string, orgId: string, declaration:
       "X-API-Key": process.env.RUNS_SERVICE_API_KEY || "",
       "x-org-id": orgId,
     },
-    body: JSON.stringify(declaration),
+    body: JSON.stringify(occurredAt ? { ...declaration, occurredAt } : declaration),
     signal: AbortSignal.timeout(30_000),
   });
   if (response.ok) return response.status;

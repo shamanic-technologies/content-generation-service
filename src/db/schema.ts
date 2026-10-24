@@ -398,6 +398,9 @@ export const industryDebriefVideos = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    // LEDGER-HISTORY-1024: the `industry_update_video` occurrence of a done render, declared on run_id.
+    outcomesDeclaredAt: timestamp("outcomes_declared_at", { withTimezone: true }),
+    outcomesError: text("outcomes_error"),
   },
   (table) => [index("idx_debrief_videos_status").on(table.status)]
 );
