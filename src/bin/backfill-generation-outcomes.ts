@@ -34,9 +34,7 @@ const FETCH_CHUNK = 25;
 
 type Row = UnhandledGeneration;
 
-interface FetchedRun extends BackfillRun {
-  descendantRuns?: BackfillRun[];
-}
+type FetchedRun = BackfillRun;
 
 async function runsFetch(
   path: string,
