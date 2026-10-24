@@ -22,7 +22,7 @@ async function insertWa(featureSlug: string, decision: "write" | "later", create
     .values({
       orgId: randomId(), runId: `run-${randomId()}`, brandIds: [randomId()], campaignId: randomId(), leadId: randomId(),
       featureSlug, workflowSlug: "cold-whatsapp-outreach-zaurak-v18", promptType, model: "claude-opus-5-5",
-      decision, bubbles: decision === "write" ? ["hey", "a question?"] : [], createdAt,
+      decision, bubbles: decision === "write" ? ["hey", "a question?"] : [], createdAt, completionRunIds: [`chat-${randomId()}`],
     })
     .returning();
   return row;
@@ -48,7 +48,7 @@ describe("WhatsApp template dynasties (WA-TEMPLATES-1023)", () => {
     const t0 = Date.now() - 3600_000;
     const [email] = await db.insert(emailGenerations).values({
       orgId: randomId(), runId: `run-${randomId()}`, leadId: randomId(), campaignId: randomId(), brandIds: [randomId()],
-      featureSlug: f, promptType: "cold-email-v41", model: "m", sequence: [], createdAt: new Date(t0 + 1000),
+      featureSlug: f, promptType: "cold-email-v41", model: "m", sequence: [], createdAt: new Date(t0 + 1000), completionRunIds: [`chat-${randomId()}`],
     }).returning();
     const wa1 = await insertWa(f, "write", new Date(t0));
     await insertWa(f, "later", new Date(t0 + 1500));

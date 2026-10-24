@@ -21,6 +21,10 @@ import { firstEmailShape, type FirstEmailShape } from "./first-email-shape.js";
  * - WhatsApp messages written with a template (whatsapp_generations, WA-TEMPLATES-1023) are served
  *   in the same feed, channel `whatsapp`, when they were sent (decision write). Both tables are read
  *   from the same cursor and merged in (created_at, id) order, so one cursor covers both.
+ * - Each entry names the completion run(s) that wrote it and the tokens recorded for it
+ *   (MODEL-RUN-COST-1024-CG). The match is stored on the row by src/lib/completion-run-sweep.ts; a row
+ *   not matched yet ENDS the page (hasMore false), so a consumer never moves its cursor past an entry
+ *   served without its answer. The sweep matches a new row within a minute or two.
  */
 
 export interface SequenceCursor {
@@ -56,6 +60,10 @@ export interface SequenceFeedEntry {
   createdAt: string;
   runId: string;
   generationRunId: string | null;
+  completionRunIds: string[] | null;
+  completionRunsReason: string | null;
+  tokensInput: number | null;
+  tokensOutput: number | null;
   channel: "email" | "whatsapp";
   firstEmail: FirstEmailShape | null;
 }
@@ -97,6 +105,10 @@ export async function readSequenceFeed(opts: {
       createdAtText: sql<string>`${g.createdAt}::text`,
       runId: g.runId,
       generationRunId: g.generationRunId,
+      completionRunIds: g.completionRunIds,
+      completionRunsReason: g.completionRunsReason,
+      tokensInput: g.tokensInput,
+      tokensOutput: g.tokensOutput,
       leadFirstName: g.leadFirstName,
       bodyText: g.bodyText,
       bodyHtml: g.bodyHtml,
@@ -131,6 +143,10 @@ export async function readSequenceFeed(opts: {
       createdAt: w.createdAt,
       createdAtText: sql<string>`${w.createdAt}::text`,
       runId: w.runId,
+      completionRunIds: w.completionRunIds,
+      completionRunsReason: w.completionRunsReason,
+      tokensInput: w.tokensInput,
+      tokensOutput: w.tokensOutput,
     })
     .from(w)
     .where(and(...waConditions))
@@ -151,6 +167,7 @@ export async function readSequenceFeed(opts: {
         createdAt: new Date(r.createdAt).toISOString(),
         runId: r.runId,
         generationRunId: r.generationRunId,
+        ...completionFields(r),
         channel: "email",
         firstEmail: firstEmailShape(body.bodyText, r.leadFirstName),
       };
@@ -166,13 +183,17 @@ export async function readSequenceFeed(opts: {
       createdAt: new Date(r.createdAt).toISOString(),
       runId: r.runId,
       generationRunId: null,
+      ...completionFields(r),
       channel: "whatsapp",
       firstEmail: null,
     }) })),
   ].sort((a, b) => compareKeys(a.r, b.r));
 
-  const hasMore = merged.length > opts.limit;
-  const kept = merged.slice(0, opts.limit);
+  // A row not matched yet ends the page: everything before it is served, nothing after it.
+  const pending = merged.findIndex((x) => x.r.completionRunIds == null && x.r.completionRunsReason == null);
+  const servable = pending === -1 ? merged : merged.slice(0, pending);
+  const hasMore = servable.length > opts.limit;
+  const kept = servable.slice(0, opts.limit);
   const page = kept.map((x) => x.r);
   const sequences = kept.map((x) => x.entry());
 
@@ -184,6 +205,20 @@ export async function readSequenceFeed(opts: {
       : null;
 
   return { sequences, nextCursor, hasMore };
+}
+
+function completionFields(r: {
+  completionRunIds: string[] | null;
+  completionRunsReason: string | null;
+  tokensInput: number | null;
+  tokensOutput: number | null;
+}): Pick<SequenceFeedEntry, "completionRunIds" | "completionRunsReason" | "tokensInput" | "tokensOutput"> {
+  return {
+    completionRunIds: r.completionRunIds,
+    completionRunsReason: r.completionRunIds ? null : r.completionRunsReason,
+    tokensInput: r.tokensInput,
+    tokensOutput: r.tokensOutput,
+  };
 }
 
 /** (created_at, id) order, as postgres compares them (microsecond text, then uuid). */

@@ -40,6 +40,10 @@ export const emailGenerations = pgTable(
     // The run the declaration was made ON when it is not generationRunId: the pre-P1 completion
     // run the backfill matched (COST-BACKFILL-1023-CONTENTGEN, src/lib/outcome-backfill.ts).
     outcomesRunId: text("outcomes_run_id"),
+    // The chat-service completion run(s) that WROTE this generation, or why it cannot be told
+    // (MODEL-RUN-COST-1024-CG, src/lib/completion-runs.ts). Both NULL = not matched yet.
+    completionRunIds: text("completion_run_ids").array(),
+    completionRunsReason: text("completion_runs_reason"),
 
     // Generated email sequence
     subject: text("subject"),
@@ -192,6 +196,8 @@ export const whatsappGenerations = pgTable(
     outcomes: jsonb("outcomes"),
     outcomesDeclaredAt: timestamp("outcomes_declared_at", { withTimezone: true }),
     outcomesError: text("outcomes_error"),
+    completionRunIds: text("completion_run_ids").array(),
+    completionRunsReason: text("completion_runs_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
