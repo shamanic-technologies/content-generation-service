@@ -13,7 +13,10 @@ const newSlug = () => {
   return s;
 };
 
-async function insertGen(featureSlug: string, opts: { leadId?: string | null; body?: string; createdAt: Date; firstName?: string }) {
+async function insertGen(
+  featureSlug: string,
+  opts: { leadId?: string | null; body?: string; createdAt: Date; firstName?: string; completionRunIds?: string[] | null; completionRunsReason?: string },
+) {
   const [row] = await db
     .insert(emailGenerations)
     .values({
@@ -28,6 +31,10 @@ async function insertGen(featureSlug: string, opts: { leadId?: string | null; bo
       model: "gemini-3.1-pro-preview",
       leadFirstName: opts.firstName ?? "Marie",
       sequence: opts.body === undefined ? [] : [{ step: 1, bodyText: opts.body, daysSinceLastStep: 0 }],
+      tokensInput: 6400,
+      tokensOutput: 184,
+      completionRunIds: opts.completionRunIds === undefined ? [`chat-${randomId()}`] : opts.completionRunIds,
+      completionRunsReason: opts.completionRunsReason ?? null,
       createdAt: opts.createdAt,
     })
     .returning();
@@ -95,5 +102,26 @@ describe("readSequenceFeed", () => {
     const p = await readSequenceFeed({ featureSlug: f, cursor: null, limit: 10, settleSeconds: 60 });
     expect(p.sequences.map((s) => s.generationId)).toEqual([old.id]);
     expect(p.sequences[0].firstEmail).toBeNull();
+  });
+
+  it("serves the completion run and tokens, a stated reason, and ends the page at a row not matched yet", async () => {
+    const f = newSlug();
+    const t0 = Date.now() - 3600_000;
+    const a = await insertGen(f, { body: "Hi", createdAt: new Date(t0), completionRunIds: ["chat-run-1"] });
+    const b = await insertGen(f, { body: "Hi", createdAt: new Date(t0 + 1000), completionRunIds: null, completionRunsReason: "cannot tell" });
+    const pending = await insertGen(f, { body: "Hi", createdAt: new Date(t0 + 2000), completionRunIds: null });
+    await insertGen(f, { body: "Hi", createdAt: new Date(t0 + 3000) });
+
+    const p = await readSequenceFeed({ featureSlug: f, cursor: null, limit: 10, settleSeconds: 0 });
+    expect(p.sequences.map((s) => s.generationId)).toEqual([a.id, b.id]);
+    expect(p.hasMore).toBe(false);
+    expect(p.sequences[0]).toMatchObject({ completionRunIds: ["chat-run-1"], completionRunsReason: null, tokensInput: 6400, tokensOutput: 184 });
+    expect(p.sequences[1]).toMatchObject({ completionRunIds: null, completionRunsReason: "cannot tell" });
+
+    await db.update(emailGenerations).set({ completionRunIds: ["chat-run-3"] }).where(inArray(emailGenerations.id, [pending.id]));
+    const { decodeCursor } = await import("../../src/lib/sequence-feed-query.js");
+    const p2 = await readSequenceFeed({ featureSlug: f, cursor: decodeCursor(p.nextCursor!), limit: 10, settleSeconds: 0 });
+    expect(p2.sequences.map((s) => s.generationId)[0]).toBe(pending.id);
+    expect(p2.sequences).toHaveLength(2);
   });
 });

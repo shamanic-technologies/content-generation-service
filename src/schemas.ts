@@ -1675,6 +1675,21 @@ const SequenceFeedEntrySchema = z.object({
   createdAt: z.string().describe("When the sequence was written (ISO 8601)."),
   runId: z.string().describe("The caller's run (the workflow run) that asked for the sequence."),
   generationRunId: z.string().nullable().describe("This service's own runs-service run for the generation (child of runId)."),
+  completionRunIds: z
+    .array(z.string())
+    .nullable()
+    .describe(
+      "The runs-service run(s) of the chat-service `complete` call that WROTE this sequence: their cost rows ARE the LLM cost of writing it " +
+        "(read the cost from runs-service). Usually one; two when the first answer was unusable and regenerated. Found in the run tree by the " +
+        "output tokens each completion was billed for (child of generationRunId since 2026-10-24, the one matching sibling under runId before, " +
+        "the generation run itself Feb-Mar 2026). Null when it cannot be told: completionRunsReason says why. Never guessed."
+    ),
+  completionRunsReason: z
+    .string()
+    .nullable()
+    .describe("Why completionRunIds is null (e.g. two completions billed the same output tokens). Null whenever completionRunIds is set."),
+  tokensInput: z.number().int().nullable().describe("Input tokens this service recorded for the generation (every completion of it summed). Null when not recorded."),
+  tokensOutput: z.number().int().nullable().describe("Output tokens this service recorded for the generation (every completion of it summed). Null when not recorded."),
   channel: z
     .enum(["email", "whatsapp"])
     .describe(
@@ -1696,7 +1711,12 @@ const SequenceFeedResponseSchema = registry.register(
           "Pass as `cursor` on the next call. Always set once anything was ever served; equals the input cursor when nothing new arrived. " +
             "Null only when the feature has no sequence at all yet."
         ),
-      hasMore: z.boolean().describe("true = another page is ready now; false = caught up (poll again later with nextCursor)."),
+      hasMore: z
+        .boolean()
+        .describe(
+          "true = another page is ready now; false = caught up (poll again later with nextCursor). An entry whose completion run is not " +
+            "matched yet is not served and ends the page, so nothing after it is skipped: it is served once matched, usually within two minutes."
+        ),
     })
     .openapi("SequenceFeedResponse")
 );

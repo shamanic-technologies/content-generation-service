@@ -27,6 +27,7 @@ import previewEmailRoutes from "./routes/preview-email.js";
 import industryDebriefVideoRoutes from "./routes/industry-debrief-videos.js";
 import { resumeDebriefJobs } from "./lib/debrief/jobs.js";
 import { startOutcomeDeclarationSweep } from "./lib/outcome-declarations.js";
+import { startCompletionRunSweep } from "./lib/completion-run-sweep.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -120,6 +121,8 @@ if (process.env.NODE_ENV !== "test") {
         resumeDebriefJobs().catch((err) => console.error("[debrief] resume at boot failed:", err));
         // Outcome declarations still pending (runs-service down at write time) are re-sent.
         startOutcomeDeclarationSweep();
+        // Each generation is matched to the completion run(s) that wrote it (MODEL-RUN-COST-1024-CG).
+        startCompletionRunSweep();
       });
     })
     .catch((err) => {
