@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { messageWrittenDeclaration, researchedCompanyDomain, postRunOutcomes, PermanentDeclarationError } from "../../src/lib/run-outcomes.js";
+import { consumedResearchDomains, messageWrittenDeclaration, researchedCompanyDomain, withoutUnproducedResearch, postRunOutcomes, PermanentDeclarationError } from "../../src/lib/run-outcomes.js";
 
 // COST-ACCOUNTING-1023-P1: each outcome key this service declares, and the subject it names.
 describe("messageWrittenDeclaration", () => {
@@ -10,11 +10,11 @@ describe("messageWrittenDeclaration", () => {
     });
   });
 
-  it("also consumes company_researched on lead-service's company key (the domain, verbatim) when the company's checks were read", () => {
+  it("also consumes company_researched on lead-service's company key (the domain, verbatim) when a check carries a CHECKED verdict", () => {
     const d = messageWrittenDeclaration({
       leadId: "lead-1",
       pipeFromStep: "lead_found",
-      variables: { leadQualification: { domain: "acme.com", checks: [{ question: "q" }] } },
+      variables: { leadQualification: { domain: "acme.com", checks: [{ question: "q", verdict: "not_checked" }, { question: "r", verdict: "no" }] } },
     });
     expect(d?.consumed).toEqual([
       { outcomeKey: "lead_found", subjectService: "lead-service", subjectId: "lead-1" },
@@ -27,6 +27,31 @@ describe("messageWrittenDeclaration", () => {
     expect(researchedCompanyDomain({ leadQualification: { domain: null, checks: [{}] } })).toBeNull();
     expect(researchedCompanyDomain({})).toBeNull();
     expect(researchedCompanyDomain(null)).toBeNull();
+  });
+
+  it("COMPANY-RESEARCHED-PROVENANCE-1024: a lead with no checked research declares no company_researched consumption", () => {
+    for (const verdicts of [["not_checked"], ["unavailable", "not_checked"], [undefined]]) {
+      const d = messageWrittenDeclaration({
+        leadId: "lead-1",
+        pipeFromStep: "lead_found",
+        variables: { leadQualification: { domain: "acme.com", checks: verdicts.map((verdict) => ({ question: "q", verdict })) } },
+      });
+      expect(d?.consumed).toEqual([{ outcomeKey: "lead_found", subjectService: "lead-service", subjectId: "lead-1" }]);
+    }
+    expect(researchedCompanyDomain({ leadQualification: { domain: "acme.com", checks: [{ verdict: "yes" }] } })).toBe("acme.com");
+  });
+
+  it("withoutUnproducedResearch keeps only companies lead-service declared as produced, never touching the rest", () => {
+    const d = {
+      produced: [{ outcomeKey: "message_written", subjectService: "lead-service", subjectId: "lead-1" }],
+      consumed: [
+        { outcomeKey: "lead_found", subjectService: "lead-service", subjectId: "lead-1" },
+        { outcomeKey: "company_researched", subjectService: "lead-service", subjectId: "acme.com" },
+        { outcomeKey: "company_researched", subjectService: "lead-service", subjectId: "ghost.com" },
+      ],
+    };
+    expect(consumedResearchDomains(d)).toEqual(["acme.com", "ghost.com"]);
+    expect(withoutUnproducedResearch(d, new Set(["acme.com"]))).toEqual({ produced: d.produced, consumed: d.consumed.slice(0, 2) });
   });
 
   it("PIPE-FROM-STEP-1024: consumes the occurrence of the step the pipe starts from, never an invented lead_found", () => {

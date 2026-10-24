@@ -11,8 +11,10 @@
  *   occurrence of the step its PIPE starts from on that lead (PIPE-FROM-STEP-1024, `pipe-from-step.ts`:
  *   `lead_found` for a pipe from Lead found, `conversation` for AI meeting booking from a positive
  *   reply, ...; a pipe from nothing or an unknown pipe consumes none, never an invented `lead_found`),
- *   plus the `company_researched` read when the request carried the company's checks
- *   (`leadQualification` with at least one check);
+ *   plus the `company_researched` read when the request carried a CHECKED verdict on the company
+ *   (`leadQualification` with at least one check answered `yes` / `no`, lead-service's rule) AND
+ *   lead-service declared that research as produced on the ledger (COMPANY-RESEARCHED-PROVENANCE-1024,
+ *   `company-research-ledger.ts`, applied when the declaration is sent);
  * - subject = the person's lead in lead-service (`subjectService: "lead-service"`, the lead id);
  *   the company = lead-service's company key: the `domain` of `leadQualification`, VERBATIM
  *   (lead-service already normalized it; settled with lead-service 2026-10-23, never re-normalize).
@@ -41,14 +43,37 @@ export interface OutcomeDeclaration {
   consumed: OutcomeOccurrence[];
 }
 
-/** The company domain whose checks this request READ, or null when it read none. */
+/** lead-service's verdicts that mean the company was actually checked (`unavailable` / `not_checked` = no research). */
+export const CHECKED_VERDICTS: ReadonlySet<string> = new Set(["yes", "no"]);
+
+/**
+ * The company domain whose research this request READ, or null when it read none. lead-service's
+ * rule (COMPANY-RESEARCHED-PROVENANCE-1024): a company is researched only when the served
+ * qualification carries a CHECKED verdict for it; checks all `not_checked` / `unavailable` = no
+ * research ran, nothing to consume.
+ */
 export function researchedCompanyDomain(variables: Record<string, unknown> | null | undefined): string | null {
   const q = variables?.leadQualification;
   if (!q || typeof q !== "object") return null;
   const { domain, checks } = q as { domain?: unknown; checks?: unknown };
-  if (!Array.isArray(checks) || checks.length === 0) return null;
+  if (!Array.isArray(checks)) return null;
+  const checked = checks.some((c) => !!c && typeof c === "object" && CHECKED_VERDICTS.has(String((c as { verdict?: unknown }).verdict)));
+  if (!checked) return null;
   if (typeof domain !== "string" || domain.trim() === "") return null;
   return domain;
+}
+
+/** The companies whose `company_researched` a declaration consumes. */
+export function consumedResearchDomains(declaration: OutcomeDeclaration): string[] {
+  return declaration.consumed.filter((o) => o.outcomeKey === COMPANY_RESEARCHED).map((o) => o.subjectId);
+}
+
+/** The declaration without the `company_researched` consumptions of companies not in `produced`. */
+export function withoutUnproducedResearch(declaration: OutcomeDeclaration, produced: ReadonlySet<string>): OutcomeDeclaration {
+  return {
+    produced: declaration.produced,
+    consumed: declaration.consumed.filter((o) => o.outcomeKey !== COMPANY_RESEARCHED || produced.has(o.subjectId)),
+  };
 }
 
 /**
