@@ -88,8 +88,8 @@ describe("decideBackfill", () => {
     expect(isRetiredFeature("sales-cold-email-outreach")).toBe(false);
   });
 
-  it("company checks read: company_researched consumed too, as P1 declares", () => {
-    const d = decideBackfill({ ...row, variables: { leadQualification: { domain: "acme.com", checks: [{}] } } }, gen, workflow);
+  it("company checked (a yes/no verdict): company_researched consumed too, as P1 declares", () => {
+    const d = decideBackfill({ ...row, variables: { leadQualification: { domain: "acme.com", checks: [{ verdict: "yes" }] } } }, gen, workflow);
     expect(d.kind === "declare" && d.declaration.consumed.map((c) => c.outcomeKey)).toEqual(["lead_found", "company_researched"]);
   });
 });
