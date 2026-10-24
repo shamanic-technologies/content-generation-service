@@ -26,6 +26,7 @@ Microservice that generates personalized content (emails, calendar events, etc.)
 - `src/routes/catalogue-status.ts` + `src/lib/catalogue-status*.ts` — staff status of templates and writer models + a template's last outputs (see "Catalogue status" below)
 - `src/routes/template-dynasties.ts` + `src/lib/template-dynast*.ts` — template dynasties: list, read, resolve the head, add a version (see "Template dynasties" below)
 - `src/routes/workflow-dynasty-outputs.ts` + `src/lib/workflow-dynasty-outputs.ts` — GET /internal/workflow-dynasties/{slug}/outputs (see "Last outputs of a workflow dynasty" below)
+- `src/routes/model-dynasty-outputs.ts` + `src/lib/model-dynasty-outputs.ts` + `src/lib/model-dynasty-client.ts` — GET /internal/model-dynasties/{slug}/outputs (see "Last outputs of an LLM dynasty on a pipe" below)
 - `src/routes/generate-whatsapp.ts` + `src/lib/whatsapp-*.ts` — POST /generate-whatsapp and the WhatsApp template dynasties (see "WhatsApp templates" below)
 - `src/routes/health.ts` — GET /health endpoint
 - `src/middleware/auth.ts` — Authentication middleware (X-Clerk-Org-Id header)
@@ -127,6 +128,14 @@ The Cold WhatsApp writers (workflow-service Zaurak, Errai, Furud, Algol) write w
 ## Last outputs of a workflow dynasty (`GET /internal/workflow-dynasties/{slug}/outputs`, WF-RUNS-OUTPUTS-1022)
 
 Staff Research page, fleet-wide. Since BEST-TPL-LLM-1022 a workflow fixes no template or LLM (each send uses the leg's best), so each output names what wrote it. API key only, `?limit=` 1..50 (default 20), newest first → `{ slug, outputs: [{ generationId, createdAt, runId, workflowSlug, promptType, templateDynasty: { slug, name, position } | null, model, subject, emails }] }` (`emails` = `outputEmails`, same as the template outputs). Version slugs from workflow-service `GET /workflows/dynasty/slugs?workflowDynastySlug=` (`resolveWorkflowDynastySlugs`: 404 = `[]`, any other failure throws → 502). A dynasty unknown or never run = `outputs: []`. Never an org, brand, campaign, audience or lead. Index `idx_emailgen_workflow_created` (`drizzle/0039`). That client read `?dynastySlug=` + `slugs` before this (both wrong), so `/stats?workflowDynastySlug=` always answered zero before.
+
+## Last outputs of an LLM dynasty on a pipe (`GET /internal/model-dynasties/{slug}/outputs`, MODEL-OUTPUTS-1024-CG)
+
+Staff Research > a pipe > Models: the last messages one LLM dynasty (every version) wrote on one pipe, every workflow, template and org pooled. API key only; staff via api-service. `?featureSlug=&legKey=` required (400), `?limit=` 1..20 (default 5) → `{ slug, name, featureSlug, legKey, modelIds, outputs: [{ generationId, createdAt, channel: email|whatsapp, workflowSlug, promptType, templateDynasty: { slug, name, position }, model, tokensInput, tokensOutput, subject, emails }] }`, newest first. Never an org, brand, campaign, audience, lead or run.
+
+- **Versions are chat-service's** (`GET /internal/model-dynasties`, `headModelId` + `models[].modelId`, old versions included), read on every call, never a list here; unknown dynasty 404 `MODEL_DYNASTY_NOT_FOUND`, unreadable 502 `MODEL_CATALOGUE_UNAVAILABLE`. A generation stores the concrete id that answered, so matching is exact.
+- **The pipe of a message = the pipe of the template dynasty of its exact version** (one template = one dynasty = one pipe; same version membership features-service pools Research by). A template in no dynasty is on no pipe. Texts written before `drizzle/0038` split the shared ones read on the reply pipe.
+- WhatsApp sent messages (decision `write`) merged in. One index walk per version (`idx_emailgen_model_created`, `drizzle/0045`): a single `model IN (...)` read seq-scanned the table (1.6 s in prod).
 
 ## Outcome declarations: what each writing run produced (COST-ACCOUNTING-1023-P1)
 

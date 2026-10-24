@@ -2951,6 +2951,156 @@
           "outputs"
         ]
       },
+      "ModelDynastyOutputsResponse": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "The LLM dynasty slug asked for (chat-service's, e.g. `gemini-pro`)."
+          },
+          "name": {
+            "type": "string",
+            "description": "The dynasty's name, as chat-service serves it."
+          },
+          "featureSlug": {
+            "type": "string"
+          },
+          "legKey": {
+            "type": "string"
+          },
+          "modelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every concrete model id of the dynasty, read from chat-service, head first."
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "generationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "This service's generation id."
+                },
+                "createdAt": {
+                  "type": "string",
+                  "description": "When it was written (ISO 8601)."
+                },
+                "workflowSlug": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "The workflow VERSION slug whose run asked for it. Null when written without one."
+                },
+                "model": {
+                  "type": "string",
+                  "description": "The concrete model id (the dynasty version) that wrote it."
+                },
+                "subject": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Subject line of the sequence."
+                },
+                "emails": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "step": {
+                        "type": "integer",
+                        "description": "1 = the first email, then each follow-up."
+                      },
+                      "bodyText": {
+                        "type": "string",
+                        "description": "The email's text as stored (= as sent)."
+                      },
+                      "daysSinceLastStep": {
+                        "type": "number",
+                        "nullable": true,
+                        "description": "Days after the previous email. Null when the stored step carries none."
+                      }
+                    },
+                    "required": [
+                      "step",
+                      "bodyText",
+                      "daysSinceLastStep"
+                    ]
+                  },
+                  "description": "Each email of the sequence, in order. Empty when the generation stored no copy."
+                },
+                "channel": {
+                  "type": "string",
+                  "enum": [
+                    "email",
+                    "whatsapp"
+                  ],
+                  "description": "Which kind of message."
+                },
+                "promptType": {
+                  "type": "string",
+                  "description": "The exact template version that wrote it."
+                },
+                "templateDynasty": {
+                  "type": "object",
+                  "properties": {
+                    "slug": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "The dynasty's name, as on the Template pages."
+                    },
+                    "position": {
+                      "type": "integer",
+                      "description": "The version's position in the dynasty (1 = first)."
+                    }
+                  },
+                  "required": [
+                    "slug",
+                    "name",
+                    "position"
+                  ],
+                  "description": "The template dynasty of `promptType`: its pipe is the pipe asked for."
+                },
+                "tokensInput": {
+                  "type": "integer",
+                  "nullable": true,
+                  "description": "Input tokens of the completion(s) that wrote it."
+                },
+                "tokensOutput": {
+                  "type": "integer",
+                  "nullable": true,
+                  "description": "Output tokens of the completion(s) that wrote it."
+                }
+              },
+              "required": [
+                "generationId",
+                "createdAt",
+                "workflowSlug",
+                "model",
+                "subject",
+                "emails",
+                "channel",
+                "promptType",
+                "templateDynasty",
+                "tokensInput",
+                "tokensOutput"
+              ]
+            },
+            "description": "Newest first, every org, every workflow and template of the pipe. Empty when the dynasty never wrote there."
+          }
+        },
+        "required": [
+          "slug",
+          "name",
+          "featureSlug",
+          "legKey",
+          "modelIds",
+          "outputs"
+        ]
+      },
       "GenerateWhatsAppRequest": {
         "type": "object",
         "properties": {
@@ -5780,6 +5930,145 @@
           },
           "502": {
             "description": "workflow-service could not resolve the dynasty's versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/model-dynasties/{slug}/outputs": {
+      "get": {
+        "tags": [
+          "Model dynasties"
+        ],
+        "summary": "The last messages one LLM dynasty (every version) wrote on one pipe, newest first",
+        "description": "Fleet-wide staff read (API key only, no identity headers). The dynasty's versions are read from chat-service `GET /internal/model-dynasties`. A message is on the pipe of the template dynasty its template version belongs to. Each output carries the workflow version, the template (dynasty + version), the concrete model, its tokens, the subject and every email of the sequence (WhatsApp: the bubbles). Never an org, brand, campaign, audience or lead.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "LLM dynasty slug, e.g. `gemini-pro`"
+            },
+            "required": true,
+            "description": "LLM dynasty slug, e.g. `gemini-pro`",
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The pipe's feature slug, e.g. `sales-cold-email-outreach`."
+            },
+            "required": true,
+            "description": "The pipe's feature slug, e.g. `sales-cold-email-outreach`.",
+            "name": "featureSlug",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The pipe's leg key, e.g. `lead_found_to_conversation`."
+            },
+            "required": true,
+            "description": "The pipe's leg key, e.g. `lead_found_to_conversation`.",
+            "name": "legKey",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "description": "How many outputs, 1..20. Omitted = 5."
+            },
+            "required": false,
+            "description": "How many outputs, 1..20. Omitted = 5.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Outputs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelDynastyOutputsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing pipe or bad limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "chat-service knows no such LLM dynasty (`MODEL_DYNASTY_NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "chat-service model dynasties unreadable (`MODEL_CATALOGUE_UNAVAILABLE`)",
             "content": {
               "application/json": {
                 "schema": {
