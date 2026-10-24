@@ -54,7 +54,7 @@ const VARS = [
   { name: "leadFirstName", description: "The recipient's first name" },
   { name: "brandExtractedFields", description: "What the client sells" },
 ];
-const caller = { mode: "platform" as const };
+const caller = { mode: "platform" as const, support: { kind: "platform_llm" as const, reason: "test" } };
 
 describe("a dynasty's text keeps its identity", () => {
   beforeEach(() => {

@@ -19,6 +19,10 @@ import {
 } from "../lib/template-dynasty-query.js";
 import { templateWriteErrorResponse } from "../lib/template-neutrality.js";
 import { formatPromptResponse } from "../lib/prompt-response.js";
+import {
+  TEMPLATE_DYNASTY_CREATE_SUPPORT,
+  TEMPLATE_DYNASTY_VERSION_SUPPORT,
+} from "../lib/platform-judgment-support.js";
 
 /**
  * Template dynasties (TPL-DYNASTY-1021-CG): list, read, resolve the head, add a version, create
@@ -61,7 +65,7 @@ router.post("/internal/template-dynasties", handle(async (req, res) => {
     // A new text is judged, billed to the platform; orgId is traceability only, like every prompts row.
     {
       orgId: orgId && /^[0-9a-f-]{36}$/i.test(orgId) ? orgId : null,
-      caller: { mode: "platform" },
+      caller: { mode: "platform", support: TEMPLATE_DYNASTY_CREATE_SUPPORT },
       // Older versions listed are deprecated "Upgraded" by whoever created the dynasty.
       changedBy: req.header(STAFF_EMAIL_HEADER)?.trim().toLowerCase() || UPGRADED_BY_SYSTEM,
     },
@@ -93,7 +97,7 @@ router.post("/internal/template-dynasties/:slug/versions", handle(async (req, re
     version: parsed.data,
     // Traceability only (who created the row), like every prompts row.
     orgId: orgId && /^[0-9a-f-]{36}$/i.test(orgId) ? orgId : null,
-    caller: { mode: "platform" },
+    caller: { mode: "platform", support: TEMPLATE_DYNASTY_VERSION_SUPPORT },
     // The previous head is deprecated "Upgraded" by whoever added this one.
     changedBy: req.header(STAFF_EMAIL_HEADER)?.trim().toLowerCase() || UPGRADED_BY_SYSTEM,
   });

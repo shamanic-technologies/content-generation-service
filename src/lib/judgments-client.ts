@@ -5,16 +5,22 @@
 // input-token spend on its own run under our x-run-id); a platform request with no
 // org asks `POST /internal/platform-judgments` (platform-billed). chat-service
 // declares the cost in both cases, so this service declares nothing.
+//
+// A platform call states whose work it is (PLATFORM-CALLER-RUN-1024): no run of
+// ours stands behind a template write, so the caller MUST name the support
+// function (`support`, sent in the body) and no `x-run-id` is ever sent on the
+// platform tier. See `platform-judgment-support.ts`.
 
 import { fetchWithRetry } from "./fetch-retry.js";
 import { type Tracking, buildTrackingHeaders } from "./tracking.js";
+import type { PlatformSupport } from "./platform-judgment-support.js";
 
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
 const CHAT_SERVICE_API_KEY = process.env.CHAT_SERVICE_API_KEY || "";
 
 export type JudgmentCaller =
   | { mode: "org"; tracking: Tracking & { runId: string } }
-  | { mode: "platform" };
+  | { mode: "platform"; support: PlatformSupport };
 
 export interface JudgmentsResponse {
   model: string;
@@ -44,7 +50,11 @@ export async function askJudgments(
   };
   const response = await fetchWithRetry(
     `${CHAT_SERVICE_URL}${path}`,
-    { method: "POST", headers, body: JSON.stringify(body) },
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(caller.mode === "platform" ? { ...body, support: caller.support } : body),
+    },
     { label: `chat-service ${path}` },
   );
   if (!response.ok) {

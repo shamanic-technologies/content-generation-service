@@ -28,7 +28,7 @@ const FAMILY = `${TAG}-email`;
 const SLUG = `${TAG}-named`;
 const PIPE = { featureSlug: `${TAG}-feature`, legKey: "lead_found_to_conversation" };
 const VARS = [{ name: "leadFirstName", description: "first name" }, { name: "brands", description: "brands" }];
-const CALLER = { mode: "platform" as const };
+const CALLER = { mode: "platform" as const, support: { kind: "platform_llm" as const, reason: "test" } };
 const BY = "staff@distribute.you";
 
 const cleanup = async () => {
