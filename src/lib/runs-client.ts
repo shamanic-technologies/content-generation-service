@@ -65,6 +65,8 @@ export interface CreateRunParams {
   brandId?: string;
   campaignId?: string;
   workflowSlug?: string;
+  /** The run serves a support function (runs-service marks it at creation): it declares no outcome. */
+  support?: { kind: "staff_experiment" | "product_feature"; reason: string };
 }
 
 export interface CostItem {

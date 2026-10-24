@@ -1813,6 +1813,10 @@ export const DebriefVideoRequestSchema = registry.register(
         .max(200)
         .optional()
         .describe("Same key + same org → the existing render is returned (no second render). Use e.g. `industry-debrief-<date>`."),
+      dryRun: z
+        .boolean()
+        .optional()
+        .describe("true = a staff dry run that will not be published: the render's run is marked support `staff_experiment` and declares no `industry_update_video`. A render with no campaign (no x-campaign-id) is treated the same. Absent/false under a campaign = a render that ships."),
     })
     .openapi("DebriefVideoRequest")
 );
