@@ -104,7 +104,7 @@ describe("merge a template dynasty into another (MERGE-TEMPLATE-DYNASTY-1023)", 
     const { outputs } = await readDynastyOutputs(y.slug, 5);
     expect(outputs.map((o) => [o.promptType, o.subject])).toEqual([[x.types[0], "From X"]]);
 
-    await expect(addDynastyVersion({ slug: x.slug, version: { type: y.types[0] }, orgId: null, caller: { mode: "platform" }, changedBy: BY }))
+    await expect(addDynastyVersion({ slug: x.slug, version: { type: y.types[0] }, orgId: null, caller: { mode: "platform", support: { kind: "platform_llm", reason: "test" } }, changedBy: BY }))
       .rejects.toMatchObject({ status: 409, code: "DYNASTY_MERGED", extra: { mergedInto: y.slug } });
     await expect(mergeDynasty({ source: x.slug, into: y.slug, reason: "again", mergedBy: BY }))
       .rejects.toMatchObject({ status: 409, code: "DYNASTY_MERGED" });
