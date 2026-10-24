@@ -17,6 +17,7 @@ import { industryDebriefVideos, type IndustryDebriefVideo } from "../../db/schem
 import type { DebriefVideoRequest } from "../../schemas.js";
 import type { Tracking } from "../tracking.js";
 import { updateRun } from "../runs-client.js";
+import { declareRenderOutcomes } from "../outcome-declarations.js";
 import { uploadBase64ToStorage } from "../storage-client.js";
 import { DebriefError } from "./errors.js";
 import { renderDebriefVideo } from "./pipeline.js";
@@ -101,6 +102,7 @@ export async function processDebrief(id: string): Promise<void> {
       .where(eq(industryDebriefVideos.id, id));
     console.log(`[debrief] ${id} done in ${((Date.now() - t0) / 1000).toFixed(0)}s: ${url} (${rendered.durationSeconds.toFixed(2)}s, track ${rendered.musicTrackId})`);
     await updateRun(row.runId, "completed", identity).catch((err) => console.error(`[debrief] ${id} run ${row.runId} not closed:`, err));
+    void declareRenderOutcomes(id);
   } catch (err) {
     const code = err instanceof DebriefError ? err.code : "RENDER_FAILED";
     const message = (err as Error).message;

@@ -86,5 +86,5 @@ vi.mock("../src/lib/chat-model-catalogue.js", async (importOriginal) => {
 // stubbed once here; the real module is exercised by tests/unit/outcome-declarations.test.ts.
 vi.mock("../src/lib/outcome-declarations.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/lib/outcome-declarations.js")>();
-  return { ...actual, declareStoredOutcomes: vi.fn(async () => undefined), startOutcomeDeclarationSweep: vi.fn() };
+  return { ...actual, declareStoredOutcomes: vi.fn(async () => undefined), declareRenderOutcomes: vi.fn(async () => undefined), startOutcomeDeclarationSweep: vi.fn() };
 });
