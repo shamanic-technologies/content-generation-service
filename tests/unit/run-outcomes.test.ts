@@ -4,7 +4,7 @@ import { messageWrittenDeclaration, researchedCompanyDomain, postRunOutcomes, Pe
 // COST-ACCOUNTING-1023-P1: each outcome key this service declares, and the subject it names.
 describe("messageWrittenDeclaration", () => {
   it("produces message_written and consumes lead_found, both on the person's lead in lead-service", () => {
-    expect(messageWrittenDeclaration({ leadId: "lead-1", variables: {} })).toEqual({
+    expect(messageWrittenDeclaration({ leadId: "lead-1", variables: {}, pipeFromStep: "lead_found" })).toEqual({
       produced: [{ outcomeKey: "message_written", subjectService: "lead-service", subjectId: "lead-1" }],
       consumed: [{ outcomeKey: "lead_found", subjectService: "lead-service", subjectId: "lead-1" }],
     });
@@ -13,6 +13,7 @@ describe("messageWrittenDeclaration", () => {
   it("also consumes company_researched on lead-service's company key (the domain, verbatim) when the company's checks were read", () => {
     const d = messageWrittenDeclaration({
       leadId: "lead-1",
+      pipeFromStep: "lead_found",
       variables: { leadQualification: { domain: "acme.com", checks: [{ question: "q" }] } },
     });
     expect(d?.consumed).toEqual([
@@ -28,9 +29,20 @@ describe("messageWrittenDeclaration", () => {
     expect(researchedCompanyDomain(null)).toBeNull();
   });
 
+  it("PIPE-FROM-STEP-1024: consumes the occurrence of the step the pipe starts from, never an invented lead_found", () => {
+    expect(messageWrittenDeclaration({ leadId: "lead-1", pipeFromStep: "conversation" })?.consumed).toEqual([
+      { outcomeKey: "conversation", subjectService: "lead-service", subjectId: "lead-1" },
+    ]);
+    // A pipe from nothing (or an unknown pipe): the message is still produced, no lead input.
+    expect(messageWrittenDeclaration({ leadId: "lead-1", pipeFromStep: null })).toEqual({
+      produced: [{ outcomeKey: "message_written", subjectService: "lead-service", subjectId: "lead-1" }],
+      consumed: [],
+    });
+  });
+
   it("no lead: no subject to name, nothing declared (never an invented id)", () => {
-    expect(messageWrittenDeclaration({ leadId: undefined })).toBeNull();
-    expect(messageWrittenDeclaration({ leadId: "  " })).toBeNull();
+    expect(messageWrittenDeclaration({ leadId: undefined, pipeFromStep: "lead_found" })).toBeNull();
+    expect(messageWrittenDeclaration({ leadId: "  ", pipeFromStep: "lead_found" })).toBeNull();
   });
 });
 

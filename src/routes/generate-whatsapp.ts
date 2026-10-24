@@ -11,6 +11,7 @@ import { WhatsAppInsufficientCreditsError, WhatsAppVariablesMissingError, writeW
 import { traceEvent } from "../lib/trace-event.js";
 import { createRun, updateRun } from "../lib/runs-client.js";
 import { messageWrittenDeclaration } from "../lib/run-outcomes.js";
+import { messageFromStep } from "../lib/pipe-from-step.js";
 import { declareStoredOutcomes } from "../lib/outcome-declarations.js";
 
 const router = Router();
@@ -81,10 +82,12 @@ router.post("/generate-whatsapp", (req, res, next) => serviceAuth(req as Authent
       throw err;
     }
     // Only a message actually written for a person is an outcome; later/stop write nothing.
-    const outcomes =
-      generationRunId && result.decision === "write"
-        ? messageWrittenDeclaration({ leadId: body.leadId, variables: body.variables })
-        : null;
+    // The step this message's pipe starts from is what it consumes (PIPE-FROM-STEP-1024).
+    const writes = generationRunId && result.decision === "write";
+    const pipeFrom = writes && body.leadId ? await messageFromStep(campaignId, identity) : null;
+    const outcomes = writes
+      ? messageWrittenDeclaration({ leadId: body.leadId, variables: body.variables, pipeFromStep: pipeFrom?.known ? pipeFrom.fromStep : null })
+      : null;
     if (generationRunId && result.decision === "write" && !outcomes) {
       console.warn(`[content-gen] WhatsApp message written without a leadId: no outcome declared (run=${generationRunId})`);
     }

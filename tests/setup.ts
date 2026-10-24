@@ -88,3 +88,11 @@ vi.mock("../src/lib/outcome-declarations.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/lib/outcome-declarations.js")>();
   return { ...actual, declareStoredOutcomes: vi.fn(async () => undefined), declareRenderOutcomes: vi.fn(async () => undefined), startOutcomeDeclarationSweep: vi.fn() };
 });
+
+// The step a message's pipe starts from (PIPE-FROM-STEP-1024) reads campaign-service and
+// features-service; unit suites count fetch calls and hand-roll campaign-client mocks, so it is
+// stubbed once here as a pipe from Lead found. The real module: tests/unit/pipe-from-step.test.ts.
+vi.mock("../src/lib/pipe-from-step.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/pipe-from-step.js")>();
+  return { ...actual, messageFromStep: vi.fn(async () => ({ known: true, fromStep: "lead_found" })) };
+});
