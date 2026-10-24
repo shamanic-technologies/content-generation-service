@@ -46,7 +46,17 @@ export interface BackfillRun {
   taskName: string;
   startedAt: string;
   costs: BackfillCost[];
+  /** Every run under this one, as runs-service's batch read serves it (read on the workflow parent). */
+  descendantRuns?: Array<{ id: string }>;
 }
+
+/**
+ * A cold-email workflow run that wrote emails holds 2 to ~360 direct children (measured 2026-10-24
+ * over 61,855 of them); one held 2,392 and a tree of 150k+ descendants. Declaring on a run makes every
+ * descendant that declares nothing land on it, so such a tree would put its whole spend on a few
+ * emails: above this many descendants the email stays unreadable instead.
+ */
+export const MAX_WORKFLOW_TREE_RUNS = 1000;
 
 export interface BackfillRow {
   id: string;
@@ -88,6 +98,10 @@ export function decideBackfill(
   if (!parent) return { kind: "unreadable", reason: "parent run not readable under the email's org" };
   if (parent.serviceName !== WORKFLOW_SERVICE || parent.taskName !== WORKFLOW_TASK) {
     return { kind: "unreadable", reason: `parent run is ${parent.serviceName}/${parent.taskName}, not a workflow run` };
+  }
+  if (!parent.descendantRuns) return { kind: "unreadable", reason: "workflow run's descendant tree not served" };
+  if (parent.descendantRuns.length > MAX_WORKFLOW_TREE_RUNS) {
+    return { kind: "unreadable", reason: `workflow run tree too large to be emails' (over ${MAX_WORKFLOW_TREE_RUNS} runs)` };
   }
   return { kind: "declare", runId: parent.id, declaration, via: "workflow_run" };
 }
