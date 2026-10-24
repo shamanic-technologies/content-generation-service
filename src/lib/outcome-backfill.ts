@@ -83,6 +83,8 @@ export interface BackfillRow {
   leadId: string | null;
   featureSlug: string | null;
   variables: Record<string, unknown> | null;
+  /** The step the email's pipe starts from (PIPE-FROM-STEP-1024); null = from nothing or unknown. */
+  pipeFromStep: string | null;
 }
 
 export type BackfillDecision =
@@ -108,7 +110,7 @@ export function decideBackfill(
   runUnreadable?: string,
 ): BackfillDecision {
   if (isRetiredFeature(row.featureSlug)) return { kind: "skipped", reason: `retired product (${row.featureSlug})` };
-  const declaration = messageWrittenDeclaration({ leadId: row.leadId, variables: row.variables });
+  const declaration = messageWrittenDeclaration({ leadId: row.leadId, variables: row.variables, pipeFromStep: row.pipeFromStep });
   if (!declaration) return { kind: "unreadable", reason: "no lead id stored on the email" };
   if (runUnreadable) return { kind: "unreadable", reason: runUnreadable };
 

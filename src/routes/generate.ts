@@ -10,6 +10,7 @@ import { resolveAssignedPromptType } from "../lib/prompt-assignment.js";
 import { assertExpertQuotePitchVariables, ExpertQuotePitchInputError } from "../lib/expert-quote-pitch-template.js";
 import { createRun, updateRun } from "../lib/runs-client.js";
 import { messageWrittenDeclaration } from "../lib/run-outcomes.js";
+import { messageFromStep } from "../lib/pipe-from-step.js";
 import { declareStoredOutcomes } from "../lib/outcome-declarations.js";
 import { getCampaignFeatureInputs } from "../lib/campaign-client.js";
 import { extractBrandFields, resolveBrandNames } from "../lib/brand-client.js";
@@ -282,7 +283,11 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         });
       }
     };
-    const outcomes = generationRunId ? messageWrittenDeclaration({ leadId, variables }) : null;
+    // The step this message's pipe starts from is what it consumes (PIPE-FROM-STEP-1024).
+    const pipeFrom = generationRunId && leadId ? await messageFromStep(campaignId, serviceIdentity) : null;
+    const outcomes = generationRunId
+      ? messageWrittenDeclaration({ leadId, variables, pipeFromStep: pipeFrom?.known ? pipeFrom.fromStep : null })
+      : null;
     if (generationRunId && !outcomes) {
       console.warn(`[content-gen] message written without a leadId: no outcome declared (run=${generationRunId})`);
     }

@@ -8,6 +8,7 @@ import {
   type BackfillRun,
   type BatchRunEntry,
 } from "../lib/outcome-backfill.js";
+import { messageFromStep } from "../lib/pipe-from-step.js";
 import { cursorAfter, readUnhandledGenerations, type GenerationCursor, type UnhandledGeneration } from "../lib/outcome-backfill-query.js";
 
 /**
@@ -107,7 +108,16 @@ async function decideChunk(rows: Row[]): Promise<Map<string, BackfillDecision>> 
     const genRuns = await fetchRuns(orgId, [...new Set(readable.map((r) => r.generation_run_id))], unreadable);
     const parentIds = [...new Set([...genRuns.values()].map((r) => r.parentRunId).filter((p): p is string => !!p))];
     const parents = await fetchRuns(orgId, parentIds, unreadable);
+    // What each email consumes = the step its campaign's pipe starts from (PIPE-FROM-STEP-1024).
+    const fromStepOf = new Map<string, string | null>();
+    for (const row of readable) {
+      const key = row.campaign_id ?? "";
+      if (fromStepOf.has(key)) continue;
+      const pipe = await messageFromStep(row.campaign_id, { orgId, userId: "" });
+      fromStepOf.set(key, pipe.known ? pipe.fromStep : null);
+    }
     for (const row of orgRows) {
+      const pipeFromStep = fromStepOf.get(row.campaign_id ?? "") ?? null;
       const gen = genRuns.get(row.generation_run_id);
       const failed = unreadable.get(row.generation_run_id) ?? (gen?.parentRunId ? unreadable.get(gen.parentRunId) : undefined);
       if (failed) {
@@ -116,7 +126,7 @@ async function decideChunk(rows: Row[]): Promise<Map<string, BackfillDecision>> 
       }
       if (!gen) {
         decisions.set(row.id, decideBackfill(
-          { id: row.id, leadId: row.lead_id, featureSlug: row.feature_slug, variables: row.variables_raw },
+          { id: row.id, leadId: row.lead_id, featureSlug: row.feature_slug, variables: row.variables_raw, pipeFromStep },
           { id: row.generation_run_id, parentRunId: null, serviceName: "", taskName: "", startedAt: "", costs: [] },
           undefined,
           "generation run not readable under the email's org",
@@ -124,7 +134,7 @@ async function decideChunk(rows: Row[]): Promise<Map<string, BackfillDecision>> 
         continue;
       }
       const parent = gen.parentRunId ? parents.get(gen.parentRunId) : undefined;
-      decisions.set(row.id, decideBackfill({ id: row.id, leadId: row.lead_id, featureSlug: row.feature_slug, variables: row.variables_raw }, gen, parent));
+      decisions.set(row.id, decideBackfill({ id: row.id, leadId: row.lead_id, featureSlug: row.feature_slug, variables: row.variables_raw, pipeFromStep }, gen, parent));
     }
   }
   return decisions;

@@ -17,7 +17,7 @@ const tree = (n: number, root = "wf-1") =>
   Array.from({ length: n }, (_, i) => ({ id: `${root}-d-${i}`, parentRunId: root, serviceName: "chat-service", taskName: "complete" }));
 const workflow = { ...run("wf-1", "campaign-run", "workflow", "execute-workflow"), descendantRuns: tree(5) };
 const gen = run("gen-1", "wf-1", "content-generation-service", "single-generation");
-const row: BackfillRow = { id: "row-1", leadId: "lead-1", featureSlug: "sales-cold-email-outreach", variables: {} };
+const row: BackfillRow = { id: "row-1", leadId: "lead-1", featureSlug: "sales-cold-email-outreach", variables: {}, pipeFromStep: "lead_found" };
 const declaration = {
   produced: [{ outcomeKey: "message_written", subjectService: "lead-service", subjectId: "lead-1" }],
   consumed: [{ outcomeKey: "lead_found", subjectService: "lead-service", subjectId: "lead-1" }],
@@ -46,6 +46,14 @@ describe("decideBackfill", () => {
 
   it("declares on the workflow run that called us: the completion and the brand intel beside us roll into it", () => {
     expect(decideBackfill(row, gen, workflow)).toEqual({ kind: "declare", runId: "wf-1", declaration, via: "workflow_run" });
+  });
+
+  it("PIPE-FROM-STEP-1024: a reactive pipe's email consumes the step it starts from, a pipe from nothing consumes no lead occurrence", () => {
+    const reactive = decideBackfill({ ...row, pipeFromStep: "conversation" }, gen, workflow);
+    expect(reactive).toMatchObject({ kind: "declare" });
+    expect(reactive.kind === "declare" && reactive.declaration.consumed).toEqual([{ outcomeKey: "conversation", subjectService: "lead-service", subjectId: "lead-1" }]);
+    const fromNothing = decideBackfill({ ...row, pipeFromStep: null }, gen, workflow);
+    expect(fromNothing.kind === "declare" && fromNothing.declaration.consumed).toEqual([]);
   });
 
   it("a parent that is not a workflow run (a staff probe, a preview proof) is not declared on", () => {
