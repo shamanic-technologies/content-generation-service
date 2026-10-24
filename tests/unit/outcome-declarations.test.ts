@@ -21,12 +21,15 @@ vi.mock("../../src/lib/run-outcomes.js", async (importOriginal) => {
   return { ...actual, postRunOutcomes: (...a: unknown[]) => mockPost(...a) };
 });
 
+const mockProduced = vi.fn();
+vi.mock("../../src/lib/company-research-ledger.js", () => ({ producedResearchDomains: (...a: unknown[]) => mockProduced(...a) }));
+
 const { declareStoredOutcomes, declareRenderOutcomes, sweepPendingOutcomes } = await vi.importActual<typeof import("../../src/lib/outcome-declarations.js")>(
   "../../src/lib/outcome-declarations.js",
 );
 const { PermanentDeclarationError } = await import("../../src/lib/run-outcomes.js");
 
-const row = { id: "gen-1", org_id: "org-1", generation_run_id: "run-9", outcomes: { produced: [], consumed: [] } };
+const row = { id: "gen-1", org_id: "org-1", generation_run_id: "run-9", outcomes: { produced: [], consumed: [] }, created_at: "2026-10-24 10:00:00+00" };
 
 describe("outcome declarations", () => {
   beforeEach(() => {
@@ -67,8 +70,58 @@ describe("outcome declarations", () => {
   it("the sweep sends every pending row of both tables", async () => {
     mockPost.mockResolvedValue(201);
     const totals = await sweepPendingOutcomes();
-    expect(totals).toEqual({ declared: 2, refused: 0, failed: 0 });
+    expect(totals).toEqual({ declared: 2, refused: 0, failed: 0, waiting: 0 });
     expect(mockPost).toHaveBeenCalledTimes(2);
+  });
+
+  describe("company_researched only when lead-service produced it (COMPANY-RESEARCHED-PROVENANCE-1024)", () => {
+    const lead = { outcomeKey: "lead_found", subjectService: "lead-service", subjectId: "lead-1" };
+    const cr = (d: string) => ({ outcomeKey: "company_researched", subjectService: "lead-service", subjectId: d });
+    const withResearch = (createdAt: string) => ({
+      ...row,
+      created_at: createdAt,
+      outcomes: { produced: [{ outcomeKey: "message_written", subjectService: "lead-service", subjectId: "lead-1" }], consumed: [lead, cr("acme.com")] },
+    });
+    beforeEach(() => {
+      mockProduced.mockReset();
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+    });
+
+    it("a company on the ledger is consumed as stored", async () => {
+      selectRows = [withResearch("2026-10-24 10:00:00+00")];
+      mockProduced.mockResolvedValue(new Set(["acme.com"]));
+      mockPost.mockResolvedValue(201);
+      await declareStoredOutcomes("email_generations", "gen-1");
+      expect(mockProduced).toHaveBeenCalledWith(["acme.com"]);
+      expect(mockPost.mock.calls[0][2].consumed).toEqual([lead, cr("acme.com")]);
+    });
+
+    it("a company nobody produced is dropped once the grace is over, and the stored body says what was sent", async () => {
+      selectRows = [withResearch("2026-10-01 10:00:00+00")];
+      mockProduced.mockResolvedValue(new Set());
+      mockPost.mockResolvedValue(201);
+      await declareStoredOutcomes("email_generations", "gen-1");
+      expect(mockPost.mock.calls[0][2].consumed).toEqual([lead]);
+      const update = queries.find((q) => q.text.includes("outcomes_declared_at = now()"))!;
+      expect(JSON.parse(update.values.find((v) => typeof v === "string" && v.includes("consumed")) as string).consumed).toEqual([lead]);
+    });
+
+    it("a fresh row waits for lead-service's declaration (nothing sent, nothing marked)", async () => {
+      selectRows = [withResearch(new Date().toISOString())];
+      mockProduced.mockResolvedValue(new Set());
+      const totals = await sweepPendingOutcomes();
+      expect(totals.waiting).toBe(2);
+      expect(mockPost).not.toHaveBeenCalled();
+      expect(queries.filter((q) => q.text.trim().startsWith("UPDATE"))).toHaveLength(0);
+    });
+
+    it("an unreadable ledger leaves the row pending (never declared on a guess)", async () => {
+      selectRows = [withResearch("2026-10-01 10:00:00+00")];
+      mockProduced.mockRejectedValue(new Error("runs-service 502"));
+      await declareStoredOutcomes("email_generations", "gen-1");
+      expect(mockPost).not.toHaveBeenCalled();
+      expect(queries.filter((q) => q.text.trim().startsWith("UPDATE"))).toHaveLength(0);
+    });
   });
 
   describe("industry debrief videos (LEDGER-HISTORY-1024)", () => {
@@ -114,7 +167,7 @@ describe("outcome declarations", () => {
       renderRows = [render];
       mockPost.mockResolvedValue(201);
       const totals = await sweepPendingOutcomes();
-      expect(totals).toEqual({ declared: 3, refused: 0, failed: 0 });
+      expect(totals).toEqual({ declared: 3, refused: 0, failed: 0, waiting: 0 });
     });
   });
 });
