@@ -174,6 +174,29 @@ describe("template neutrality on POST /prompts", () => {
       .expect(201);
     expect(fetchCalls[0].url).toMatch(/\/internal\/platform-judgments$/);
     expect(fetchCalls[0].headers["x-org-id"]).toBeUndefined();
+    // PLATFORM-CALLER-RUN-1024: no run of ours stands behind a template write.
+    expect(fetchCalls[0].body.support).toEqual({ kind: "platform_llm", reason: expect.any(String) });
+    expect(fetchCalls[0].headers["x-run-id"]).toBeUndefined();
+  });
+
+  it("never forwards an inbound x-run-id on the platform tier", async () => {
+    await request(app)
+      .post("/platform-prompts")
+      .set("x-run-id", "33333333-3333-3333-3333-333333333333")
+      .send({ type: "copilot-cold-email-2", prompt: NEUTRAL, variables: NEUTRAL_VARS })
+      .expect(201);
+    expect(fetchCalls[0].headers["x-run-id"]).toBeUndefined();
+    expect(fetchCalls[0].body.support.kind).toBe("platform_llm");
+  });
+
+  it("an org write states its run and no support", async () => {
+    await request(app)
+      .post("/prompts")
+      .send({ type: "copilot-cold-email", prompt: NEUTRAL, variables: NEUTRAL_VARS })
+      .expect(201);
+    expect(fetchCalls[0].url).toMatch(/\/orgs\/judgments$/);
+    expect(fetchCalls[0].headers["x-run-id"]).toBeTruthy();
+    expect(fetchCalls[0].body.support).toBeUndefined();
   });
 });
 

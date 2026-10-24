@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import express from "express";
 import request from "supertest";
+import { TEMPLATE_DYNASTY_CREATE_SUPPORT, TEMPLATE_DYNASTY_VERSION_SUPPORT } from "../../src/lib/platform-judgment-support.js";
 
 const q = vi.hoisted(() => ({
   listDynasties: vi.fn(),
@@ -129,7 +130,7 @@ describe("template dynasty routes", () => {
       slug: DYNASTY.slug,
       version: { prompt: ROW.prompt, variables: ROW.variables },
       orgId: "22222222-2222-2222-2222-222222222222",
-      caller: { mode: "platform" },
+      caller: { mode: "platform", support: TEMPLATE_DYNASTY_VERSION_SUPPORT },
       changedBy: "template-dynasty-upgrade",
     });
     expect(res.body.dynasty.head).toBe(ROW.type);
@@ -181,14 +182,14 @@ describe("template dynasty routes", () => {
       .expect(201);
     expect(q.createDynasty).toHaveBeenLastCalledWith(
       { ...fields, template },
-      { orgId: "22222222-2222-2222-2222-222222222222", caller: { mode: "platform" }, changedBy: "template-dynasty-upgrade" },
+      { orgId: "22222222-2222-2222-2222-222222222222", caller: { mode: "platform", support: TEMPLATE_DYNASTY_CREATE_SUPPORT }, changedBy: "template-dynasty-upgrade" },
     );
     expect(res.body.head).toBe("eight-second-test-click-v1");
 
     await request(app()).post("/internal/template-dynasties").set("x-staff-email", "Kevin@Distribute.you").send({ ...fields, versions: ["cold-email-v68"] }).expect(201);
     expect(q.createDynasty).toHaveBeenLastCalledWith(
       { ...fields, versions: ["cold-email-v68"] },
-      { orgId: null, caller: { mode: "platform" }, changedBy: "kevin@distribute.you" },
+      { orgId: null, caller: { mode: "platform", support: TEMPLATE_DYNASTY_CREATE_SUPPORT }, changedBy: "kevin@distribute.you" },
     );
 
     for (const body of [fields, { ...fields, versions: ["x"], template }, { ...fields, template: { ...template, type: "Bad Type" } }]) {

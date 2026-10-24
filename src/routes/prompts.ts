@@ -9,6 +9,7 @@ import { formatPromptResponse } from "../lib/prompt-response.js";
 import { assertTemplateNeutral } from "../lib/template-neutrality-guard.js";
 import { templateWriteErrorResponse } from "../lib/template-neutrality.js";
 import type { JudgmentCaller } from "../lib/judgments-client.js";
+import { PLATFORM_PROMPT_REGISTRATION_SUPPORT } from "../lib/platform-judgment-support.js";
 import { extractTracking } from "../lib/tracking.js";
 
 const router = Router();
@@ -128,7 +129,7 @@ router.post("/platform-prompts", async (req, res) => {
       return res.status(200).json(formatPromptResponse(existing));
     }
 
-    await assertTemplateNeutral({ type, prompt, variables, caller: { mode: "platform" } });
+    await assertTemplateNeutral({ type, prompt, variables, caller: { mode: "platform", support: PLATFORM_PROMPT_REGISTRATION_SUPPORT } });
 
     const [result] = await db
       .insert(prompts)
