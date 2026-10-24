@@ -14,6 +14,7 @@ export interface UnhandledGeneration {
   org_id: string;
   lead_id: string | null;
   feature_slug: string | null;
+  campaign_id: string | null;
   variables_raw: Record<string, unknown> | null;
   generation_run_id: string;
   /** created_at as postgres prints it (microsecond precision, offset included). */
@@ -27,7 +28,7 @@ export interface GenerationCursor {
 
 export async function readUnhandledGenerations(cursor: GenerationCursor | null, limit: number): Promise<UnhandledGeneration[]> {
   return sql<UnhandledGeneration[]>`
-    SELECT id::text, org_id::text, lead_id, feature_slug, variables_raw, generation_run_id, created_at::text AS created_at
+    SELECT id::text, org_id::text, lead_id, feature_slug, NULLIF(campaign_id, '') AS campaign_id, variables_raw, generation_run_id, created_at::text AS created_at
     FROM email_generations
     WHERE generation_run_id IS NOT NULL AND outcomes IS NULL AND outcomes_declared_at IS NULL AND outcomes_error IS NULL
       ${cursor ? sql`AND (created_at, id) > (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)` : sql``}

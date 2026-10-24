@@ -8,8 +8,11 @@
  *
  * - every message written for one person (email `/generate`, WhatsApp `/generate-whatsapp`
  *   decision `write`) PRODUCES `message_written` on that person's lead, and CONSUMES the
- *   person's `lead_found`, plus the `company_researched` read when the request carried the
- *   company's checks (`leadQualification` with at least one check);
+ *   occurrence of the step its PIPE starts from on that lead (PIPE-FROM-STEP-1024, `pipe-from-step.ts`:
+ *   `lead_found` for a pipe from Lead found, `conversation` for AI meeting booking from a positive
+ *   reply, ...; a pipe from nothing or an unknown pipe consumes none, never an invented `lead_found`),
+ *   plus the `company_researched` read when the request carried the company's checks
+ *   (`leadQualification` with at least one check);
  * - subject = the person's lead in lead-service (`subjectService: "lead-service"`, the lead id);
  *   the company = lead-service's company key: the `domain` of `leadQualification`, VERBATIM
  *   (lead-service already normalized it; settled with lead-service 2026-10-23, never re-normalize).
@@ -55,11 +58,13 @@ export function researchedCompanyDomain(variables: Record<string, unknown> | nul
 export function messageWrittenDeclaration(input: {
   leadId: string | null | undefined;
   variables?: Record<string, unknown> | null;
+  /** The step the message's pipe starts from (catalogue key); null = from nothing or unknown: no lead input. */
+  pipeFromStep: string | null;
 }): OutcomeDeclaration | null {
   const leadId = input.leadId?.trim();
   if (!leadId) return null;
   const lead = { subjectService: LEAD_SUBJECT_SERVICE, subjectId: leadId };
-  const consumed: OutcomeOccurrence[] = [{ outcomeKey: LEAD_FOUND, ...lead }];
+  const consumed: OutcomeOccurrence[] = input.pipeFromStep ? [{ outcomeKey: input.pipeFromStep, ...lead }] : [];
   const domain = researchedCompanyDomain(input.variables);
   if (domain) consumed.push({ outcomeKey: COMPANY_RESEARCHED, subjectService: LEAD_SUBJECT_SERVICE, subjectId: domain });
   return { produced: [{ outcomeKey: MESSAGE_WRITTEN, ...lead }], consumed };
