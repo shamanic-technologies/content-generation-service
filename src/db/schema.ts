@@ -83,6 +83,8 @@ export const emailGenerations = pgTable(
     index("idx_emailgen_feature_created").on(table.featureSlug, table.createdAt, table.id),
     // Last outputs of a template, GET /internal/templates/:type/outputs (drizzle/0034)
     index("idx_emailgen_prompt_type_created").on(table.promptType, table.createdAt),
+    // Last outputs of an LLM dynasty on a pipe, GET /internal/model-dynasties/:slug/outputs (drizzle/0045)
+    index("idx_emailgen_model_created").on(table.model, table.createdAt),
     // Last outputs of a workflow dynasty, GET /internal/workflow-dynasties/:slug/outputs (drizzle/0039)
     index("idx_emailgen_workflow_created").on(table.workflowSlug, table.createdAt),
     uniqueIndex("idx_emailgen_idempotency").on(table.orgId, table.idempotencyKey),

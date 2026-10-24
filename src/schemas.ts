@@ -2318,6 +2318,64 @@ registry.registerPath({
   },
 });
 
+export const ModelDynastyOutputsQuerySchema = z
+  .object({
+    featureSlug: z.string().min(1).describe("The pipe's feature slug, e.g. `sales-cold-email-outreach`."),
+    legKey: z.string().min(1).describe("The pipe's leg key, e.g. `lead_found_to_conversation`."),
+    limit: z.coerce.number().int().min(1).max(20).optional().describe("How many outputs, 1..20. Omitted = 5."),
+  })
+  .openapi("ModelDynastyOutputsQuery");
+
+const ModelDynastyOutputsResponseSchema = registry.register(
+  "ModelDynastyOutputsResponse",
+  z
+    .object({
+      slug: z.string().describe("The LLM dynasty slug asked for (chat-service's, e.g. `gemini-pro`)."),
+      name: z.string().describe("The dynasty's name, as chat-service serves it."),
+      featureSlug: z.string(),
+      legKey: z.string(),
+      modelIds: z.array(z.string()).describe("Every concrete model id of the dynasty, read from chat-service, head first."),
+      outputs: z
+        .array(
+          TemplateOutputSchema.extend({
+            channel: z.enum(["email", "whatsapp"]).describe("Which kind of message."),
+            promptType: z.string().describe("The exact template version that wrote it."),
+            templateDynasty: z
+              .object({
+                slug: z.string(),
+                name: z.string().describe("The dynasty's name, as on the Template pages."),
+                position: z.number().int().describe("The version's position in the dynasty (1 = first)."),
+              })
+              .describe("The template dynasty of `promptType`: its pipe is the pipe asked for."),
+            model: z.string().describe("The concrete model id (the dynasty version) that wrote it."),
+            tokensInput: z.number().int().nullable().describe("Input tokens of the completion(s) that wrote it."),
+            tokensOutput: z.number().int().nullable().describe("Output tokens of the completion(s) that wrote it."),
+          })
+        )
+        .describe("Newest first, every org, every workflow and template of the pipe. Empty when the dynasty never wrote there."),
+    })
+    .openapi("ModelDynastyOutputsResponse")
+);
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/model-dynasties/{slug}/outputs",
+  tags: ["Model dynasties"],
+  summary: "The last messages one LLM dynasty (every version) wrote on one pipe, newest first",
+  description:
+    "Fleet-wide staff read (API key only, no identity headers). The dynasty's versions are read from chat-service " +
+    "`GET /internal/model-dynasties`. A message is on the pipe of the template dynasty its template version belongs to. " +
+    "Each output carries the workflow version, the template (dynasty + version), the concrete model, its tokens, " +
+    "the subject and every email of the sequence (WhatsApp: the bubbles). Never an org, brand, campaign, audience or lead.",
+  request: { params: z.object({ slug: z.string().describe("LLM dynasty slug, e.g. `gemini-pro`") }), query: ModelDynastyOutputsQuerySchema },
+  responses: {
+    200: { description: "Outputs", content: { "application/json": { schema: ModelDynastyOutputsResponseSchema } } },
+    400: { description: "Missing pipe or bad limit", content: { "application/json": { schema: DynastyErrorSchema } } },
+    404: { description: "chat-service knows no such LLM dynasty (`MODEL_DYNASTY_NOT_FOUND`)", content: { "application/json": { schema: DynastyErrorSchema } } },
+    502: { description: "chat-service model dynasties unreadable (`MODEL_CATALOGUE_UNAVAILABLE`)", content: { "application/json": { schema: DynastyErrorSchema } } },
+  },
+});
+
 registry.registerPath({
   method: "get",
   path: "/internal/template-dynasties",
