@@ -21,6 +21,8 @@ export interface UnhandledGeneration {
   generation_run_id: string;
   /** created_at as postgres prints it (microsecond precision, offset included). */
   created_at: string;
+  /** The mark a past pass left (read by the sibling pass only). */
+  outcomes_error?: string | null;
 }
 
 export interface GenerationCursor {
@@ -53,6 +55,22 @@ export async function readRevisitedGenerations(cursor: GenerationCursor | null, 
     SELECT id::text, org_id::text, lead_id, feature_slug, NULLIF(campaign_id, '') AS campaign_id, variables_raw, brand_ids, generation_run_id, created_at::text AS created_at
     FROM email_generations
     WHERE generation_run_id IS NOT NULL AND outcomes_declared_at IS NULL AND outcomes_error LIKE ANY(${sql.array(prefixes)}::text[])
+      ${cursor ? sql`AND (created_at, id) > (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)` : sql``}
+    ORDER BY created_at, id LIMIT ${limit}`;
+}
+
+/**
+ * Rows the past backfills left undeclared with a reason (`outcomes_error` = `backfill: …`), read by
+ * the sibling pass (LEDGER-RESIDUAL-1025-SIBLINGS) once: every row it decides is declared or marked
+ * `backfill: siblings: …`, which this read skips, so a replay reads nothing.
+ */
+export async function readSiblingCandidates(cursor: GenerationCursor | null, limit: number): Promise<UnhandledGeneration[]> {
+  return sql<UnhandledGeneration[]>`
+    SELECT id::text, org_id::text, lead_id, feature_slug, NULLIF(campaign_id, '') AS campaign_id, variables_raw, brand_ids, generation_run_id, created_at::text AS created_at,
+           outcomes_error
+    FROM email_generations
+    WHERE generation_run_id IS NOT NULL AND outcomes_declared_at IS NULL
+      AND outcomes_error LIKE 'backfill:%' AND outcomes_error NOT LIKE 'backfill: siblings:%'
       ${cursor ? sql`AND (created_at, id) > (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)` : sql``}
     ORDER BY created_at, id LIMIT ${limit}`;
 }
