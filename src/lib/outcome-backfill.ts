@@ -26,8 +26,29 @@ export const CHAT_SERVICE = "chat-service";
 export const COMPLETION_TASK = "complete";
 export const WORKFLOW_SERVICE = "workflow";
 export const WORKFLOW_TASK = "execute-workflow";
+export const CAMPAIGN_SERVICE = "campaign-service";
 
-/** Products retired before the ledger: their spend stays "produced none" (owner no-go). */
+/**
+ * LEDGER-RESIDUAL-1025: marks the first backfill (2026-10-24) left on rows it could have declared.
+ * instantly-service's sends consumed `message_written` for those emails (7,024 sends with no
+ * producer, measured 2026-10-25), so the backfill reads such rows again and decides them with the
+ * rules below. A row decided again never carries one of these marks (a replay reads nothing).
+ */
+export const REVISITED_ERROR_PREFIXES = [
+  "backfill: retired product (",
+  "backfill: no lead id stored on the email",
+  "backfill: parent run is ",
+] as const;
+
+/** The recipient's address as the request that wrote the email carried it (`variables.leadEmail`), or null. */
+export function recordedLeadEmail(variables: Record<string, unknown> | null | undefined): string | null {
+  const v = variables?.leadEmail;
+  if (typeof v !== "string") return null;
+  const email = v.trim();
+  return email.includes("@") ? email : null;
+}
+
+/** Products retired before the ledger: their SPEND stays "produced none" (owner no-go); their emails are declared at $0 on our run. */
 export function isRetiredFeature(featureSlug: string | null | undefined): boolean {
   return !!featureSlug && featureSlug.startsWith("pr-");
 }
@@ -85,10 +106,12 @@ export interface BackfillRow {
   variables: Record<string, unknown> | null;
   /** The step the email's pipe starts from (PIPE-FROM-STEP-1024); null = from nothing or unknown. */
   pipeFromStep: string | null;
+  /** Why no lead could be named when `leadId` is empty (e.g. lead-service names no lead for the stored address). */
+  unnamedReason?: string;
 }
 
 export type BackfillDecision =
-  | { kind: "declare"; runId: string; declaration: OutcomeDeclaration; via: "workflow_run" | "own_run" }
+  | { kind: "declare"; runId: string; declaration: OutcomeDeclaration; via: "workflow_run" | "own_run" | "own_run_retired" | "own_run_under_campaign" }
   | { kind: "unreadable"; reason: string }
   | { kind: "skipped"; reason: string };
 
@@ -109,17 +132,28 @@ export function decideBackfill(
   parent: BackfillRun | undefined,
   runUnreadable?: string,
 ): BackfillDecision {
-  if (isRetiredFeature(row.featureSlug)) return { kind: "skipped", reason: `retired product (${row.featureSlug})` };
   const declaration = messageWrittenDeclaration({ leadId: row.leadId, variables: row.variables, pipeFromStep: row.pipeFromStep });
-  if (!declaration) return { kind: "unreadable", reason: "no lead id stored on the email" };
+  if (!declaration) return { kind: "unreadable", reason: row.unnamedReason ?? "no lead id nor address stored on the email" };
   if (runUnreadable) return { kind: "unreadable", reason: runUnreadable };
 
+  // Retired product (LEDGER-RESIDUAL-1025): the email exists and instantly-service's sends consumed
+  // it, so it is declared, on OUR cost-less run: its spend (the workflow run, marked
+  // `retired_product`) stays apart, produced none, and the occurrence carries $0, never a share of it.
+  if (isRetiredFeature(row.featureSlug)) {
+    if (spentCents(generationRun) > 0) return { kind: "unreadable", reason: "retired product whose spend is on our run (stays produced none)" };
+    return { kind: "declare", runId: generationRun.id, declaration, via: "own_run_retired" };
+  }
   // Feb-Mar 2026 the service paid Anthropic on its own run: the money is there, declare there.
   if (spentCents(generationRun) > 0) return { kind: "declare", runId: generationRun.id, declaration, via: "own_run" };
   if (!generationRun.parentRunId) return { kind: "unreadable", reason: "no parent run and no spend on our run" };
   if (!parent) return { kind: "unreadable", reason: "parent run not readable under the email's org" };
+  // Under a campaign's own run (Feb-Mar 2026, before workflow-service): that run is the campaign's
+  // root, holding every run of the campaign, so it is never declared on (its whole spend would land
+  // on one email). The email is declared on our run (LEDGER-RESIDUAL-1025): provenance known at $0,
+  // the completion beside it stays produced none, never an estimated share.
+  if (parent.serviceName === CAMPAIGN_SERVICE) return { kind: "declare", runId: generationRun.id, declaration, via: "own_run_under_campaign" };
   if (parent.serviceName !== WORKFLOW_SERVICE || parent.taskName !== WORKFLOW_TASK) {
-    return { kind: "unreadable", reason: `parent run is ${parent.serviceName}/${parent.taskName}, not a workflow run` };
+    return { kind: "unreadable", reason: `under ${parent.serviceName}/${parent.taskName}, not a workflow run` };
   }
   if (!parent.descendantRuns) return { kind: "unreadable", reason: "workflow run's descendant tree not served" };
   if (ownSubtreeSize(parent, parent.descendantRuns) > MAX_WORKFLOW_TREE_RUNS) {
