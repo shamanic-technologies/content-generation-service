@@ -6,6 +6,7 @@ import type { ChatModel, ChatProvider } from "./chat-models.js";
 import { listChatModels, type ChatModelEntry } from "./chat-model-catalogue.js";
 import { servedStatus, type ModelPipe, type ServedStatus, type StatusChange } from "./catalogue-status.js";
 import { resolveGenerationBody } from "./generation-body.js";
+import { dynastyKey, dynastyMembers, dynastyStatusAlignment, effectiveDynastyPipeRows } from "./model-dynasty-status.js";
 
 /**
  * Reads and writes behind the staff catalogue-status routes (src/routes/catalogue-status.ts).
@@ -33,40 +34,66 @@ type PipeRow = typeof modelPipeStatuses.$inferSelect;
 
 const toPipeStatus = (r: PipeRow): ModelPipeStatus => ({ featureSlug: r.featureSlug, legKey: r.legKey, ...servedStatus(r) });
 
+const readPipeRows = () => db.select().from(modelPipeStatuses).orderBy(asc(modelPipeStatuses.statusChangedAt));
+
 /**
- * Every name chat-service accepts, in its catalogue order, with its status on `pipe`
- * (no row = active there) and every pipe staff stated a status on. Without a pipe the
+ * Every name chat-service accepts, in its catalogue order, with its DYNASTY's status on `pipe`
+ * (no row = active there) and every pipe staff stated a status on for that dynasty
+ * (LLM-DYNASTY-DEPRECATE-1025, src/lib/model-dynasty-status.ts). Without a pipe the
  * top-level status is `active`: a model is never retired fleet-wide (LLM-STATUS-PER-PIPE-1023).
  */
 export async function listModelStatuses(pipe: ModelPipe | null = null): Promise<ModelStatusEntry[]> {
-  const [catalogue, rows] = await Promise.all([
-    listChatModels(),
-    db.select().from(modelPipeStatuses).orderBy(asc(modelPipeStatuses.statusChangedAt)),
-  ]);
-  const byModel = new Map<string, PipeRow[]>();
-  for (const r of rows) byModel.set(r.model, [...(byModel.get(r.model) ?? []), r]);
-  return catalogue.map(({ model, provider, dynasty }) => {
-    const own = byModel.get(model) ?? [];
+  const [catalogue, rows] = await Promise.all([listChatModels(), readPipeRows()]);
+  const byDynasty = effectiveDynastyPipeRows(catalogue, rows);
+  return catalogue.map((entry) => {
+    const { model, provider, dynasty } = entry;
+    const own = byDynasty.get(dynastyKey(entry)) ?? [];
     const onPipe = pipe ? own.find((r) => r.featureSlug === pipe.featureSlug && r.legKey === pipe.legKey) : undefined;
     return { model, provider, dynasty, ...servedStatus(onPipe ?? ACTIVE), pipe, pipeStatuses: own.map(toPipeStatus) };
   });
 }
 
-/** Sets the model's status on ONE pipe; every other pipe is untouched. */
+/**
+ * Sets the status of the model's whole DYNASTY on ONE pipe: every name chat-service accepts
+ * for that dynasty gets the same status, reason, author and instant, in one transaction.
+ * Every other pipe is untouched.
+ */
 export async function setModelStatus(entry: ChatModelEntry, pipe: ModelPipe, change: StatusChange): Promise<ModelStatusEntry> {
   const { model, provider, dynasty } = entry;
+  const names = dynastyMembers(await listChatModels(), entry);
   const set = { status: change.status, statusReason: change.reason, statusChangedBy: change.changedBy, statusChangedAt: new Date() };
-  const [row] = await db
-    .insert(modelPipeStatuses)
-    .values({ model, featureSlug: pipe.featureSlug, legKey: pipe.legKey, ...set })
-    .onConflictDoUpdate({ target: [modelPipeStatuses.model, modelPipeStatuses.featureSlug, modelPipeStatuses.legKey], set })
-    .returning();
-  const all = await db
-    .select()
-    .from(modelPipeStatuses)
-    .where(eq(modelPipeStatuses.model, model))
-    .orderBy(asc(modelPipeStatuses.statusChangedAt));
-  return { model, provider, dynasty, ...servedStatus(row), pipe, pipeStatuses: all.map(toPipeStatus) };
+  await db.transaction(async (tx) => {
+    for (const name of names) {
+      await tx
+        .insert(modelPipeStatuses)
+        .values({ model: name, featureSlug: pipe.featureSlug, legKey: pipe.legKey, ...set })
+        .onConflictDoUpdate({ target: [modelPipeStatuses.model, modelPipeStatuses.featureSlug, modelPipeStatuses.legKey], set });
+    }
+  });
+  const own = effectiveDynastyPipeRows([...(await listChatModels()), entry], await readPipeRows()).get(dynastyKey(entry)) ?? [];
+  const onPipe = own.find((r) => r.featureSlug === pipe.featureSlug && r.legKey === pipe.legKey)!;
+  return { model, provider, dynasty, ...servedStatus(onPipe), pipe, pipeStatuses: own.map(toPipeStatus) };
+}
+
+/**
+ * Writes the rows a split dynasty is missing (a name chat-service added since, rows written
+ * one name at a time before LLM-DYNASTY-DEPRECATE-1025): each name gets its dynasty's most
+ * recent change on each pipe. Idempotent; returns the number of rows written.
+ */
+export async function alignModelDynastyStatuses(): Promise<number> {
+  const [catalogue, rows] = await Promise.all([listChatModels(), readPipeRows()]);
+  const writes = dynastyStatusAlignment(catalogue, rows);
+  if (writes.length === 0) return 0;
+  await db.transaction(async (tx) => {
+    for (const w of writes) {
+      const set = { status: w.status, statusReason: w.statusReason, statusChangedBy: w.statusChangedBy, statusChangedAt: w.statusChangedAt };
+      await tx
+        .insert(modelPipeStatuses)
+        .values({ model: w.model, featureSlug: w.featureSlug, legKey: w.legKey, ...set })
+        .onConflictDoUpdate({ target: [modelPipeStatuses.model, modelPipeStatuses.featureSlug, modelPipeStatuses.legKey], set });
+    }
+  });
+  return writes.length;
 }
 
 export interface TemplateStatusEntry extends ServedStatus {
