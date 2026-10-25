@@ -62,6 +62,8 @@ async function json<T>(res: Response, what: string): Promise<T> {
 /** The `message_written` consumptions declared on these runs (paged, ≤ 500 runs a call). */
 async function consumptionsOf(runIds: string[]): Promise<SiblingConsumption[]> {
   const out: SiblingConsumption[] = [];
+  // Never an empty runIds: the door would then serve every consumption of the key.
+  if (runIds.length === 0) return out;
   for (let i = 0; i < runIds.length; i += 500) {
     let cursor: string | null = null;
     do {
@@ -92,9 +94,13 @@ async function decide(row: UnhandledGeneration): Promise<SiblingDecision & { wri
     writerCount += page.runs.length;
   }
   if (writerCount !== 1) return { kind: "skip", reason: `parent holds ${writerCount > 1 ? "2+" : writerCount} writers` };
-  const children = await json<{ runs: TreeRun[] }>(await runs(`/v1/runs?parentRunId=${p}`, { headers: org }), "GET /v1/runs children");
-  const siblings = children.runs.filter((c) => c.id !== w).map((c) => c.id);
-  const decision = writerSubjectFromSiblings(w, children.runs, siblings.length ? await consumptionsOf(siblings) : []);
+  // P's children across orgs: in Feb-Mar 2026 the sends of one email sit under another org id than
+  // our writer (per-service org ids of that time), and GET /v1/runs?parentRunId= is org-scoped. GET
+  // /v1/runs/:id serves the whole tree; the writer count is taken again on it (the gate above saw one org).
+  const tree = await json<{ descendantRuns: Array<TreeRun & { parentRunId: string | null }> }>(await runs(`/v1/runs/${p}`, { headers: org }), "GET /v1/runs/:parent");
+  const children = tree.descendantRuns.filter((d) => d.parentRunId === run.parentRunId);
+  const siblings = children.filter((c) => c.id !== w).map((c) => c.id);
+  const decision = writerSubjectFromSiblings(w, children, siblings.length ? await consumptionsOf(siblings) : []);
   return { ...decision, writerService: run.serviceName };
 }
 
