@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MAX_WORKFLOW_TREE_RUNS, decideBackfill, ownSubtreeSize, mergeByRun, packBatches, isRetiredFeature, type BackfillRun, type BackfillRow } from "../../src/lib/outcome-backfill.js";
+import { MAX_WORKFLOW_TREE_RUNS, REVISITED_ERROR_PREFIXES, decideBackfill, ownSubtreeSize, mergeByRun, packBatches, isRetiredFeature, recordedLeadEmail, type BackfillRun, type BackfillRow } from "../../src/lib/outcome-backfill.js";
 
 // COST-BACKFILL-1023-CONTENTGEN: where a past email's declaration goes, read from the run tree.
 // Shape of a pre-P1 email (measured in prod, 2026-08-10): workflow-service's execute-workflow run
@@ -62,19 +62,14 @@ describe("decideBackfill", () => {
 
   it("our run not readable: unreadable with the reason, unless the row is skipped first", () => {
     expect(decideBackfill(row, gen, workflow, "runs-service 500 reading run gen-1")).toEqual({ kind: "unreadable", reason: "runs-service 500 reading run gen-1" });
-    expect(decideBackfill({ ...row, leadId: null }, gen, workflow, "x")).toMatchObject({ reason: "no lead id stored on the email" });
+    expect(decideBackfill({ ...row, leadId: null }, gen, workflow, "x")).toMatchObject({ reason: "no lead id nor address stored on the email" });
   });
 
   it("parent not readable under the email's org: unreadable", () => {
     expect(decideBackfill(row, gen, undefined)).toMatchObject({ kind: "unreadable", reason: "parent run not readable under the email's org" });
   });
 
-  it("Feb-Mar 2026: the service paid Anthropic on its own run, the declaration goes there (even under a campaign run)", () => {
-    const underCampaign = run("gen-1", "camp-run", "content-generation-service", "single-generation", [
-      { costName: "anthropic-sonnet-4.6-tokens-input", quantity: 3000, totalCostInUsdCents: "0.9", status: "actual" },
-    ]);
-    expect(decideBackfill(row, underCampaign, run("camp-run", null, "campaign-service", "c-1"))).toMatchObject({ kind: "declare", runId: "gen-1", via: "own_run" });
-    expect(decideBackfill(row, { ...underCampaign, costs: [] }, run("camp-run", null, "campaign-service", "c-1"))).toMatchObject({ kind: "unreadable" });
+  it("Feb-Mar 2026: the service paid Anthropic on its own run, the declaration goes there", () => {
     const own = run("gen-1", null, "content-generation-service", "single-generation", [
       { costName: "anthropic-sonnet-4.6-tokens-input", quantity: 3000, totalCostInUsdCents: "0.9", status: "actual" },
     ]);
@@ -82,10 +77,46 @@ describe("decideBackfill", () => {
     expect(decideBackfill(row, { ...own, costs: [] }, undefined)).toMatchObject({ kind: "unreadable" });
   });
 
-  it("no lead id: unreadable (never an invented subject); retired product: skipped", () => {
-    expect(decideBackfill({ ...row, leadId: null }, gen, workflow)).toMatchObject({ kind: "unreadable", reason: "no lead id stored on the email" });
-    expect(decideBackfill({ ...row, featureSlug: "pr-cold-email-outreach" }, gen, workflow)).toMatchObject({ kind: "skipped" });
+  it("LEDGER-RESIDUAL-1025: under a campaign's root run, declared on OUR run (never on the root: its whole spend would land on one email)", () => {
+    const camp = run("camp-run", null, "campaign-service", "c-1");
+    expect(decideBackfill(row, run("gen-1", "camp-run", "content-generation-service", "single-generation"), camp)).toEqual({
+      kind: "declare",
+      runId: "gen-1",
+      declaration,
+      via: "own_run_under_campaign",
+    });
+  });
+
+  it("no lead named: unreadable with why (never an invented subject)", () => {
+    expect(decideBackfill({ ...row, leadId: null }, gen, workflow)).toMatchObject({ kind: "unreadable", reason: "no lead id nor address stored on the email" });
+    const why = "lead-service names no lead of the org for the stored address";
+    expect(decideBackfill({ ...row, leadId: null, unnamedReason: why }, gen, workflow)).toMatchObject({ kind: "unreadable", reason: why });
+  });
+
+  it("LEDGER-RESIDUAL-1025: a retired product's email is declared at $0 on OUR run, its spend stays produced none", () => {
+    const retired = { ...row, featureSlug: "pr-cold-email-outreach" };
+    expect(decideBackfill(retired, gen, workflow)).toEqual({ kind: "declare", runId: "gen-1", declaration, via: "own_run_retired" });
+    // Our run holding its spend: declaring there would put the retired spend on the email.
+    const spent = { ...gen, costs: [{ costName: "anthropic-x", quantity: 1, totalCostInUsdCents: "0.5", status: "actual" }] };
+    expect(decideBackfill(retired, spent, workflow)).toMatchObject({ kind: "unreadable" });
     expect(isRetiredFeature("sales-cold-email-outreach")).toBe(false);
+  });
+
+  it("no decision writes a mark the revisit reads again (a replay reads nothing)", () => {
+    const reasons = [
+      decideBackfill({ ...row, leadId: null }, gen, workflow),
+      decideBackfill(row, gen, run("wf-1", null, "content-generation-service", "staff-dry-run-preview-no-send")),
+      decideBackfill(row, gen, undefined),
+      decideBackfill({ ...row, featureSlug: "pr-x" }, { ...gen, costs: [{ costName: "a", quantity: 1, totalCostInUsdCents: 1 }] }, workflow),
+    ].map((d) => (d.kind === "declare" ? "" : `backfill: ${d.reason}`));
+    for (const r of reasons) expect(REVISITED_ERROR_PREFIXES.some((p) => r.startsWith(p))).toBe(false);
+  });
+
+  it("recordedLeadEmail: the address the request stored, or null", () => {
+    expect(recordedLeadEmail({ leadEmail: " Ann@Acme.com " })).toBe("Ann@Acme.com");
+    expect(recordedLeadEmail({ leadEmail: "" })).toBeNull();
+    expect(recordedLeadEmail({ leadEmail: "n/a" })).toBeNull();
+    expect(recordedLeadEmail(null)).toBeNull();
   });
 
   it("company checked (a yes/no verdict): company_researched consumed too, as P1 declares", () => {
