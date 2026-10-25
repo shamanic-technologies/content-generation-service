@@ -28,6 +28,7 @@ import industryDebriefVideoRoutes from "./routes/industry-debrief-videos.js";
 import { resumeDebriefJobs } from "./lib/debrief/jobs.js";
 import { startOutcomeDeclarationSweep } from "./lib/outcome-declarations.js";
 import { startCompletionRunSweep } from "./lib/completion-run-sweep.js";
+import { alignModelDynastyStatuses } from "./lib/catalogue-status-query.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -123,6 +124,10 @@ if (process.env.NODE_ENV !== "test") {
         startOutcomeDeclarationSweep();
         // Each generation is matched to the completion run(s) that wrote it (MODEL-RUN-COST-1024-CG).
         startCompletionRunSweep();
+        // A writer model's status on a pipe is its dynasty's: align any split rows (LLM-DYNASTY-DEPRECATE-1025).
+        alignModelDynastyStatuses()
+          .then((n) => console.log(`[catalogue-status] model dynasty statuses aligned: ${n} row(s) written`))
+          .catch((err) => console.error("[catalogue-status] model dynasty status alignment at boot failed:", err));
       });
     })
     .catch((err) => {
