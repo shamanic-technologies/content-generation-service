@@ -1,15 +1,22 @@
 import { sql } from "../db/index.js";
 import {
   decideBackfill,
-  isRetiredFeature,
+  recordedLeadEmail,
   mergeByRun,
   packBatches,
   type BackfillDecision,
   type BackfillRun,
   type BatchRunEntry,
 } from "../lib/outcome-backfill.js";
+import { resolveLeadIdsByEmail } from "../lib/lead-client.js";
 import { messageFromStep } from "../lib/pipe-from-step.js";
-import { cursorAfter, readUnhandledGenerations, type GenerationCursor, type UnhandledGeneration } from "../lib/outcome-backfill-query.js";
+import {
+  cursorAfter,
+  readRevisitedGenerations,
+  readUnhandledGenerations,
+  type GenerationCursor,
+  type UnhandledGeneration,
+} from "../lib/outcome-backfill-query.js";
 
 /**
  * One-shot backfill (COST-BACKFILL-1023-CONTENTGEN): declares `message_written` on the past run that
@@ -26,6 +33,12 @@ import { cursorAfter, readUnhandledGenerations, type GenerationCursor, type Unha
  * so a re-run reads nothing new and writes nothing. runs-service itself answers a replay
  * `already_recorded`. A marked row never reaches the P1 sweep (it needs `outcomes` set and both
  * marks empty).
+ *
+ * LEDGER-RESIDUAL-1025: after the unmarked rows, the rows the first pass marked with a reason its
+ * rules no longer give (`REVISITED_ERROR_PREFIXES`) are decided again: retired-product emails are
+ * declared at $0 on our run, emails written under a campaign's root run on our run, and an email
+ * stored with no lead id but with the recipient's address is named by lead-service's resolver
+ * (org + brands + that address; no answer = stays undeclared, marked with why).
  */
 
 const RUNS_URL = process.env.RUNS_SERVICE_URL || "https://runs.mcpfactory.org";
@@ -97,13 +110,35 @@ async function fetchRuns(orgId: string, runIds: string[], unreadable: Map<string
   return out;
 }
 
+/** The lead each row names: its stored lead id, else the lead its stored address resolves to (lead-service). */
+async function leadsOf(rows: Row[]): Promise<Map<string, { leadId: string | null; unnamedReason?: string }>> {
+  const out = new Map<string, { leadId: string | null; unnamedReason?: string }>();
+  const toResolve: Array<{ row: Row; email: string }> = [];
+  for (const r of rows) {
+    if (r.lead_id?.trim()) out.set(r.id, { leadId: r.lead_id });
+    else {
+      const email = recordedLeadEmail(r.variables_raw);
+      if (email) toResolve.push({ row: r, email });
+      else out.set(r.id, { leadId: null, unnamedReason: "no lead id nor address stored on the email" });
+    }
+  }
+  if (toResolve.length > 0) {
+    const ids = await resolveLeadIdsByEmail(toResolve.map(({ row, email }) => ({ orgId: row.org_id, brandIds: row.brand_ids ?? [], email })));
+    toResolve.forEach(({ row }, i) =>
+      out.set(row.id, ids[i] ? { leadId: ids[i] } : { leadId: null, unnamedReason: "lead-service names no lead of the org for the stored address" }),
+    );
+  }
+  return out;
+}
+
 async function decideChunk(rows: Row[]): Promise<Map<string, BackfillDecision>> {
   const decisions = new Map<string, BackfillDecision>();
+  const leads = await leadsOf(rows);
   const byOrg = new Map<string, Row[]>();
   for (const r of rows) byOrg.set(r.org_id, [...(byOrg.get(r.org_id) ?? []), r]);
   for (const [orgId, orgRows] of byOrg) {
-    // A row that can never be declared (retired product, no lead) needs no run read.
-    const readable = orgRows.filter((r) => !isRetiredFeature(r.feature_slug) && !!r.lead_id?.trim());
+    // A row naming no lead can never be declared: no run read.
+    const readable = orgRows.filter((r) => !!leads.get(r.id)?.leadId);
     const unreadable = new Map<string, string>();
     const genRuns = await fetchRuns(orgId, [...new Set(readable.map((r) => r.generation_run_id))], unreadable);
     const parentIds = [...new Set([...genRuns.values()].map((r) => r.parentRunId).filter((p): p is string => !!p))];
@@ -118,6 +153,8 @@ async function decideChunk(rows: Row[]): Promise<Map<string, BackfillDecision>> 
     }
     for (const row of orgRows) {
       const pipeFromStep = fromStepOf.get(row.campaign_id ?? "") ?? null;
+      const lead = leads.get(row.id)!;
+      const backfillRow = { id: row.id, leadId: lead.leadId, unnamedReason: lead.unnamedReason, featureSlug: row.feature_slug, variables: row.variables_raw, pipeFromStep };
       const gen = genRuns.get(row.generation_run_id);
       const failed = unreadable.get(row.generation_run_id) ?? (gen?.parentRunId ? unreadable.get(gen.parentRunId) : undefined);
       if (failed) {
@@ -126,7 +163,7 @@ async function decideChunk(rows: Row[]): Promise<Map<string, BackfillDecision>> 
       }
       if (!gen) {
         decisions.set(row.id, decideBackfill(
-          { id: row.id, leadId: row.lead_id, featureSlug: row.feature_slug, variables: row.variables_raw, pipeFromStep },
+          backfillRow,
           { id: row.generation_run_id, parentRunId: null, serviceName: "", taskName: "", startedAt: "", costs: [] },
           undefined,
           "generation run not readable under the email's org",
@@ -134,7 +171,7 @@ async function decideChunk(rows: Row[]): Promise<Map<string, BackfillDecision>> 
         continue;
       }
       const parent = gen.parentRunId ? parents.get(gen.parentRunId) : undefined;
-      decisions.set(row.id, decideBackfill({ id: row.id, leadId: row.lead_id, featureSlug: row.feature_slug, variables: row.variables_raw, pipeFromStep }, gen, parent));
+      decisions.set(row.id, decideBackfill(backfillRow, gen, parent));
     }
   }
   return decisions;
@@ -144,7 +181,7 @@ async function decideChunk(rows: Row[]): Promise<Map<string, BackfillDecision>> 
 async function declare(entries: BatchRunEntry[]): Promise<{ declared: Set<string>; refused: Map<string, string> }> {
   const declared = new Set<string>();
   const refused = new Map<string, string>();
-  for (const batch of packBatches(entries)) {
+  const send = async (batch: BatchRunEntry[]): Promise<void> => {
     let pending = batch;
     while (pending.length > 0) {
       const res = await runsFetch("/v1/platform-runs/outcomes/batch", {
@@ -164,6 +201,17 @@ async function declare(entries: BatchRunEntry[]): Promise<{ declared: Set<string
           return null;
         }
       })();
+      // A run marked support produces nothing (409 run_marked_support, naming no run): split down to it.
+      if (res.status === 409 && body?.error === "run_marked_support") {
+        if (pending.length === 1) {
+          refused.set(pending[0].runId, "backfill: runs-service refused (run_marked_support)");
+          return;
+        }
+        const half = Math.ceil(pending.length / 2);
+        await send(pending.slice(0, half));
+        await send(pending.slice(half));
+        return;
+      }
       const bad: Array<{ runId: string; reason?: string }> =
         res.status === 422 ? body?.details?.invalid ?? [] : res.status === 409 ? (body?.conflicts ?? []).map((c: { runId: string }) => ({ runId: c.runId, reason: "conflict" })) : [];
       if (bad.length === 0) throw new Error(`runs-service outcomes/batch ${res.status}: ${text.slice(0, 1000)}`);
@@ -171,7 +219,8 @@ async function declare(entries: BatchRunEntry[]): Promise<{ declared: Set<string
       for (const [runId, reason] of badRuns) refused.set(runId, `backfill: runs-service refused (${reason})`);
       pending = pending.filter((e) => !badRuns.has(e.runId));
     }
-  }
+  };
+  for (const batch of packBatches(entries)) await send(batch);
   return { declared, refused };
 }
 
@@ -181,9 +230,14 @@ async function main() {
   const add = (key: string) => totals.set(key, (totals.get(key) ?? 0) + 1);
   const runsDeclared: string[] = [];
 
+  for (const [phase, read] of [
+    ["unmarked", readUnhandledGenerations],
+    ["revisited (LEDGER-RESIDUAL-1025)", readRevisitedGenerations],
+  ] as const) {
+  console.log(`[backfill] phase: ${phase}`);
   let cursor: GenerationCursor | null = null;
   for (;;) {
-    const rows: Row[] = await readUnhandledGenerations(cursor, CHUNK);
+    const rows: Row[] = await read(cursor, CHUNK);
     if (rows.length === 0) break;
     cursor = cursorAfter(rows);
     const upTo = cursor.createdAt;
@@ -211,7 +265,7 @@ async function main() {
     let marked = 0;
     for (const t of toDeclare) {
       if (declared.has(t.runId)) {
-        await sql`UPDATE email_generations SET outcomes = ${JSON.stringify(t.declaration.declaration)}::jsonb, outcomes_declared_at = now(), outcomes_run_id = ${t.runId} WHERE id = ${t.rowId}::uuid`;
+        await sql`UPDATE email_generations SET outcomes = ${JSON.stringify(t.declaration.declaration)}::jsonb, outcomes_declared_at = now(), outcomes_run_id = ${t.runId}, outcomes_error = NULL WHERE id = ${t.rowId}::uuid`;
         marked++;
       } else if (refused.has(t.runId)) errors.set(t.rowId, refused.get(t.runId)!);
     }
@@ -219,6 +273,7 @@ async function main() {
       await sql`UPDATE email_generations SET outcomes_error = ${reason.slice(0, 1000)} WHERE id = ${id}::uuid`;
     }
     console.log(`[backfill] up to ${upTo}: declared ${marked} emails on ${declared.size} runs, refused runs ${refused.size}, unreadable/skipped ${errors.size}`);
+  }
   }
 
   console.log(`${apply ? "APPLIED" : "DRY RUN"}: emails per decision (${new Set(runsDeclared).size} distinct runs to declare on)`);

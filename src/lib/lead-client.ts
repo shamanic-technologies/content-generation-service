@@ -103,3 +103,39 @@ function readBusinessLanguages(body: unknown): string[] {
     (l): l is string => typeof l === "string" && l.trim().length > 0
   );
 }
+
+/**
+ * Which lead each stored address is, per org (+ brands), as lead-service answers it
+ * (`POST /internal/leads/ids/resolve`, read only, up to 1000 per call, same order). Used by the
+ * past-email backfill (LEDGER-RESIDUAL-1025) for emails written before the request carried a lead
+ * id: the address the request stored names the lead, nothing is guessed. `null` = not a lead of
+ * that org (or several on that address). Throws on any failure: a row is never marked on a guess.
+ */
+export async function resolveLeadIdsByEmail(
+  people: Array<{ orgId: string; brandIds: string[]; email: string }>,
+): Promise<Array<string | null>> {
+  const out: Array<string | null> = [];
+  for (let i = 0; i < people.length; i += 1000) {
+    const chunk = people.slice(i, i + 1000).map((p) => ({
+      orgId: p.orgId,
+      email: p.email,
+      ...(p.brandIds.length > 0 ? { brandIds: p.brandIds.slice(0, 50) } : {}),
+    }));
+    const response = await fetchWithRetry(
+      `${LEAD_SERVICE_URL}/internal/leads/ids/resolve`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Api-Key": LEAD_SERVICE_API_KEY },
+        body: JSON.stringify({ people: chunk }),
+      },
+      { label: "lead-service POST /internal/leads/ids/resolve" },
+    );
+    if (!response.ok) throw new Error(`lead-service POST /internal/leads/ids/resolve ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    const body = (await response.json()) as { people?: Array<{ leadId: string | null }> };
+    if (!Array.isArray(body.people) || body.people.length !== chunk.length) {
+      throw new Error(`lead-service POST /internal/leads/ids/resolve answered ${body.people?.length ?? "no"} people for ${chunk.length}`);
+    }
+    out.push(...body.people.map((p) => (typeof p.leadId === "string" && p.leadId.trim() ? p.leadId : null)));
+  }
+  return out;
+}
