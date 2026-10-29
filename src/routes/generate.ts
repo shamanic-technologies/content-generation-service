@@ -430,7 +430,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     const existing = await answeredGeneration(req, data, scope);
     if (existing) return res.json(toGenerationResponse(existing));
 
-    if (data.written !== undefined) return await recordWrittenByScript(req, res, data, scope);
+    if (data.written !== undefined && data.written !== null) return await recordWrittenByScript(req, res, data, scope);
 
     const m = await writingMaterials(req, data, scope);
     if (!m) return res.status(404).json(noPrompt(type));
