@@ -337,6 +337,13 @@
       "when": 1780685700000,
       "tag": "0047_debrief_video_outcomes",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1780685800000,
+      "tag": "0048_generation_chat_request",
+      "breakpoints": true
     }
   ]
 }

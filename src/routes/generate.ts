@@ -29,6 +29,7 @@ import {
 import { traceEvent } from "../lib/trace-event.js";
 import { findGenerationForLead } from "../lib/lead-generation-query.js";
 import { withResolvedBody } from "../lib/generation-body.js";
+import { RECORDED_REQUEST_COLUMNS_OFF } from "../lib/recorded-request.js";
 import { withSequenceDelays, IncompleteSequenceError } from "../lib/sequence-delays.js";
 import { ClientCommsVoiceError } from "../lib/client-comms-voice.js";
 import { ChatModelCatalogueError, UnknownModelError, resolveChatModel } from "../lib/chat-model-catalogue.js";
@@ -347,6 +348,9 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       tokensOutput: result.tokensOutput,
       promptRaw: result.promptRaw,
       responseRaw: result.responseRaw,
+      // The exact chat-service request + its inputs, in the SAME insert (FACTORY-P3-RECORD-SYSTEM-PROMPT).
+      chatRequest: result.chatRequest,
+      chatRequestInputs: result.chatRequestInputs,
       workflowSlug: workflowSlug ?? null,
       featureSlug: featureSlug ?? null,
       audienceId: audienceId ?? null,
@@ -610,6 +614,7 @@ router.get("/generations", serviceAuth, async (req: AuthenticatedRequest, res) =
     const fetchLimit = paginated ? limit : MAX_GENERATIONS_PER_RESPONSE + 1;
 
     const generations = await db.query.emailGenerations.findMany({
+      columns: RECORDED_REQUEST_COLUMNS_OFF,
       where: and(...conditions),
       orderBy: (gens, { desc }) => [desc(gens.createdAt)],
       limit: fetchLimit,
@@ -699,6 +704,7 @@ router.get("/generations/by-enrichment/:apolloEnrichmentId", serviceAuth, async 
     const { apolloEnrichmentId } = req.params;
 
     const generation = await db.query.emailGenerations.findFirst({
+      columns: RECORDED_REQUEST_COLUMNS_OFF,
       where: (gens, { eq, and }) =>
         and(
           eq(gens.apolloEnrichmentId, apolloEnrichmentId),

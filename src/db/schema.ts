@@ -60,6 +60,14 @@ export const emailGenerations = pgTable(
     promptRaw: text("prompt_raw"),
     responseRaw: jsonb("response_raw"),
 
+    // The exact chat-service /complete body sent (message, systemPrompt, responseSchema, provider,
+    // model) + what it was built from beyond variables_raw (template text, campaign context, language,
+    // give lists, instruction, client-comms voice). FACTORY-P3-RECORD-SYSTEM-PROMPT (drizzle/0048):
+    // NULL on rows written before. Served only by GET /internal/generations/recorded; whole-row reads
+    // exclude both (RECORDED_REQUEST_COLUMNS_OFF, src/lib/recorded-request.ts).
+    chatRequest: jsonb("chat_request"),
+    chatRequestInputs: jsonb("chat_request_inputs"),
+
     // Workflow tracking
     workflowSlug: text("workflow_slug"),
     featureSlug: text("feature_slug"),

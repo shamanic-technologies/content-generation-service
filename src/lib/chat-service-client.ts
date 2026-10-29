@@ -64,6 +64,34 @@ export interface SequenceStep {
   daysSinceLastStep: number;
 }
 
+/**
+ * The exact body this service POSTs to chat-service `/complete` for an email (every attempt sends
+ * these same bytes). Stored on the generation row (`chat_request`, FACTORY-P3-RECORD-SYSTEM-PROMPT)
+ * so a port of the writer can be proven on the system prompt too, not only the user prompt.
+ */
+export interface ChatCompleteRequest {
+  message: string;
+  systemPrompt: string;
+  responseSchema: object;
+  provider: ChatProvider;
+  model: ChatModel;
+}
+
+/**
+ * What the request was BUILT from beyond `variables` (already stored as `variables_raw`): the template
+ * text as read, the campaign context, and every input of the system prompt. Stored as
+ * `chat_request_inputs` so a recorded case holds the inputs a port starts from, not only the result.
+ */
+export interface ChatRequestInputs {
+  promptTemplate: string;
+  campaignContext: Record<string, unknown> | null;
+  language: string | null;
+  giveLists: OfferGiveLists | null;
+  instruction: string | null;
+  /** Our client-comms voice exactly as read for this generation (it is read live, no copy). */
+  clientCommsVoice: string;
+}
+
 export interface GenerateResult {
   subject: string;
   sequence: SequenceStep[];
@@ -72,6 +100,8 @@ export interface GenerateResult {
   model: string;
   promptRaw: string;
   responseRaw: object;
+  chatRequest: ChatCompleteRequest;
+  chatRequestInputs: ChatRequestInputs;
 }
 
 /**
@@ -432,13 +462,15 @@ export async function generateFromTemplate(
   const responseSchema =
     provider === "anthropic" ? GENERATE_RESPONSE_SCHEMA_STRICT : GENERATE_RESPONSE_SCHEMA;
 
-  const requestBody = JSON.stringify({
+  const chatRequest: ChatCompleteRequest = {
     message: prompt,
     systemPrompt,
     responseSchema,
     provider,
     model,
-  });
+  };
+  // The bytes sent ARE the stored request: one object, serialized once.
+  const requestBody = JSON.stringify(chatRequest);
 
   // Tokens of every attempt that returned a completion, so the stored figures
   // cover the unusable answer too (an invalid-JSON 502 reports none).
@@ -494,6 +526,15 @@ export async function generateFromTemplate(
     model: data.model,
     promptRaw: prompt,
     responseRaw: data,
+    chatRequest: JSON.parse(requestBody) as ChatCompleteRequest,
+    chatRequestInputs: {
+      promptTemplate: params.promptTemplate,
+      campaignContext: params.campaignContext ?? null,
+      language: params.language ?? null,
+      giveLists: params.giveLists ?? null,
+      instruction: params.instruction ?? null,
+      clientCommsVoice: voice,
+    },
   };
 }
 

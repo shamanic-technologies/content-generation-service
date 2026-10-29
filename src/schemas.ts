@@ -1744,6 +1744,123 @@ registry.registerPath({
   },
 });
 
+// ---------------------------------------------------------------------------
+// GET /internal/generations/recorded — recorded chat-service requests (src/lib/recorded-generations-query.ts)
+// FACTORY-P3-RECORD-SYSTEM-PROMPT: workflow-service's case recorder reads it.
+// ---------------------------------------------------------------------------
+export const RECORDED_GENERATIONS_MAX_LIMIT = 100;
+
+const isoInstant = z
+  .string()
+  .refine((v) => !Number.isNaN(Date.parse(v)), { message: "must be an ISO 8601 instant" });
+
+export const RecordedGenerationsQuerySchema = z
+  .object({
+    from: isoInstant.optional().describe("Window start, inclusive (ISO 8601). Required unless `runId` is given."),
+    to: isoInstant.optional().describe("Window end, exclusive (ISO 8601). Omitted = now (minus the 60 s settle)."),
+    runId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Only the generation(s) of this run: the caller's run (`runId`) or this service's own generation run (`generationRunId`)."),
+    cursor: z.string().min(1).optional().describe("Opaque cursor returned as `nextCursor` by the previous page."),
+    limit: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(RECORDED_GENERATIONS_MAX_LIMIT)
+      .optional()
+      .describe(`Page size, 1..${RECORDED_GENERATIONS_MAX_LIMIT}. Omitted = 50 (an entry is ~60 KB).`),
+  })
+  .openapi("RecordedGenerationsQuery");
+
+const RecordedChatRequestSchema = z
+  .object({
+    message: z.string().describe("The user prompt: template with variables substituted, preceded by the context blocks."),
+    systemPrompt: z
+      .string()
+      .describe("The system prompt: universal rules, client-comms voice, then language, give lists, campaign instruction, relationship strategy when present."),
+    responseSchema: z.record(z.string(), z.unknown()).describe("JSON schema of the answer (strict variant for anthropic)."),
+    provider: z.string().describe("Provider read from chat-service's model catalogue."),
+    model: z.string().describe("The model name ASKED (dynasty slug, alias or id), as sent."),
+  })
+  .passthrough()
+  .describe("The exact body POSTed to chat-service `/complete` (every attempt sends these same bytes). Nothing else is sent but identity headers.");
+
+const RecordedChatRequestInputsSchema = z
+  .object({
+    promptTemplate: z.string().describe("The template text as read for this generation (`promptType`)."),
+    campaignContext: z.record(z.string(), z.unknown()).nullable().describe("The campaign's feature inputs rendered as the `## Campaign Context` block, or null."),
+    language: z.string().nullable().describe("Language directive name (e.g. `German`); null = English, no directive."),
+    giveLists: z
+      .object({ giveForFree: z.array(z.string()), neverGive: z.array(z.string()) })
+      .nullable()
+      .describe("The offer's confirmed give lists as read, or null."),
+    instruction: z.string().nullable().describe("The campaign instruction, or null."),
+    clientCommsVoice: z.string().describe("Our client-comms voice exactly as read from chat-service for this generation."),
+  })
+  .describe("What the request was built from beyond `variables`.");
+
+const RecordedGenerationSchema = z.object({
+  generationId: z.string().uuid(),
+  createdAt: z.string().describe("ISO 8601."),
+  orgId: z.string(),
+  brandIds: z.array(z.string()),
+  campaignId: z.string().describe("\"\" when the request named no campaign."),
+  leadId: z.string().nullable(),
+  runId: z.string().describe("The caller's run (workflow-service execute run)."),
+  generationRunId: z.string().nullable().describe("This service's own generation run, parent of the chat-service completion."),
+  featureSlug: z.string().nullable(),
+  workflowSlug: z.string().nullable(),
+  promptType: z.string().nullable().describe("Exact template version used (the dynasty head the workflow resolved)."),
+  model: z.string().describe("The CONCRETE model id chat-service answered with (`request.model` is what was asked)."),
+  tokensInput: z.number().int().nullable(),
+  tokensOutput: z.number().int().nullable(),
+  variables: z.record(z.string(), z.unknown()).describe("The `/generate` variables as received."),
+  request: RecordedChatRequestSchema,
+  inputs: RecordedChatRequestInputsSchema,
+  response: z.record(z.string(), z.unknown()).describe("chat-service's answer (last attempt), verbatim: content, json, tokens, model."),
+  output: z.object({
+    subject: z.string().nullable(),
+    sequence: z.array(z.record(z.string(), z.unknown())).describe("Stored and served steps: step, bodyText, bodyHtml, daysSinceLastStep."),
+  }),
+});
+
+const RecordedGenerationsResponseSchema = registry.register(
+  "RecordedGenerationsResponse",
+  z
+    .object({
+      generations: z.array(RecordedGenerationSchema).describe("Oldest first, in write order."),
+      nextCursor: z.string().nullable().describe("Pass as `cursor` with the same filters. Equals the input cursor when nothing new arrived."),
+      hasMore: z.boolean().describe("true = another page is ready now."),
+    })
+    .openapi("RecordedGenerationsResponse")
+);
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/generations/recorded",
+  tags: ["Internal"],
+  summary: "Email generations with the exact chat-service request each one sent",
+  description:
+    "Every email generation written since the request was recorded (FACTORY-P3-RECORD-SYSTEM-PROMPT), every org, oldest first, " +
+    "in a time window or for one run: the variables received, the exact `/complete` body (system prompt, user prompt, response schema, " +
+    "provider, model asked), what it was built from, chat-service's answer and the stored subject + sequence. Generations written " +
+    "before recording started are not served. API key only, no identity headers (staff/service read: carries personal data, never log it). " +
+    "A generation becomes visible ~60 s after it is written.",
+  request: { query: RecordedGenerationsQuerySchema },
+  responses: {
+    200: {
+      description: "A page of recorded generations",
+      content: { "application/json": { schema: RecordedGenerationsResponseSchema } },
+    },
+    400: {
+      description: "Neither from nor runId, bad instant, bad limit, or a cursor this service did not issue",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // ─── Industry debrief video (src/lib/debrief/) ──────────────────────────────
 
 const DebriefPostSchema = z
