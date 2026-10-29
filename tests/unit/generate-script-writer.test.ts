@@ -171,7 +171,8 @@ describe("POST /generate/materials + /generate with written (script writer)", ()
     mockGenFindFirst.mockResolvedValue(stored);
     const m = (await request(app).post("/generate/materials").send(body).expect(200)).body;
     expect(m).toEqual({ existing: stored, subject: null, units: null, tactics: null });
-    const res = await request(app).post("/generate").send(body).expect(200);
+    // The skipped script step answers null: /generate still returns the stored email.
+    const res = await request(app).post("/generate").send({ ...body, written: null, units: null }).expect(200);
     expect(res.body).toEqual(stored);
     expect(mockValues).not.toHaveBeenCalled();
     expect(completeCalls()).toHaveLength(0);

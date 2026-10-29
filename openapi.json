@@ -436,13 +436,15 @@
           },
           "written": {
             "type": "object",
+            "nullable": true,
             "additionalProperties": {
               "nullable": true
             },
-            "description": "FACTORY-P3 script writer: workflow-service's `POST /orgs/scripts/run` answer (run with `trace: true`, `recordedBy: \"content-generation\"`) for the script `message_written/dy_template_writer_full`. When present, /generate does NOT call the LLM: it stores the email the script wrote (same row, prompt_raw, response_raw, chat_request + inputs, generation_run_id = the script's run) and declares its ONE `message_written` on that run. Requires `units`. A request already answered (idempotency key, the lead's email for this campaign) returns the stored email, as always."
+            "description": "FACTORY-P3 script writer: workflow-service's `POST /orgs/scripts/run` answer (run with `trace: true`, `recordedBy: \"content-generation\"`) for the script `message_written/dy_template_writer_full`. When present, /generate does NOT call the LLM: it stores the email the script wrote (same row, prompt_raw, response_raw, chat_request + inputs, generation_run_id = the script's run) and declares its ONE `message_written` on that run. Requires `units`. `null` = absent (a skipped script step answers null). A request already answered (idempotency key, the lead's email for this campaign) returns the stored email, as always."
           },
           "units": {
             "type": "object",
+            "nullable": true,
             "additionalProperties": {
               "nullable": true
             },
