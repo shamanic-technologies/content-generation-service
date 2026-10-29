@@ -433,6 +433,20 @@
           "offerId": {
             "type": "string",
             "description": "The campaign's offer id. Forwarded to brand-service on the extract-fields request, which refuses brand-scoped reads for a brand selling several offers until one is named. Body only — there is no header fallback. Sent only when a single brand is named; ignored for a multi-brand request, which brand-service rejects with an offer."
+          },
+          "written": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "description": "FACTORY-P3 script writer: workflow-service's `POST /orgs/scripts/run` answer (run with `trace: true`, `recordedBy: \"content-generation\"`) for the script `message_written/dy_template_writer_full`. When present, /generate does NOT call the LLM: it stores the email the script wrote (same row, prompt_raw, response_raw, chat_request + inputs, generation_run_id = the script's run) and declares its ONE `message_written` on that run. Requires `units`. A request already answered (idempotency key, the lead's email for this campaign) returns the stored email, as always."
+          },
+          "units": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "description": "The materials the script writer was handed: `POST /generate/materials`'s `units`, verbatim. Read with `written`."
           }
         },
         "required": [
@@ -488,6 +502,78 @@
           "sequence",
           "tokensInput",
           "tokensOutput"
+        ]
+      },
+      "GenerateMaterialsResponse": {
+        "type": "object",
+        "properties": {
+          "existing": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GenerateResponse"
+              },
+              {
+                "nullable": true,
+                "description": "The stored email that already answers this request (idempotency key, or the lead's email for this campaign). When set, skip the script step: /generate returns this email."
+              }
+            ]
+          },
+          "subject": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "service": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "service",
+              "id"
+            ],
+            "description": "The script run's subject: the person's lead (lead-service)."
+          },
+          "units": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {
+              "nullable": true
+            },
+            "description": "The script's materials: lead_identified {variables lead*, language?}, brand_context {variables, campaignContext?, giveLists?, instruction?}, template_written {text}; each `{content}`."
+          },
+          "tactics": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "llm": {
+                "type": "object",
+                "properties": {
+                  "provider": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "provider",
+                  "model"
+                ]
+              }
+            },
+            "required": [
+              "llm"
+            ],
+            "description": "The asked LLM (`model`, default when omitted) and its provider from chat-service's catalogue."
+          }
+        },
+        "required": [
+          "existing",
+          "subject",
+          "units",
+          "tactics"
         ]
       },
       "GenerateExpertQuotePitchRequest": {
@@ -4386,6 +4472,115 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/InsufficientCreditsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Prompt not found for this type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generate/materials": {
+      "post": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "The script writer's materials: everything /generate does before the completion",
+        "description": "Same body as /generate. Runs every step /generate runs BEFORE the LLM call (idempotency and one-email-per-lead hits, the stored template, campaign context, unfilled brand fields, the recipient's language, the offer's give lists, the campaign's instruction) and answers them as the materials of workflow-service's stored script `message_written/dy_template_writer_full`. Writes nothing. Then /generate with `written` + `units` stores what the script wrote.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-workflow-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-feature-slug",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The materials, or the stored email that already answers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateMaterialsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, unknown model, or no leadId",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
