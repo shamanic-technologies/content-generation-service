@@ -1,6 +1,7 @@
 import { eq, and, arrayContains, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations } from "../db/schema.js";
+import { RECORDED_REQUEST_COLUMNS_OFF } from "./recorded-request.js";
 
 /**
  * Scopes a by-lead generation read.
@@ -36,10 +37,11 @@ export async function findGenerationForLead(scope: LeadGenerationScope) {
   if (scope.campaignId) conditions.push(eq(emailGenerations.campaignId, scope.campaignId));
 
   if (!scope.brandId && !scope.campaignId) {
-    return db.query.emailGenerations.findFirst({ where: and(...conditions) });
+    return db.query.emailGenerations.findFirst({ columns: RECORDED_REQUEST_COLUMNS_OFF, where: and(...conditions) });
   }
 
   return db.query.emailGenerations.findFirst({
+    columns: RECORDED_REQUEST_COLUMNS_OFF,
     where: and(...conditions),
     orderBy: (gens, { desc }) => [desc(gens.createdAt)],
   });

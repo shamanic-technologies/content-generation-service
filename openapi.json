@@ -1786,6 +1786,253 @@
           "hasMore"
         ]
       },
+      "RecordedGenerationsResponse": {
+        "type": "object",
+        "properties": {
+          "generations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "generationId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "description": "ISO 8601."
+                },
+                "orgId": {
+                  "type": "string"
+                },
+                "brandIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "campaignId": {
+                  "type": "string",
+                  "description": "\"\" when the request named no campaign."
+                },
+                "leadId": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "runId": {
+                  "type": "string",
+                  "description": "The caller's run (workflow-service execute run)."
+                },
+                "generationRunId": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "This service's own generation run, parent of the chat-service completion."
+                },
+                "featureSlug": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "workflowSlug": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "promptType": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Exact template version used (the dynasty head the workflow resolved)."
+                },
+                "model": {
+                  "type": "string",
+                  "description": "The CONCRETE model id chat-service answered with (`request.model` is what was asked)."
+                },
+                "tokensInput": {
+                  "type": "integer",
+                  "nullable": true
+                },
+                "tokensOutput": {
+                  "type": "integer",
+                  "nullable": true
+                },
+                "variables": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "nullable": true
+                  },
+                  "description": "The `/generate` variables as received."
+                },
+                "request": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "The user prompt: template with variables substituted, preceded by the context blocks."
+                    },
+                    "systemPrompt": {
+                      "type": "string",
+                      "description": "The system prompt: universal rules, client-comms voice, then language, give lists, campaign instruction, relationship strategy when present."
+                    },
+                    "responseSchema": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "nullable": true
+                      },
+                      "description": "JSON schema of the answer (strict variant for anthropic)."
+                    },
+                    "provider": {
+                      "type": "string",
+                      "description": "Provider read from chat-service's model catalogue."
+                    },
+                    "model": {
+                      "type": "string",
+                      "description": "The model name ASKED (dynasty slug, alias or id), as sent."
+                    }
+                  },
+                  "required": [
+                    "message",
+                    "systemPrompt",
+                    "responseSchema",
+                    "provider",
+                    "model"
+                  ],
+                  "additionalProperties": {
+                    "nullable": true
+                  },
+                  "description": "The exact body POSTed to chat-service `/complete` (every attempt sends these same bytes). Nothing else is sent but identity headers."
+                },
+                "inputs": {
+                  "type": "object",
+                  "properties": {
+                    "promptTemplate": {
+                      "type": "string",
+                      "description": "The template text as read for this generation (`promptType`)."
+                    },
+                    "campaignContext": {
+                      "type": "object",
+                      "nullable": true,
+                      "additionalProperties": {
+                        "nullable": true
+                      },
+                      "description": "The campaign's feature inputs rendered as the `## Campaign Context` block, or null."
+                    },
+                    "language": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Language directive name (e.g. `German`); null = English, no directive."
+                    },
+                    "giveLists": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "giveForFree": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "neverGive": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "giveForFree",
+                        "neverGive"
+                      ],
+                      "description": "The offer's confirmed give lists as read, or null."
+                    },
+                    "instruction": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "The campaign instruction, or null."
+                    },
+                    "clientCommsVoice": {
+                      "type": "string",
+                      "description": "Our client-comms voice exactly as read from chat-service for this generation."
+                    }
+                  },
+                  "required": [
+                    "promptTemplate",
+                    "campaignContext",
+                    "language",
+                    "giveLists",
+                    "instruction",
+                    "clientCommsVoice"
+                  ],
+                  "description": "What the request was built from beyond `variables`."
+                },
+                "response": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "nullable": true
+                  },
+                  "description": "chat-service's answer (last attempt), verbatim: content, json, tokens, model."
+                },
+                "output": {
+                  "type": "object",
+                  "properties": {
+                    "subject": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "sequence": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "nullable": true
+                        }
+                      },
+                      "description": "Stored and served steps: step, bodyText, bodyHtml, daysSinceLastStep."
+                    }
+                  },
+                  "required": [
+                    "subject",
+                    "sequence"
+                  ]
+                }
+              },
+              "required": [
+                "generationId",
+                "createdAt",
+                "orgId",
+                "brandIds",
+                "campaignId",
+                "leadId",
+                "runId",
+                "generationRunId",
+                "featureSlug",
+                "workflowSlug",
+                "promptType",
+                "model",
+                "tokensInput",
+                "tokensOutput",
+                "variables",
+                "request",
+                "inputs",
+                "response",
+                "output"
+              ]
+            },
+            "description": "Oldest first, in write order."
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true,
+            "description": "Pass as `cursor` with the same filters. Equals the input cursor when nothing new arrived."
+          },
+          "hasMore": {
+            "type": "boolean",
+            "description": "true = another page is ready now."
+          }
+        },
+        "required": [
+          "generations",
+          "nextCursor",
+          "hasMore"
+        ]
+      },
       "DebriefVideoRequest": {
         "type": "object",
         "properties": {
@@ -5458,6 +5705,93 @@
           },
           "400": {
             "description": "Missing featureSlug, bad limit, or a cursor this service did not issue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/generations/recorded": {
+      "get": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Email generations with the exact chat-service request each one sent",
+        "description": "Every email generation written since the request was recorded (FACTORY-P3-RECORD-SYSTEM-PROMPT), every org, oldest first, in a time window or for one run: the variables received, the exact `/complete` body (system prompt, user prompt, response schema, provider, model asked), what it was built from, chat-service's answer and the stored subject + sequence. Generations written before recording started are not served. API key only, no identity headers (staff/service read: carries personal data, never log it). A generation becomes visible ~60 s after it is written.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Window start, inclusive (ISO 8601). Required unless `runId` is given."
+            },
+            "required": false,
+            "description": "Window start, inclusive (ISO 8601). Required unless `runId` is given.",
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Window end, exclusive (ISO 8601). Omitted = now (minus the 60 s settle)."
+            },
+            "required": false,
+            "description": "Window end, exclusive (ISO 8601). Omitted = now (minus the 60 s settle).",
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Only the generation(s) of this run: the caller's run (`runId`) or this service's own generation run (`generationRunId`)."
+            },
+            "required": false,
+            "description": "Only the generation(s) of this run: the caller's run (`runId`) or this service's own generation run (`generationRunId`).",
+            "name": "runId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Opaque cursor returned as `nextCursor` by the previous page."
+            },
+            "required": false,
+            "description": "Opaque cursor returned as `nextCursor` by the previous page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Page size, 1..100. Omitted = 50 (an entry is ~60 KB)."
+            },
+            "required": false,
+            "description": "Page size, 1..100. Omitted = 50 (an entry is ~60 KB).",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of recorded generations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordedGenerationsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Neither from nor runId, bad instant, bad limit, or a cursor this service did not issue",
             "content": {
               "application/json": {
                 "schema": {
