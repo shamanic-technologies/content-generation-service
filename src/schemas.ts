@@ -583,6 +583,8 @@ export const GenerateRequestSchema = registry.register(
       audienceId: z.string().optional().describe("Audience attribution ID. Falls back to x-audience-id header if omitted."),
       instruction: z.string().max(MAX_INSTRUCTION_LENGTH).nullable().optional().describe("The campaign's own instruction (campaign-service's sales-funnel campaign `instruction`, reported by /start-run; workflow-service threads it into every /generate body). When set, the email is written from it: it outranks the template's angle, pitch and structure, never the output format. Absent, null or blank = the template alone, byte-identical to before."),
       offerId: z.string().optional().describe("The campaign's offer id. Forwarded to brand-service on the extract-fields request, which refuses brand-scoped reads for a brand selling several offers until one is named. Body only — there is no header fallback. Sent only when a single brand is named; ignored for a multi-brand request, which brand-service rejects with an offer."),
+      written: z.record(z.string(), z.unknown()).optional().describe("FACTORY-P3 script writer: workflow-service's `POST /orgs/scripts/run` answer (run with `trace: true`, `recordedBy: \"content-generation\"`) for the script `message_written/dy_template_writer_full`. When present, /generate does NOT call the LLM: it stores the email the script wrote (same row, prompt_raw, response_raw, chat_request + inputs, generation_run_id = the script's run) and declares its ONE `message_written` on that run. Requires `units`. A request already answered (idempotency key, the lead's email for this campaign) returns the stored email, as always."),
+      units: z.record(z.string(), z.unknown()).optional().describe("The materials the script writer was handed: `POST /generate/materials`'s `units`, verbatim. Read with `written`."),
     })
     .openapi("GenerateRequest")
 );
@@ -640,6 +642,42 @@ registry.registerPath({
       description: "Prompt not found for this type",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// POST /generate/materials — the script writer's step materials (FACTORY-P3 fleet writer)
+// ---------------------------------------------------------------------------
+const GenerateMaterialsResponseSchema = registry.register(
+  "GenerateMaterialsResponse",
+  z
+    .object({
+      existing: GenerateResponseSchema.nullable().describe("The stored email that already answers this request (idempotency key, or the lead's email for this campaign). When set, skip the script step: /generate returns this email."),
+      subject: z.object({ service: z.string(), id: z.string() }).nullable().describe("The script run's subject: the person's lead (lead-service)."),
+      units: z.record(z.string(), z.unknown()).nullable().describe("The script's materials: lead_identified {variables lead*, language?}, brand_context {variables, campaignContext?, giveLists?, instruction?}, template_written {text}; each `{content}`."),
+      tactics: z.object({ llm: z.object({ provider: z.string(), model: z.string() }) }).nullable().describe("The asked LLM (`model`, default when omitted) and its provider from chat-service's catalogue."),
+    })
+    .openapi("GenerateMaterialsResponse")
+);
+
+registry.registerPath({
+  method: "post",
+  path: "/generate/materials",
+  tags: ["Content Generation"],
+  summary: "The script writer's materials: everything /generate does before the completion",
+  description:
+    "Same body as /generate. Runs every step /generate runs BEFORE the LLM call (idempotency and one-email-per-lead hits, the stored " +
+    "template, campaign context, unfilled brand fields, the recipient's language, the offer's give lists, the campaign's instruction) and " +
+    "answers them as the materials of workflow-service's stored script `message_written/dy_template_writer_full`. Writes nothing. Then " +
+    "/generate with `written` + `units` stores what the script wrote.",
+  request: {
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
+    body: { required: true, content: { "application/json": { schema: GenerateRequestSchema } } },
+  },
+  responses: {
+    200: { description: "The materials, or the stored email that already answers", content: { "application/json": { schema: GenerateMaterialsResponseSchema } } },
+    400: { description: "Invalid request, unknown model, or no leadId", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "Prompt not found for this type", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });
 
