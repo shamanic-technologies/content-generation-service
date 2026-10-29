@@ -1,5 +1,8 @@
 import { normalizeInstruction } from "../lib/campaign-instruction.js";
 import { Router, type Response, type NextFunction } from "express";
+import type { z } from "zod";
+import { WrittenByScriptError, readWrittenByScript, writerUnits } from "../lib/script-writer.js";
+import { DEFAULT_MODEL } from "../lib/chat-models.js";
 import { eq, and, inArray, arrayContains, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, prompts } from "../db/schema.js";
@@ -9,7 +12,7 @@ import { generateFromTemplate, generateExpertQuotePitchFromTemplate, substituteV
 import { resolveAssignedPromptType } from "../lib/prompt-assignment.js";
 import { assertExpertQuotePitchVariables, ExpertQuotePitchInputError } from "../lib/expert-quote-pitch-template.js";
 import { createRun, updateRun } from "../lib/runs-client.js";
-import { messageWrittenDeclaration } from "../lib/run-outcomes.js";
+import { messageWrittenDeclaration, LEAD_SUBJECT_SERVICE } from "../lib/run-outcomes.js";
 import { messageFromStep } from "../lib/pipe-from-step.js";
 import { declareStoredOutcomes } from "../lib/outcome-declarations.js";
 import { getCampaignFeatureInputs } from "../lib/campaign-client.js";
@@ -86,8 +89,326 @@ function isLeadDuplicateError(err: unknown): boolean {
   return isUniqueViolation(err, "idx_emailgen_lead");
 }
 
+type GenerateBody = z.infer<typeof GenerateRequestSchema>;
+
+/** Who and what one generation request is for (body first, then the identity headers workflow-service sends). */
+function scopeOf(req: AuthenticatedRequest, data: GenerateBody) {
+  // Header values (from workflow-service) serve as fallback when body values are missing
+  const brandIds = data.brandIds?.length ? data.brandIds : (req.brandIds ?? []);
+  // Raw CSV string for identity forwarding to downstream services
+  const brandId = brandIds.length > 0 ? brandIds.join(",") : req.brandId;
+  const campaignId = data.campaignId || req.campaignId;
+  const workflowSlug = data.workflowSlug || req.workflowSlug;
+  const featureSlug = data.featureSlug || req.featureSlug;
+  const audienceId = data.audienceId || req.audienceId;
+  // The campaign's offer — brand-service refuses a brand-scoped extract-fields
+  // request for a brand selling several offers until one is named. Body only:
+  // workflow-service threads it into the request BODY of this callee, never a header.
+  const offerId = data.offerId;
+  const serviceIdentity = { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug, audienceId, offerId };
+  // The campaign a lead's generation is stored under. `campaignId` is nullable on
+  // the wire but the column is NOT NULL, so the insert below normalizes it to "";
+  // the lead lookup must use the same value or it would miss its own rows.
+  const leadCampaignId = campaignId ?? "";
+  return { brandIds, brandId, campaignId, workflowSlug, featureSlug, audienceId, offerId, serviceIdentity, leadCampaignId };
+}
+type GenerateScope = ReturnType<typeof scopeOf>;
+
 /**
- * POST /generate — Generate content using a stored prompt template + variables
+ * The stored generation this request is already answered by, or null: the idempotency key, then the lead's one email
+ * per campaign. Retry recovery: a lead that already has a generation for this campaign gets that email back instead
+ * of a second, billed completion. `idx_emailgen_lead` is UNIQUE on (campaign_id, lead_id) — one email per person per
+ * campaign — so the retry could only ever have produced a duplicate-key throw, AFTER the completion was paid for.
+ * Returning the stored email is what the retry actually needs: these leads were never contacted, so nothing about the
+ * email is stale to its recipient. See issue #186.
+ */
+async function answeredGeneration(req: AuthenticatedRequest, data: GenerateBody, scope: GenerateScope) {
+  if (data.idempotencyKey) {
+    const existing = await db.query.emailGenerations.findFirst({
+      where: and(
+        eq(emailGenerations.orgId, req.orgId!),
+        eq(emailGenerations.idempotencyKey, data.idempotencyKey)
+      ),
+    });
+    if (existing) {
+      traceEvent(req.runId!, { service: "content-generation-service", event: "idempotency-hit", detail: `Returning cached generation id=${existing.id} for key=${data.idempotencyKey}` }, req.headers).catch(() => {});
+      return existing;
+    }
+  }
+  if (data.leadId) {
+    const existingForLead = await db.query.emailGenerations.findFirst({
+      where: and(
+        eq(emailGenerations.orgId, req.orgId!),
+        eq(emailGenerations.campaignId, scope.leadCampaignId),
+        eq(emailGenerations.leadId, data.leadId)
+      ),
+    });
+    if (existingForLead) {
+      traceEvent(req.runId!, { service: "content-generation-service", event: "lead-generation-hit", detail: `Returning existing generation id=${existingForLead.id} for leadId=${data.leadId}, campaignId=${scope.leadCampaignId || "none"} — no completion billed` }, req.headers).catch(() => {});
+      return existingForLead;
+    }
+  }
+  return null;
+}
+
+/**
+ * Everything the writer is handed beyond the request: the stored template, the campaign context, unfilled brand
+ * fields (written INTO `data.variables`), the recipient's language, the offer's give lists and the campaign's
+ * instruction. `null` = no stored prompt for this type.
+ */
+async function writingMaterials(req: AuthenticatedRequest, data: GenerateBody, scope: GenerateScope) {
+  const { type, variables, leadId } = data;
+  const { brandIds, campaignId, offerId, serviceIdentity } = scope;
+
+  // Look up the stored prompt by type (globally unique)
+  const storedPrompt = await db.query.prompts.findFirst({
+    where: eq(prompts.type, type),
+  });
+  if (!storedPrompt) return null;
+
+  traceEvent(req.runId!, { service: "content-generation-service", event: "prompt-resolved", detail: `Loaded stored prompt type=${type}, promptId=${storedPrompt.id ?? "unknown"}` }, req.headers).catch(() => {});
+
+  // Convention 2: fetch campaign featureInputs for LLM context enrichment
+  let campaignContext: Record<string, unknown> | null = null;
+  if (campaignId) {
+    campaignContext = await getCampaignFeatureInputs(campaignId, serviceIdentity);
+  }
+
+  // Convention 1: resolve unfilled template variables from Brand Service
+  if (brandIds.length > 0 && storedPrompt.prompt) {
+    try {
+      const afterSubstitution = substituteVariables(storedPrompt.prompt, variables);
+      const unfilled = findUnfilledPlaceholders(afterSubstitution);
+      if (unfilled.length > 0) {
+        traceEvent(req.runId!, { service: "content-generation-service", event: "brand-extract", detail: `Extracting ${unfilled.length} unfilled fields from brand-service: ${unfilled.join(", ")}`, data: { brandIds, fields: unfilled } }, req.headers).catch(() => {});
+        const brandValues = await extractBrandFields(unfilledBrandFieldRequests(unfilled), serviceIdentity);
+        for (const [key, value] of brandValues) {
+          variables[key] = value;
+        }
+      }
+    } catch (err) {
+      console.warn("[content-gen] Failed to resolve brand fields — proceeding with available variables.", err instanceof Error ? err.message : err);
+    }
+  }
+
+  // Write the email in the recipient's language rather than always in English.
+  // `businessLanguages` comes from lead-service (ISO 639-1, produced by
+  // human-service), ordered most-plausible-first; the
+  // selection rule is English-preferring, so a directive is emitted only for
+  // someone who reads no English at all (see `resolveLeadLanguage`). No lead,
+  // no answer, or an unusable list all mean "no directive" — identical to the
+  // behaviour that shipped before this existed.
+  let language: string | null = null;
+  if (leadId) {
+    const languages = await getLeadBusinessLanguages(leadId, serviceIdentity);
+    language = resolveLeadLanguage(languages);
+    if (language) {
+      traceEvent(req.runId!, { service: "content-generation-service", event: "lead-language-resolved", detail: `Writing in ${language} for leadId=${leadId}` }, req.headers).catch(() => {});
+    }
+  }
+
+  // The offer's confirmed give lists: what the sender gives for free to a prospect
+  // who replies (the email's ask) and what it never gives. Read only when the run
+  // names its offer — workflow-service injects `offerId` into every /generate body,
+  // and every live campaign has one. A brand-service failure degrades loudly to no
+  // lists, i.e. the email is written exactly as it was before this existed.
+  let giveLists: OfferGiveLists | null = null;
+  if (offerId && brandIds.length === 1) {
+    try {
+      giveLists = await fetchOfferGiveLists(serviceIdentity);
+    } catch (err) {
+      console.error(`[content-gen] Could not read the offer's give lists (offerId=${offerId}) — generating without them.`, err instanceof Error ? err.message : err);
+      traceEvent(req.runId!, { service: "content-generation-service", event: "offer-give-lists-unavailable", detail: `offerId=${offerId}: ${err instanceof Error ? err.message : String(err)}`, level: "warn" }, req.headers).catch(() => {});
+    }
+    if (hasGiveLists(giveLists)) {
+      traceEvent(req.runId!, { service: "content-generation-service", event: "offer-give-lists-resolved", detail: `offerId=${offerId}, giveForFree=${giveLists.giveForFree.length}, neverGive=${giveLists.neverGive.length}` }, req.headers).catch(() => {});
+    }
+  }
+
+  // The campaign's own instruction, when its run carries one: the email is written from it
+  // (see campaign-instruction.ts). Body only, threaded by workflow-service from /start-run.
+  const instruction = normalizeInstruction(data.instruction);
+  if (instruction) {
+    traceEvent(req.runId!, { service: "content-generation-service", event: "campaign-instruction-applied", detail: `Writing from the campaign's instruction (${instruction.length} chars)` }, req.headers).catch(() => {});
+  }
+
+  return { storedPrompt, campaignContext, language, giveLists, instruction };
+}
+
+const noPrompt = (type: string) => ({
+  error: `No prompt found for type=${type}. Register one via POST /prompts or POST /platform-prompts first.`,
+});
+
+/** The row's dedicated lead/client columns, read from the variables. */
+function variableColumns(variables: Record<string, unknown>) {
+  const str = (v: unknown): string | null =>
+    typeof v === "string" && v.length > 0 ? v : null;
+  return {
+    leadFirstName: str(variables.leadFirstName),
+    leadLastName: str(variables.leadLastName),
+    leadTitle: str(variables.leadTitle),
+    leadCompany: str(variables.leadCompanyName),
+    leadIndustry: str(variables.leadCompanyIndustry),
+    leadOrganizationDomain: str(variables.organizationDomain),
+    clientCompanyName: str(variables.clientCompanyName),
+  };
+}
+
+/** Maps the errors of the generate routes to their answer (shared by /generate and /generate/materials). */
+function generateErrorResponse(req: AuthenticatedRequest, res: Response, error: unknown) {
+  if (error instanceof UnknownModelError) {
+    return res.status(400).json({ error: error.message, code: error.code, accepted: error.accepted });
+  }
+  if (error instanceof WrittenByScriptError) {
+    console.error("Generate error:", error.message);
+    return res.status(400).json({ error: error.message, code: "WRITTEN_BY_SCRIPT_UNREADABLE" });
+  }
+  if (error instanceof ChatModelCatalogueError) {
+    console.error("Generate error:", error.message);
+    return res.status(502).json({ error: error.message, code: error.code });
+  }
+  if (error instanceof InsufficientCreditsError) {
+    return res.status(402).json({
+      error: "Insufficient credits",
+      balance_cents: error.balance_cents,
+      required_cents: error.required_cents,
+    });
+  }
+  if (error instanceof IncompleteSequenceError) {
+    console.error("Generate error:", error.message);
+    if (req.runId) {
+      traceEvent(req.runId, { service: "content-generation-service", event: "incomplete-sequence", detail: error.message, level: "error" }, req.headers).catch(() => {});
+    }
+    return res.status(502).json({ error: error.message, steps: error.steps });
+  }
+  if (error instanceof ClientCommsVoiceError) {
+    // No default voice: the email is not written without our client-comms skill.
+    console.error("Generate error:", error.message);
+    if (req.runId) {
+      traceEvent(req.runId, { service: "content-generation-service", event: "client-comms-unavailable", detail: error.message, level: "error" }, req.headers).catch(() => {});
+    }
+    return res.status(502).json({ error: error.message, code: "CLIENT_COMMS_UNAVAILABLE" });
+  }
+  console.error("Generate error:", error);
+  if (req.runId) {
+    traceEvent(req.runId, { service: "content-generation-service", event: "generate-error", detail: error instanceof Error ? error.message : "Unknown error", level: "error" }, req.headers).catch(() => {});
+  }
+  return res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
+}
+
+/**
+ * POST /generate/materials — the script writer's step materials (FACTORY-P3 fleet writer, `src/lib/script-writer.ts`).
+ * Same body as /generate; does everything /generate does BEFORE the completion and answers either the stored
+ * generation that already answers this request (`existing`: the script step is skipped and /generate returns it) or
+ * the script step's `subject`, `units` and `tactics` (the asked LLM, its provider read from chat-service's catalogue).
+ * Spends nothing on the writer; the brand-field extraction is billed as on /generate.
+ */
+router.post("/generate/materials", serviceAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const parsed = GenerateRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
+    }
+    const data = parsed.data;
+    const model = data.model ?? DEFAULT_MODEL;
+    // The model name is checked against chat-service's catalogue before anything is read or billed (400 UNKNOWN_MODEL).
+    const { provider } = await resolveChatModel(model);
+    const scope = scopeOf(req, data);
+    traceEvent(req.runId!, { service: "content-generation-service", event: "generate-materials-start", detail: `type=${data.type}, brandIds=${scope.brandIds.join(",")}, campaignId=${scope.campaignId ?? "none"}` }, req.headers).catch(() => {});
+
+    const existing = await answeredGeneration(req, data, scope);
+    if (existing) return res.json({ existing: toGenerationResponse(existing), subject: null, units: null, tactics: null });
+    if (!data.leadId) {
+      return res.status(400).json({ error: "leadId is required: the script writer declares its message on the person's lead" });
+    }
+
+    const m = await writingMaterials(req, data, scope);
+    if (!m) return res.status(404).json(noPrompt(data.type));
+
+    res.json({
+      existing: null,
+      subject: { service: LEAD_SUBJECT_SERVICE, id: data.leadId },
+      units: writerUnits({
+        promptTemplate: m.storedPrompt.prompt,
+        variables: data.variables,
+        campaignContext: m.campaignContext,
+        language: m.language,
+        giveLists: m.giveLists,
+        instruction: m.instruction,
+      }),
+      tactics: { llm: { provider, model } },
+    });
+  } catch (error) {
+    generateErrorResponse(req, res, error);
+  }
+});
+
+/**
+ * Stores the email the script writer wrote (`/generate` with `written`): the same row, the same
+ * `message_written` declaration (on the SCRIPT's run, by this service's never-lost machinery), the same answer.
+ */
+async function recordWrittenByScript(req: AuthenticatedRequest, res: Response, data: GenerateBody, scope: GenerateScope) {
+  const storedPrompt = await db.query.prompts.findFirst({ where: eq(prompts.type, data.type) });
+  if (!storedPrompt) return res.status(404).json(noPrompt(data.type));
+  const w = readWrittenByScript(data.written, data.units);
+  const { serviceIdentity, leadCampaignId } = scope;
+  const leadId = data.leadId;
+
+  // The step this message's pipe starts from is what it consumes (PIPE-FROM-STEP-1024).
+  const pipeFrom = leadId ? await messageFromStep(scope.campaignId, serviceIdentity) : null;
+  const outcomes = messageWrittenDeclaration({ leadId, variables: w.variables, pipeFromStep: pipeFrom?.known ? pipeFrom.fromStep : null });
+
+  const insertValues = {
+    orgId: req.orgId!,
+    runId: req.runId!,
+    apolloEnrichmentId: data.apolloEnrichmentId ?? null,
+    promptType: data.type,
+    brandIds: scope.brandIds,
+    campaignId: leadCampaignId,
+    variablesRaw: w.variables,
+    ...variableColumns(w.variables),
+    subject: w.subject,
+    sequence: w.sequence,
+    model: w.model,
+    tokensInput: w.tokensInput,
+    tokensOutput: w.tokensOutput,
+    promptRaw: w.promptRaw,
+    responseRaw: w.responseRaw,
+    chatRequest: w.chatRequest,
+    chatRequestInputs: w.chatRequestInputs,
+    workflowSlug: scope.workflowSlug ?? null,
+    featureSlug: scope.featureSlug ?? null,
+    audienceId: scope.audienceId ?? null,
+    leadId: leadId ?? null,
+    idempotencyKey: data.idempotencyKey ?? null,
+    // The script's run wrote it: the completion is its child, the declaration lands on it.
+    generationRunId: w.runId,
+    outcomes,
+  };
+
+  let generation;
+  try {
+    [generation] = await db.insert(emailGenerations).values(insertValues as typeof emailGenerations.$inferInsert).returning();
+  } catch (err) {
+    // A concurrent request for the same lead won the insert: its email is the answer (one email per person per
+    // campaign); the script's run declared nothing, so nothing is counted twice.
+    if (!leadId || !isLeadDuplicateError(err)) throw err;
+    const winner = await db.query.emailGenerations.findFirst({
+      where: and(eq(emailGenerations.orgId, req.orgId!), eq(emailGenerations.campaignId, leadCampaignId), eq(emailGenerations.leadId, leadId)),
+    });
+    if (!winner) throw err;
+    traceEvent(req.runId!, { service: "content-generation-service", event: "lead-generation-race", detail: `Concurrent generation won for leadId=${leadId}, campaignId=${leadCampaignId || "none"} — returning id=${winner.id}`, level: "warn" }, req.headers).catch(() => {});
+    return res.json(toGenerationResponse(winner));
+  }
+
+  if (outcomes) void declareStoredOutcomes("email_generations", generation.id);
+  traceEvent(req.runId!, { service: "content-generation-service", event: "generate-recorded", detail: `generationId=${generation.id}, written by script run ${w.runId}, model=${w.model}` }, req.headers).catch(() => {});
+  return res.json({ id: generation.id, subject: w.subject, sequence: w.sequence, tokensInput: w.tokensInput, tokensOutput: w.tokensOutput });
+}
+
+/**
+ * POST /generate — Generate content using a stored prompt template + variables.
+ * With `written` (+ `units`): store the email the script writer wrote instead (see /generate/materials).
  */
 router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => {
   try {
@@ -95,160 +416,25 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     if (!parsed.success) {
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
-
-    const {
-      type,
-      variables,
-      model,
-      brandIds: bodyBrandIds,
-      campaignId: bodyCampaignId,
-      apolloEnrichmentId,
-      leadId,
-      idempotencyKey,
-      workflowSlug: bodyWorkflowName,
-      featureSlug: bodyFeatureSlug,
-      audienceId: bodyAudienceId,
-      offerId: bodyOfferId,
-      instruction: bodyInstruction,
-    } = parsed.data;
+    const data = parsed.data;
+    const { type, variables, model, leadId, apolloEnrichmentId } = data;
 
     // The model name is checked against chat-service's catalogue before anything is read or
     // billed (400 UNKNOWN_MODEL); omitted → the default, resolved at the completion.
     if (model) await resolveChatModel(model);
+    const scope = scopeOf(req, data);
+    const { brandIds, brandId, campaignId, workflowSlug, serviceIdentity, leadCampaignId } = scope;
 
-    // Header values (from workflow-service) serve as fallback when body values are missing
-    const brandIds = bodyBrandIds?.length ? bodyBrandIds : (req.brandIds ?? []);
-    // Raw CSV string for identity forwarding to downstream services
-    const brandId = brandIds.length > 0 ? brandIds.join(",") : req.brandId;
-    const campaignId = bodyCampaignId || req.campaignId;
-    const workflowSlug = bodyWorkflowName || req.workflowSlug;
-    const featureSlug = bodyFeatureSlug || req.featureSlug;
-    const audienceId = bodyAudienceId || req.audienceId;
-    // The campaign's offer — brand-service refuses a brand-scoped extract-fields
-    // request for a brand selling several offers until one is named. Body only:
-    // workflow-service threads it into the request BODY of this callee, never a header.
-    const offerId = bodyOfferId;
+    traceEvent(req.runId!, { service: "content-generation-service", event: "generate-start", detail: `type=${type}, brandIds=${brandIds.join(",")}, campaignId=${campaignId ?? "none"}, idempotencyKey=${data.idempotencyKey ?? "none"}` }, req.headers).catch(() => {});
 
-    traceEvent(req.runId!, { service: "content-generation-service", event: "generate-start", detail: `type=${type}, brandIds=${brandIds.join(",")}, campaignId=${campaignId ?? "none"}, idempotencyKey=${idempotencyKey ?? "none"}` }, req.headers).catch(() => {});
+    const existing = await answeredGeneration(req, data, scope);
+    if (existing) return res.json(toGenerationResponse(existing));
 
-    // Idempotency: return existing generation if key matches
-    if (idempotencyKey) {
-      const existing = await db.query.emailGenerations.findFirst({
-        where: and(
-          eq(emailGenerations.orgId, req.orgId!),
-          eq(emailGenerations.idempotencyKey, idempotencyKey)
-        ),
-      });
+    if (data.written !== undefined) return await recordWrittenByScript(req, res, data, scope);
 
-      if (existing) {
-        traceEvent(req.runId!, { service: "content-generation-service", event: "idempotency-hit", detail: `Returning cached generation id=${existing.id} for key=${idempotencyKey}` }, req.headers).catch(() => {});
-        return res.json(toGenerationResponse(existing));
-      }
-    }
-
-    // The campaign a lead's generation is stored under. `campaignId` is nullable on
-    // the wire but the column is NOT NULL, so the insert below normalizes it to "";
-    // the lead lookup must use the same value or it would miss its own rows.
-    const leadCampaignId = campaignId ?? "";
-
-    // Retry recovery: a lead that already has a generation for this campaign gets that
-    // email back instead of a second, billed completion. `idx_emailgen_lead` is UNIQUE on
-    // (campaign_id, lead_id) — one email per person per campaign — so the retry could only
-    // ever have produced a duplicate-key throw here, AFTER the completion was paid for.
-    // Returning the stored email is what the retry actually needs: these leads were never
-    // contacted, so nothing about the email is stale to its recipient. See issue #186.
-    if (leadId) {
-      const existingForLead = await db.query.emailGenerations.findFirst({
-        where: and(
-          eq(emailGenerations.orgId, req.orgId!),
-          eq(emailGenerations.campaignId, leadCampaignId),
-          eq(emailGenerations.leadId, leadId)
-        ),
-      });
-
-      if (existingForLead) {
-        traceEvent(req.runId!, { service: "content-generation-service", event: "lead-generation-hit", detail: `Returning existing generation id=${existingForLead.id} for leadId=${leadId}, campaignId=${leadCampaignId || "none"} — no completion billed` }, req.headers).catch(() => {});
-        return res.json(toGenerationResponse(existingForLead));
-      }
-    }
-
-    // Look up the stored prompt by type (globally unique)
-    const storedPrompt = await db.query.prompts.findFirst({
-      where: eq(prompts.type, type),
-    });
-
-    if (!storedPrompt) {
-      return res.status(404).json({
-        error: `No prompt found for type=${type}. Register one via POST /prompts or POST /platform-prompts first.`,
-      });
-    }
-
-    traceEvent(req.runId!, { service: "content-generation-service", event: "prompt-resolved", detail: `Loaded stored prompt type=${type}, promptId=${storedPrompt.id ?? "unknown"}` }, req.headers).catch(() => {});
-
-    // Convention 2: fetch campaign featureInputs for LLM context enrichment
-    const serviceIdentity = { orgId: req.orgId!, userId: req.userId!, runId: req.runId!, campaignId, brandId, workflowSlug, featureSlug, audienceId, offerId };
-    let campaignContext: Record<string, unknown> | null = null;
-    if (campaignId) {
-      campaignContext = await getCampaignFeatureInputs(campaignId, serviceIdentity);
-    }
-
-    // Convention 1: resolve unfilled template variables from Brand Service
-    if (brandIds.length > 0 && storedPrompt.prompt) {
-      try {
-        const afterSubstitution = substituteVariables(storedPrompt.prompt, variables);
-        const unfilled = findUnfilledPlaceholders(afterSubstitution);
-        if (unfilled.length > 0) {
-          traceEvent(req.runId!, { service: "content-generation-service", event: "brand-extract", detail: `Extracting ${unfilled.length} unfilled fields from brand-service: ${unfilled.join(", ")}`, data: { brandIds, fields: unfilled } }, req.headers).catch(() => {});
-          const brandValues = await extractBrandFields(unfilledBrandFieldRequests(unfilled), serviceIdentity);
-          for (const [key, value] of brandValues) {
-            variables[key] = value;
-          }
-        }
-      } catch (err) {
-        console.warn("[content-gen] Failed to resolve brand fields — proceeding with available variables.", err instanceof Error ? err.message : err);
-      }
-    }
-
-    // Write the email in the recipient's language rather than always in English.
-    // `businessLanguages` comes from lead-service (ISO 639-1, produced by
-    // human-service), ordered most-plausible-first; the
-    // selection rule is English-preferring, so a directive is emitted only for
-    // someone who reads no English at all (see `resolveLeadLanguage`). No lead,
-    // no answer, or an unusable list all mean "no directive" — identical to the
-    // behaviour that shipped before this existed.
-    let language: string | null = null;
-    if (leadId) {
-      const languages = await getLeadBusinessLanguages(leadId, serviceIdentity);
-      language = resolveLeadLanguage(languages);
-      if (language) {
-        traceEvent(req.runId!, { service: "content-generation-service", event: "lead-language-resolved", detail: `Writing in ${language} for leadId=${leadId}` }, req.headers).catch(() => {});
-      }
-    }
-
-    // The offer's confirmed give lists: what the sender gives for free to a prospect
-    // who replies (the email's ask) and what it never gives. Read only when the run
-    // names its offer — workflow-service injects `offerId` into every /generate body,
-    // and every live campaign has one. A brand-service failure degrades loudly to no
-    // lists, i.e. the email is written exactly as it was before this existed.
-    let giveLists: OfferGiveLists | null = null;
-    if (offerId && brandIds.length === 1) {
-      try {
-        giveLists = await fetchOfferGiveLists(serviceIdentity);
-      } catch (err) {
-        console.error(`[content-gen] Could not read the offer's give lists (offerId=${offerId}) — generating without them.`, err instanceof Error ? err.message : err);
-        traceEvent(req.runId!, { service: "content-generation-service", event: "offer-give-lists-unavailable", detail: `offerId=${offerId}: ${err instanceof Error ? err.message : String(err)}`, level: "warn" }, req.headers).catch(() => {});
-      }
-      if (hasGiveLists(giveLists)) {
-        traceEvent(req.runId!, { service: "content-generation-service", event: "offer-give-lists-resolved", detail: `offerId=${offerId}, giveForFree=${giveLists.giveForFree.length}, neverGive=${giveLists.neverGive.length}` }, req.headers).catch(() => {});
-      }
-    }
-
-    // The campaign's own instruction, when its run carries one: the email is written from it
-    // (see campaign-instruction.ts). Body only, threaded by workflow-service from /start-run.
-    const instruction = normalizeInstruction(bodyInstruction);
-    if (instruction) {
-      traceEvent(req.runId!, { service: "content-generation-service", event: "campaign-instruction-applied", detail: `Writing from the campaign's instruction (${instruction.length} chars)` }, req.headers).catch(() => {});
-    }
+    const m = await writingMaterials(req, data, scope);
+    if (!m) return res.status(404).json(noPrompt(type));
+    const { storedPrompt, campaignContext, language, giveLists, instruction } = m;
 
     // This service's run for the writing call, opened BEFORE the completion so chat-service's
     // `/complete` run (and its cost) is its child: the run then declares the message it wrote
@@ -320,10 +506,6 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
 
     traceEvent(req.runId!, { service: "content-generation-service", event: "llm-call-done", detail: `model=${result.model}, tokensIn=${result.tokensInput}, tokensOut=${result.tokensOutput}, sequenceLen=${result.sequence?.length ?? 0}`, data: { model: result.model, tokensInput: result.tokensInput, tokensOutput: result.tokensOutput } }, req.headers).catch(() => {});
 
-    // Extract lead/client fields from variables for dedicated columns
-    const str = (v: unknown): string | null =>
-      typeof v === "string" && v.length > 0 ? v : null;
-
     // Store in database
     const insertValues = {
       orgId: req.orgId!,
@@ -334,13 +516,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       campaignId: leadCampaignId,
       variablesRaw: variables,
       // Populate dedicated lead/client columns from variables
-      leadFirstName: str(variables.leadFirstName),
-      leadLastName: str(variables.leadLastName),
-      leadTitle: str(variables.leadTitle),
-      leadCompany: str(variables.leadCompanyName),
-      leadIndustry: str(variables.leadCompanyIndustry),
-      leadOrganizationDomain: str(variables.organizationDomain),
-      clientCompanyName: str(variables.clientCompanyName),
+      ...variableColumns(variables),
       subject: result.subject,
       sequence: result.sequence,
       model: result.model,
@@ -352,10 +528,10 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       chatRequest: result.chatRequest,
       chatRequestInputs: result.chatRequestInputs,
       workflowSlug: workflowSlug ?? null,
-      featureSlug: featureSlug ?? null,
-      audienceId: audienceId ?? null,
+      featureSlug: scope.featureSlug ?? null,
+      audienceId: scope.audienceId ?? null,
       leadId: leadId ?? null,
-      idempotencyKey: idempotencyKey ?? null,
+      idempotencyKey: data.idempotencyKey ?? null,
       generationRunId,
       outcomes,
     };
@@ -403,40 +579,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       tokensOutput: result.tokensOutput,
     });
   } catch (error) {
-    if (error instanceof UnknownModelError) {
-      return res.status(400).json({ error: error.message, code: error.code, accepted: error.accepted });
-    }
-    if (error instanceof ChatModelCatalogueError) {
-      console.error("Generate error:", error.message);
-      return res.status(502).json({ error: error.message, code: error.code });
-    }
-    if (error instanceof InsufficientCreditsError) {
-      return res.status(402).json({
-        error: "Insufficient credits",
-        balance_cents: error.balance_cents,
-        required_cents: error.required_cents,
-      });
-    }
-    if (error instanceof IncompleteSequenceError) {
-      console.error("Generate error:", error.message);
-      if (req.runId) {
-        traceEvent(req.runId, { service: "content-generation-service", event: "incomplete-sequence", detail: error.message, level: "error" }, req.headers).catch(() => {});
-      }
-      return res.status(502).json({ error: error.message, steps: error.steps });
-    }
-    if (error instanceof ClientCommsVoiceError) {
-      // No default voice: the email is not written without our client-comms skill.
-      console.error("Generate error:", error.message);
-      if (req.runId) {
-        traceEvent(req.runId, { service: "content-generation-service", event: "client-comms-unavailable", detail: error.message, level: "error" }, req.headers).catch(() => {});
-      }
-      return res.status(502).json({ error: error.message, code: "CLIENT_COMMS_UNAVAILABLE" });
-    }
-    console.error("Generate error:", error);
-    if (req.runId) {
-      traceEvent(req.runId, { service: "content-generation-service", event: "generate-error", detail: error instanceof Error ? error.message : "Unknown error", level: "error" }, req.headers).catch(() => {});
-    }
-    res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
+    generateErrorResponse(req, res, error);
   }
 });
 
