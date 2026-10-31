@@ -215,6 +215,40 @@ export const whatsappGenerations = pgTable(
   ]
 );
 
+// One Threads thread written with a stored template (POST /generate-thread, THREADS-IDEAS-AB).
+// run_id = the caller's run (the workflow run that publishes it): the completion is billed there and
+// nothing is declared here. Served by GET /internal/thread-generations and the template outputs.
+export const threadGenerations = pgTable(
+  "thread_generations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    runId: text("run_id").notNull(),
+    brandIds: text("brand_ids").array().notNull(),
+    campaignId: text("campaign_id").notNull(),
+    workflowSlug: text("workflow_slug"),
+    featureSlug: text("feature_slug"),
+    promptType: text("prompt_type").notNull(),
+    model: text("model").notNull(),
+    subject: text("subject").notNull(),
+    post: text("post").notNull(),
+    replies: jsonb("replies").$type<string[]>().notNull(),
+    tokensInput: integer("tokens_input"),
+    tokensOutput: integer("tokens_output"),
+    systemPromptRaw: text("system_prompt_raw"),
+    contextRaw: text("context_raw"),
+    variablesRaw: jsonb("variables_raw"),
+    responseRaw: jsonb("response_raw"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_threadgen_created").on(table.createdAt, table.id),
+    index("idx_threadgen_prompt_type_created").on(table.promptType, table.createdAt),
+    index("idx_threadgen_model_created").on(table.model, table.createdAt),
+    index("idx_threadgen_run").on(table.runId),
+  ]
+);
+
 // Prompt templates — type is the unique identifier (like an ID).
 // orgId is optional traceability: records who created the prompt, but does NOT scope visibility.
 // All prompts are globally accessible regardless of orgId.

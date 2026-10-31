@@ -3589,6 +3589,107 @@
           "tokensOutput"
         ]
       },
+      "GenerateThreadRequest": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The template to write with: the head of the pipe's Threads dynasty picked by features-service (GET /internal/template-dynasties/{slug}/head → `template.type`)."
+          },
+          "variables": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "description": "The template's `{{tokens}}`, each a string. Every token the template declares is required (400 `VARIABLES_MISSING`); extra keys are ignored. The Threads dynasties declare: brandName, getStartedLine."
+          },
+          "context": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Everything the writer reads, as one text with these sections: BRAND, PUBLISHED ON, TODAY, SUGGESTED SHAPE, OUR FACTS, NEVER STATE OR OFFER, THE BRAND'S INSTRUCTION FOR THESE THREADS, OUR PUBLISHED FIGURES, THIS WEEK IN THE INDUSTRY, ALREADY POSTED."
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "description": "LLM to write with (the pipe's LLM picked by features-service): any name chat-service /complete accepts. Required: no default writer."
+          },
+          "brandIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Brand UUIDs. Falls back to x-brand-id."
+          },
+          "campaignId": {
+            "type": "string",
+            "description": "Falls back to x-campaign-id."
+          },
+          "workflowSlug": {
+            "type": "string",
+            "description": "Falls back to x-workflow-slug."
+          },
+          "featureSlug": {
+            "type": "string",
+            "description": "Falls back to x-feature-slug (`threads-post`)."
+          }
+        },
+        "required": [
+          "type",
+          "variables",
+          "context",
+          "model"
+        ]
+      },
+      "GenerateThreadResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "This service's thread generation id."
+          },
+          "subject": {
+            "type": "string",
+            "description": "The thread's subject in a few words."
+          },
+          "post": {
+            "type": "string",
+            "description": "The main post, as written (line breaks restored, em/en dashes stripped, trimmed)."
+          },
+          "replies": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The replies in order, same cleanup. No Get started line: the caller adds it."
+          },
+          "model": {
+            "type": "string",
+            "description": "The concrete model id that wrote."
+          },
+          "promptType": {
+            "type": "string",
+            "description": "The template version that wrote."
+          },
+          "tokensInput": {
+            "type": "number"
+          },
+          "tokensOutput": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "subject",
+          "post",
+          "replies",
+          "model",
+          "promptType",
+          "tokensInput",
+          "tokensOutput"
+        ]
+      },
       "OrgId": {
         "type": "string"
       },
@@ -3609,6 +3710,121 @@
       },
       "FeatureSlug": {
         "type": "string"
+      },
+      "ThreadGenerationsResponse": {
+        "type": "object",
+        "properties": {
+          "generations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "generationId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "orgId": {
+                  "type": "string"
+                },
+                "brandIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "campaignId": {
+                  "type": "string",
+                  "description": "The campaign that asked (\"\" for a staff dry run)."
+                },
+                "runId": {
+                  "type": "string",
+                  "description": "The caller's run: the workflow run that wrote and publishes the thread."
+                },
+                "workflowSlug": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "featureSlug": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "promptType": {
+                  "type": "string",
+                  "description": "The template version that wrote."
+                },
+                "templateDynasty": {
+                  "type": "object",
+                  "nullable": true,
+                  "properties": {
+                    "slug": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "position": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "slug",
+                    "name",
+                    "position"
+                  ],
+                  "description": "The version's dynasty (one template = one dynasty), null for a template in none."
+                },
+                "model": {
+                  "type": "string",
+                  "description": "The concrete model id that wrote."
+                },
+                "subject": {
+                  "type": "string"
+                },
+                "post": {
+                  "type": "string"
+                },
+                "replies": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "generationId",
+                "createdAt",
+                "orgId",
+                "brandIds",
+                "campaignId",
+                "runId",
+                "workflowSlug",
+                "featureSlug",
+                "promptType",
+                "templateDynasty",
+                "model",
+                "subject",
+                "post",
+                "replies"
+              ]
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true,
+            "description": "Resume from here; caught up = the input cursor handed back."
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "generations",
+          "nextCursor",
+          "hasMore"
+        ]
       }
     },
     "parameters": {
@@ -7459,6 +7675,202 @@
           },
           "502": {
             "description": "`CLIENT_COMMS_UNAVAILABLE`, `MODEL_CATALOGUE_UNAVAILABLE`, or chat-service failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generate-thread": {
+      "post": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "Write ONE Threads thread (main post + replies) with a stored template",
+        "description": "Renders the template (`type`) with `variables` as the writer's rules, sends `context` as the message to chat-service /complete UNDER THE CALLER'S RUN (x-run-id, the workflow run that publishes the thread: its cost rides that run; nothing is declared here) and answers the thread. The writer is trusted: no length or count check, no retry on shape. Every thread is stored and served by GET /internal/thread-generations and the template / dynasty outputs.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-campaign-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-brand-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-workflow-slug",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "x-feature-slug",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateThreadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateThreadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, `VARIABLES_MISSING` (with `missing`), or `UNKNOWN_MODEL`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Insufficient credits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsufficientCreditsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`TEMPLATE_NOT_FOUND`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`MODEL_CATALOGUE_UNAVAILABLE`, or chat-service failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/thread-generations": {
+      "get": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "Every Threads thread written with a stored template, oldest first (every org)",
+        "description": "API key only, no identity headers. Keyset on (created_at, id) with the same opaque cursor and 60 s settle as GET /internal/sequences. Each entry names the run that wrote it, its template version + dynasty and model: features-service credits each post's outcomes to them.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Only threads written at or after this instant (ISO 8601). Omitted = since the first."
+            },
+            "required": false,
+            "description": "Only threads written at or after this instant (ISO 8601). Omitted = since the first.",
+            "name": "since",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Opaque cursor returned as `nextCursor` by the previous page."
+            },
+            "required": false,
+            "description": "Opaque cursor returned as `nextCursor` by the previous page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "description": "Page size, 1..500. Omitted = 200."
+            },
+            "required": false,
+            "description": "Page size, 1..500. Omitted = 200.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of thread generations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadGenerationsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad instant, bad limit, or a cursor this service did not issue",
             "content": {
               "application/json": {
                 "schema": {

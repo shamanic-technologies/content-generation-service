@@ -1,4 +1,5 @@
 import { readWhatsAppOutputs, newestFirst } from "./whatsapp-outputs.js";
+import { readThreadOutputs } from "./thread-generations-query.js";
 import { asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, modelPipeStatuses, prompts } from "../db/schema.js";
@@ -181,7 +182,9 @@ export async function readTemplateOutputs(type: string, limit: number): Promise<
   }));
   // A WhatsApp template's messages (WA-TEMPLATES-1023); empty for an email template.
   const whatsapp = (await readWhatsAppOutputs([type], limit)).map(({ promptType: _, ...o }) => o);
-  return newestFirst(emails, whatsapp, limit);
+  // A Threads template's threads (THREADS-IDEAS-AB); empty for any other template.
+  const threads = (await readThreadOutputs([type], limit)).map(({ promptType: _, ...o }) => o);
+  return newestFirst(emails, newestFirst(whatsapp, threads, limit), limit);
 }
 
 /** Each step of the stored sequence; a pre-sequence row (copy in the body columns) is one email. */
