@@ -2763,3 +2763,126 @@ registry.registerPath({
     502: { description: "`CLIENT_COMMS_UNAVAILABLE`, `MODEL_CATALOGUE_UNAVAILABLE`, or chat-service failed", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });
+
+// ---------------------------------------------------------------------------
+// POST /generate-thread — ONE Threads thread with a stored template (THREADS-IDEAS-AB)
+// ---------------------------------------------------------------------------
+
+export const GenerateThreadRequestSchema = registry.register(
+  "GenerateThreadRequest",
+  z
+    .object({
+      type: z
+        .string()
+        .min(1)
+        .describe("The template to write with: the head of the pipe's Threads dynasty picked by features-service (GET /internal/template-dynasties/{slug}/head → `template.type`)."),
+      variables: z
+        .record(z.string(), z.unknown())
+        .describe(
+          "The template's `{{tokens}}`, each a string. Every token the template declares is required (400 `VARIABLES_MISSING`); extra keys are ignored. " +
+            "The Threads dynasties declare: brandName, getStartedLine."
+        ),
+      context: z
+        .string()
+        .min(1)
+        .describe(
+          "Everything the writer reads, as one text with these sections: BRAND, PUBLISHED ON, TODAY, SUGGESTED SHAPE, OUR FACTS, NEVER STATE OR OFFER, " +
+            "THE BRAND'S INSTRUCTION FOR THESE THREADS, OUR PUBLISHED FIGURES, THIS WEEK IN THE INDUSTRY, ALREADY POSTED."
+        ),
+      model: z.string().min(1).describe("LLM to write with (the pipe's LLM picked by features-service): any name chat-service /complete accepts. Required: no default writer."),
+      brandIds: z.array(z.string()).optional().describe("Brand UUIDs. Falls back to x-brand-id."),
+      campaignId: z.string().optional().describe("Falls back to x-campaign-id."),
+      workflowSlug: z.string().optional().describe("Falls back to x-workflow-slug."),
+      featureSlug: z.string().optional().describe("Falls back to x-feature-slug (`threads-post`)."),
+    })
+    .openapi("GenerateThreadRequest")
+);
+
+const GenerateThreadResponseSchema = registry.register(
+  "GenerateThreadResponse",
+  z
+    .object({
+      id: z.string().uuid().describe("This service's thread generation id."),
+      subject: z.string().describe("The thread's subject in a few words."),
+      post: z.string().describe("The main post, as written (line breaks restored, em/en dashes stripped, trimmed)."),
+      replies: z.array(z.string()).describe("The replies in order, same cleanup. No Get started line: the caller adds it."),
+      model: z.string().describe("The concrete model id that wrote."),
+      promptType: z.string().describe("The template version that wrote."),
+      tokensInput: z.number(),
+      tokensOutput: z.number(),
+    })
+    .openapi("GenerateThreadResponse")
+);
+
+registry.registerPath({
+  method: "post",
+  path: "/generate-thread",
+  tags: ["Content Generation"],
+  summary: "Write ONE Threads thread (main post + replies) with a stored template",
+  description:
+    "Renders the template (`type`) with `variables` as the writer's rules, sends `context` as the message to chat-service /complete " +
+    "UNDER THE CALLER'S RUN (x-run-id, the workflow run that publishes the thread: its cost rides that run; nothing is declared here) and " +
+    "answers the thread. The writer is trusted: no length or count check, no retry on shape. Every thread is stored and served by " +
+    "GET /internal/thread-generations and the template / dynasty outputs.",
+  request: {
+    headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string(), "x-campaign-id": z.string().optional(), "x-brand-id": z.string().optional(), "x-workflow-slug": z.string().optional(), "x-feature-slug": z.string().optional() }),
+    body: { required: true, content: { "application/json": { schema: GenerateThreadRequestSchema } } },
+  },
+  responses: {
+    200: { description: "Written", content: { "application/json": { schema: GenerateThreadResponseSchema } } },
+    400: { description: "Invalid body, `VARIABLES_MISSING` (with `missing`), or `UNKNOWN_MODEL`", content: { "application/json": { schema: ErrorResponseSchema } } },
+    402: { description: "Insufficient credits", content: { "application/json": { schema: InsufficientCreditsResponseSchema } } },
+    404: { description: "`TEMPLATE_NOT_FOUND`", content: { "application/json": { schema: ErrorResponseSchema } } },
+    502: { description: "`MODEL_CATALOGUE_UNAVAILABLE`, or chat-service failed", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+export const THREAD_GENERATIONS_MAX_LIMIT = 500;
+
+export const ThreadGenerationsQuerySchema = z
+  .object({
+    since: z.string().datetime({ offset: true }).optional().describe("Only threads written at or after this instant (ISO 8601). Omitted = since the first."),
+    cursor: z.string().min(1).optional().describe("Opaque cursor returned as `nextCursor` by the previous page."),
+    limit: z.coerce.number().int().min(1).max(THREAD_GENERATIONS_MAX_LIMIT).optional().describe(`Page size, 1..${THREAD_GENERATIONS_MAX_LIMIT}. Omitted = 200.`),
+  })
+  .openapi("ThreadGenerationsQuery");
+
+const ThreadGenerationsResponseSchema = z
+  .object({
+    generations: z.array(
+      z.object({
+        generationId: z.string().uuid(),
+        createdAt: z.string(),
+        orgId: z.string(),
+        brandIds: z.array(z.string()),
+        campaignId: z.string().describe("The campaign that asked (\"\" for a staff dry run)."),
+        runId: z.string().describe("The caller's run: the workflow run that wrote and publishes the thread."),
+        workflowSlug: z.string().nullable(),
+        featureSlug: z.string().nullable(),
+        promptType: z.string().describe("The template version that wrote."),
+        templateDynasty: z.object({ slug: z.string(), name: z.string(), position: z.number() }).nullable().describe("The version's dynasty (one template = one dynasty), null for a template in none."),
+        model: z.string().describe("The concrete model id that wrote."),
+        subject: z.string(),
+        post: z.string(),
+        replies: z.array(z.string()),
+      }),
+    ),
+    nextCursor: z.string().nullable().describe("Resume from here; caught up = the input cursor handed back."),
+    hasMore: z.boolean(),
+  })
+  .openapi("ThreadGenerationsResponse");
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/thread-generations",
+  tags: ["Content Generation"],
+  summary: "Every Threads thread written with a stored template, oldest first (every org)",
+  description:
+    "API key only, no identity headers. Keyset on (created_at, id) with the same opaque cursor and 60 s settle as GET /internal/sequences. " +
+    "Each entry names the run that wrote it, its template version + dynasty and model: features-service credits each post's outcomes to them.",
+  request: { query: ThreadGenerationsQuerySchema },
+  responses: {
+    200: { description: "A page of thread generations", content: { "application/json": { schema: ThreadGenerationsResponseSchema } } },
+    400: { description: "Bad instant, bad limit, or a cursor this service did not issue", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
