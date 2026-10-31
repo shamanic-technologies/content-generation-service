@@ -233,6 +233,8 @@ export const threadGenerations = pgTable(
     subject: text("subject").notNull(),
     post: text("post").notNull(),
     replies: jsonb("replies").$type<string[]>().notNull(),
+    // A staff dry run: written, never published (features-service leaves it out of every figure).
+    dryRun: boolean("dry_run").notNull().default(false),
     tokensInput: integer("tokens_input"),
     tokensOutput: integer("tokens_output"),
     systemPromptRaw: text("system_prompt_raw"),

@@ -61,6 +61,7 @@ router.post("/generate-thread", (req, res, next) => serviceAuth(req as Authentic
         subject: result.subject,
         post: result.post,
         replies: result.replies,
+        dryRun: body.dryRun === true,
         tokensInput: result.tokensInput,
         tokensOutput: result.tokensOutput,
         systemPromptRaw: result.systemPrompt,

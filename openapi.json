@@ -3632,6 +3632,10 @@
           "featureSlug": {
             "type": "string",
             "description": "Falls back to x-feature-slug (`threads-post`)."
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "A staff dry run: the thread is written and stored but never published. Served as `dryRun` so features-service counts none of it. Omitted = false."
           }
         },
         "required": [
@@ -3791,6 +3795,10 @@
                   "items": {
                     "type": "string"
                   }
+                },
+                "dryRun": {
+                  "type": "boolean",
+                  "description": "A staff dry run (written, never published): count none of it."
                 }
               },
               "required": [
@@ -3807,7 +3815,8 @@
                 "model",
                 "subject",
                 "post",
-                "replies"
+                "replies",
+                "dryRun"
               ]
             }
           },
