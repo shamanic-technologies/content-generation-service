@@ -2794,6 +2794,7 @@ export const GenerateThreadRequestSchema = registry.register(
       campaignId: z.string().optional().describe("Falls back to x-campaign-id."),
       workflowSlug: z.string().optional().describe("Falls back to x-workflow-slug."),
       featureSlug: z.string().optional().describe("Falls back to x-feature-slug (`threads-post`)."),
+      dryRun: z.boolean().optional().describe("A staff dry run: the thread is written and stored but never published. Served as `dryRun` so features-service counts none of it. Omitted = false."),
     })
     .openapi("GenerateThreadRequest")
 );
@@ -2865,6 +2866,7 @@ const ThreadGenerationsResponseSchema = z
         subject: z.string(),
         post: z.string(),
         replies: z.array(z.string()),
+        dryRun: z.boolean().describe("A staff dry run (written, never published): count none of it."),
       }),
     ),
     nextCursor: z.string().nullable().describe("Resume from here; caught up = the input cursor handed back."),

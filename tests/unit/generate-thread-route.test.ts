@@ -101,7 +101,14 @@ describe("POST /generate-thread", () => {
       model: "claude-opus-5-5",
       post: "Most founders write too long, short wins.",
       replies: ["Try 3 lines.", "What is your shortest email?"],
+      dryRun: false,
     }));
+  });
+
+  it("a staff dry run is stored marked, so it never counts", async () => {
+    fetchMock.mockResolvedValue(completion({ subject: "s", post: "p", replies: [] }));
+    await request(await app()).post("/generate-thread").send(body({ dryRun: true })).expect(200);
+    expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({ dryRun: true }));
   });
 
   it("400 VARIABLES_MISSING before any completion", async () => {
