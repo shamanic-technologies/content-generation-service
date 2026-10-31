@@ -31,6 +31,8 @@ export interface ThreadGenerationEntry {
   subject: string;
   post: string;
   replies: string[];
+  /** A staff dry run: written, never published. */
+  dryRun: boolean;
 }
 
 export interface ThreadGenerationsPage {
@@ -69,6 +71,7 @@ export async function readThreadGenerations(opts: {
       subject: g.subject,
       post: g.post,
       replies: g.replies,
+      dryRun: g.dryRun,
       dynastySlug: d.slug,
       dynastyName: d.name,
       position: v.position,
@@ -99,6 +102,7 @@ export async function readThreadGenerations(opts: {
       subject: r.subject,
       post: r.post,
       replies: Array.isArray(r.replies) ? r.replies : [],
+      dryRun: r.dryRun,
     })),
     // Caught up = the input cursor handed back (the feed's convention).
     nextCursor: last ? encodeCursor({ createdAt: last.createdAtText, id: last.id }) : opts.cursor ? encodeCursor(opts.cursor) : null,
