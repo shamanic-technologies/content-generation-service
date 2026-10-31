@@ -1,4 +1,5 @@
 import { readWhatsAppOutputs, newestFirst } from "./whatsapp-outputs.js";
+import { readThreadOutputs } from "./thread-generations-query.js";
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations, prompts, templateDynasties, templateDynastyVersions } from "../db/schema.js";
@@ -484,6 +485,7 @@ export async function readDynastyOutputs(slug: string, limit: number): Promise<{
     subject: r.subject,
     emails: outputEmails(r),
   }));
-  // A WhatsApp dynasty's messages (WA-TEMPLATES-1023); empty for an email dynasty.
-  return { dynasty, outputs: newestFirst(emails, await readWhatsAppOutputs(types, limit), limit) };
+  // A WhatsApp dynasty's messages (WA-TEMPLATES-1023) and a Threads dynasty's threads (THREADS-IDEAS-AB); empty for an email dynasty.
+  const others = newestFirst(await readWhatsAppOutputs(types, limit), await readThreadOutputs(types, limit), limit);
+  return { dynasty, outputs: newestFirst(emails, others, limit) };
 }

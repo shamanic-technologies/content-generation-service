@@ -12,6 +12,7 @@ import { requestLog } from "./middleware/request-log.js";
 import healthRoutes from "./routes/health.js";
 import generateRoutes from "./routes/generate.js";
 import generateWhatsAppRoutes from "./routes/generate-whatsapp.js";
+import generateThreadRoutes from "./routes/generate-thread.js";
 import statsRoutes from "./routes/stats.js";
 import promptRoutes from "./routes/prompts.js";
 import promptAssignmentRoutes from "./routes/prompt-assignments.js";
@@ -65,6 +66,7 @@ app.use(apiKeyAuth);
 // Protected routes
 app.use(generateRoutes);
 app.use(generateWhatsAppRoutes);
+app.use(generateThreadRoutes);
 app.use(statsRoutes);
 app.use(promptRoutes);
 app.use(promptAssignmentRoutes);
