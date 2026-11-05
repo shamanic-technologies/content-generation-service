@@ -83,7 +83,7 @@ const body = {
   offerId: OFFER,
   leadId: "lead-1",
   model: "claude-sonnet",
-  instruction: "Ask ONE open question.",
+  brief: "Ask ONE open question.",
 };
 
 const completeCalls = () => mockFetch.mock.calls.filter(([url]) => String(url).endsWith("/complete"));
@@ -154,5 +154,15 @@ describe("POST /generate records the exact chat-service request", () => {
     expect(calls).toHaveLength(2);
     expect(calls[1][1].body).toBe(calls[0][1].body);
     expect(mockValues.mock.calls[0][0].chatRequest).toEqual(JSON.parse(calls[0][1].body as string));
+  });
+
+  it("writes from the campaign's brief, never from an old instruction (ONE-BRIEF-1105)", async () => {
+    const brief = "Name the price: $25,000 for 30 days.";
+    await request(app).post("/generate").send({ ...body, brief, instruction: "Ask ONE open question." }).expect(200);
+    const row = mockValues.mock.calls[0][0];
+    expect(row.chatRequest.systemPrompt).toContain(brief);
+    expect(row.chatRequest.systemPrompt).toContain("The campaign's BRIEF");
+    expect(row.chatRequest.systemPrompt).not.toContain("Ask ONE open question.");
+    expect(row.chatRequestInputs.instruction).toBe(brief);
   });
 });

@@ -86,7 +86,7 @@ const body = {
   offerId: OFFER,
   leadId: "lead-1",
   model: "claude-sonnet",
-  instruction: "Ask ONE open question.",
+  brief: "Ask ONE open question.",
 };
 
 const completeCalls = () => mockFetch.mock.calls.filter(([url]) => String(url).endsWith("/complete"));
@@ -143,6 +143,12 @@ describe("POST /generate/materials + /generate with written (script writer)", ()
       },
       template_written: { content: { text: row.chatRequestInputs.promptTemplate } },
     });
+  });
+
+  it("materials hand the script the campaign's brief, under the key the script reads (ONE-BRIEF-1105)", async () => {
+    const brief = "Name the price: $25,000 for 30 days.";
+    const m = (await request(app).post("/generate/materials").send({ ...body, brief }).expect(200)).body;
+    expect(m.units.brand_context.content.instruction).toBe(brief);
   });
 
   it("written: stores the row /generate stores, on the script's run, with no completion and no run of its own", async () => {

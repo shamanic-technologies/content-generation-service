@@ -4,7 +4,7 @@ import {
   buildLeadRelationshipDirective,
   normalizeLeadRelationship,
 } from "../../src/lib/lead-relationship.js";
-import { buildCampaignInstructionDirective } from "../../src/lib/campaign-instruction.js";
+import { buildCampaignBriefDirective } from "../../src/lib/campaign-brief.js";
 import { LEAD_CONTEXT_VARIABLES_PUBLISHED } from "../../src/lib/lead-context-variables.js";
 import { generateFromTemplate } from "../../src/lib/chat-service-client.js";
 
@@ -93,10 +93,10 @@ describe("generateFromTemplate with leadRelationship", () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  async function sent(variables: Record<string, unknown>, instruction?: string) {
+  async function sent(variables: Record<string, unknown>, brief?: string) {
     fetchSpy.mockResolvedValueOnce(ok());
     await generateFromTemplate(
-      { promptTemplate: TEMPLATE, variables, instruction },
+      { promptTemplate: TEMPLATE, variables, brief },
       { orgId: "o", userId: "u", runId: "r" }
     );
     const body = JSON.parse((fetchSpy.mock.calls.at(-1)![1] as RequestInit).body as string);
@@ -130,10 +130,10 @@ describe("generateFromTemplate with leadRelationship", () => {
     expect(systemPrompt).toMatch(/wins over the prompt above, the template's angle and framing/);
   });
 
-  it("puts the strategy AFTER the campaign's instruction, so it wins", async () => {
-    const instruction = "Write to a signup who never talked with us.";
-    const { systemPrompt } = await sent({ leadFirstName: "Sam", leadRelationship: KNOWN }, instruction);
-    const directive = buildCampaignInstructionDirective(instruction);
+  it("puts the strategy AFTER the campaign's brief, so it wins", async () => {
+    const brief = "Write to a signup who never talked with us.";
+    const { systemPrompt } = await sent({ leadFirstName: "Sam", leadRelationship: KNOWN }, brief);
+    const directive = buildCampaignBriefDirective(brief);
     expect(systemPrompt.indexOf(STRATEGY)).toBeGreaterThan(systemPrompt.indexOf(directive));
   });
 

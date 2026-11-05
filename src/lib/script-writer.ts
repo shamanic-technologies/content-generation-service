@@ -5,7 +5,7 @@
  *
  *   POST /generate/materials   everything `/generate` did BEFORE the completion (idempotency and one-email-per-lead
  *                              hits, the stored template, campaign context, unfilled brand fields, the recipient's
- *                              language, the offer's give lists, the campaign's instruction, the asked LLM and its
+ *                              language, the offer's give lists, the campaign's brief, the asked LLM and its
  *                              provider), answered as the script step's materials (`units`), `tactics` and `subject`;
  *   POST /generate + `written` everything `/generate` did AFTER the completion: the `email_generations` row (prompt_raw,
  *                              response_raw, chat_request + chat_request_inputs, tokens, model, generation_run_id =
@@ -27,7 +27,8 @@ export interface WriterMaterialsInput {
   campaignContext: Record<string, unknown> | null;
   language: string | null;
   giveLists: OfferGiveLists | null;
-  instruction: string | null;
+  /** The campaign's brief (campaign-brief.ts). */
+  brief: string | null;
 }
 
 /**
@@ -45,7 +46,9 @@ export function writerUnits(m: WriterMaterialsInput) {
         variables: brand,
         ...(m.campaignContext ? { campaignContext: m.campaignContext } : {}),
         ...(m.giveLists ? { giveLists: m.giveLists } : {}),
-        ...(m.instruction ? { instruction: m.instruction } : {}),
+        // The stored script reads the campaign's text under `instruction` (workflow-service's
+        // script contract): the brief rides that key (ONE-BRIEF-1105).
+        ...(m.brief ? { instruction: m.brief } : {}),
       },
     },
     template_written: { content: { text: m.promptTemplate } },

@@ -74,13 +74,13 @@ describe("generateFromTemplate writes in our voice", () => {
     vi.mocked(voiceModule.readClientCommsVoice).mockResolvedValueOnce(voice);
     fetchSpy.mockResolvedValueOnce(completeResponse());
     await generateFromTemplate(
-      { promptTemplate: "Write a cold pitch.", variables: {}, instruction: "Ask ONE open question." },
+      { promptTemplate: "Write a cold pitch.", variables: {}, brief: "Ask ONE open question." },
       { orgId: "o", userId: "u", runId: "r" }
     );
     return JSON.parse((fetchSpy.mock.calls.at(-1)![1] as RequestInit).body as string).systemPrompt as string;
   }
 
-  it("puts the skill verbatim in the system prompt, before the campaign instruction (WHAT stays last)", async () => {
+  it("puts the skill verbatim in the system prompt, before the campaign brief (WHAT stays last)", async () => {
     const sp = await systemPromptWithVoice(SKILL_V1);
     expect(sp).toContain(actual.buildClientCommsVoiceDirective(SKILL_V1));
     expect(sp.indexOf("Ask ONE open question.")).toBeGreaterThan(sp.indexOf(SKILL_V1));

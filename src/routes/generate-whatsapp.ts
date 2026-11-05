@@ -74,7 +74,7 @@ router.post("/generate-whatsapp", (req, res, next) => serviceAuth(req as Authent
     let result: Awaited<ReturnType<typeof writeWhatsApp>>;
     try {
       result = await writeWhatsApp(
-        { type: body.type, promptTemplate: template.prompt, variables: body.variables, context: body.context, model },
+        { type: body.type, promptTemplate: template.prompt, variables: body.variables, context: body.context, model, brief: body.brief },
         { ...identity, runId: generationRunId ?? identity.runId },
       );
     } catch (err) {
