@@ -86,7 +86,7 @@ const body = {
   offerId: OFFER,
   leadId: "lead-1",
   model: "claude-sonnet",
-  instruction: "Ask ONE open question.",
+  brief: "Ask ONE open question.",
 };
 
 const completeCalls = () => mockFetch.mock.calls.filter(([url]) => String(url).endsWith("/complete"));

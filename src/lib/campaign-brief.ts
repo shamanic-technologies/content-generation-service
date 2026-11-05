@@ -10,15 +10,14 @@
  * to its SYSTEM prompt: it outranks the template's angle, pitch and structure, never the output
  * format, our voice, or what the thread and the person's relationship to us say.
  *
- * Transition: the campaign's old second text `instruction` (only the AI assistant could write it,
- * the client could not see it) is folded into the brief by campaign-service and removed.
- * `/generate` still reads `instruction` when the run sends no brief, until workflow-service sends
- * the brief; then that fallback is deleted.
+ * The campaign's old second text `instruction` (only the AI assistant could write it, the client
+ * could not see it) was folded into the brief by campaign-service and is read nowhere here since
+ * workflow-service sends `brief` (v0.48.236, 2026-11-05). Do not bring a second text back.
  *
  * Standalone leaf module (never `vi.mock`'d): `schemas.ts` reads MAX_BRIEF_LENGTH.
  */
 
-/** Generous ceiling: campaign-service caps the brief at 8000 and folds the old instruction (4000) into it. */
+/** Generous ceiling: campaign-service caps the brief at 8000 (the old instruction folded into it). */
 export const MAX_BRIEF_LENGTH = 20000;
 
 /** A text as the writer should read it, or null when absent, blank or not a string. */
@@ -28,9 +27,9 @@ export function normalizeBrief(raw: unknown): string | null {
   return text.length > 0 ? text : null;
 }
 
-/** The run's brief: `brief` when sent, else the legacy `instruction` (transition only). */
-export function resolveCampaignBrief(body: { brief?: unknown; instruction?: unknown }): string | null {
-  return normalizeBrief(body.brief) ?? normalizeBrief(body.instruction);
+/** The run's brief, or null when it carries none. */
+export function resolveCampaignBrief(body: { brief?: unknown }): string | null {
+  return normalizeBrief(body.brief);
 }
 
 /** The rule appended to a writer's system prompt. "" when there is no brief. */

@@ -430,12 +430,6 @@
             "maxLength": 20000,
             "description": "The campaign's brief (campaign-service's campaign `brief`, the text the client edits on the dashboard campaign page; workflow-service threads it into every writer call of a campaign run). When set, the writer's system prompt carries it: it outranks the template's angle, pitch and structure, never the output format, our voice, or the thread. Absent, null or blank = the template alone, byte-identical to before."
           },
-          "instruction": {
-            "type": "string",
-            "nullable": true,
-            "maxLength": 20000,
-            "description": "DEPRECATED (ONE-BRIEF-1105): the campaign's old second text, folded into `brief`. Read only when `brief` is absent; removed once workflow-service sends `brief`."
-          },
           "offerId": {
             "type": "string",
             "description": "The campaign's offer id. Forwarded to brand-service on the extract-fields request, which refuses brand-scoped reads for a brand selling several offers until one is named. Body only — there is no header fallback. Sent only when a single brand is named; ignored for a multi-brand request, which brand-service rejects with an offer."
