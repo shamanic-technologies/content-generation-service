@@ -15,6 +15,22 @@ export async function dynastiesHolding(type: string): Promise<Array<{ slug: stri
   return rows.map((r) => ({ slug: r.slug, head: r.head }));
 }
 
+/**
+ * The identity (`blind` | `named`) of the dynasty a template is a version of, `null` when it is in none
+ * (a template belongs to ONE dynasty). The identity is the truth, never the type name: several named
+ * dynasties store versions under `blind-discovery-email-*` (BLIND-NAME-LEAK-1105). A merged dynasty's
+ * versions moved to its target, so the row read is always the live one.
+ */
+export async function dynastyIdentityOf(type: string): Promise<"blind" | "named" | null> {
+  const rows = (await db.execute(sql`
+    SELECT d.identity FROM template_dynasty_versions v JOIN template_dynasties d ON d.slug = v.dynasty_slug
+    WHERE v.prompt_type = ${type} LIMIT 1`)) as unknown as Array<{ identity: string }>;
+  const identity = rows[0]?.identity;
+  if (identity === undefined) return null;
+  if (identity !== "blind" && identity !== "named") throw new Error(`Dynasty of ${type} has an unknown identity "${identity}"`);
+  return identity;
+}
+
 /** Refuses a staff re-activation that would leave a non-head version Active (NOT_DYNASTY_HEAD). */
 export async function assertMayActivate(type: string): Promise<void> {
   const held = await dynastiesHolding(type);

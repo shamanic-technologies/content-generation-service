@@ -49,6 +49,7 @@ vi.mock("../src/lib/dynasty-membership.js", async (importOriginal) => {
   return {
     ...actual,
     dynastiesHolding: vi.fn(async () => []),
+    dynastyIdentityOf: vi.fn(async () => null),
     assertMayActivate: vi.fn(async () => undefined),
     assertNotDynastySource: vi.fn(async () => undefined),
   };

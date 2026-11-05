@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { templateNeutralityJudgments } from "../db/schema.js";
 import { askJudgments, type JudgmentCaller } from "./judgments-client.js";
+import { dynastyIdentityOf } from "./dynasty-membership.js";
 import {
   QUESTIONS_PER_CALL,
   SPECIFIC_PROBABILITY_THRESHOLD,
@@ -29,7 +30,6 @@ import {
   blindPassagesToJudge,
   blindTemplateRuleKey,
   buildBlindRuleQuestions,
-  isBlindTemplateType,
 } from "./blind-template-rule.js";
 import {
   NAMED_TEMPLATE_RULE_VERSION,
@@ -77,7 +77,7 @@ export async function assertTemplateNeutral(params: {
   variables: ReadonlyArray<TemplateVariable>;
   inherited?: InheritedTemplate;
   caller: JudgmentCaller;
-  /** The type stored (or its family): a blind type is also judged by the blind rule, below. */
+  /** The type stored (or its source): a template of a BLIND dynasty is also judged by the blind rule, below. */
   type?: string;
 }): Promise<void> {
   const { prompt, variables, inherited, caller } = params;
@@ -117,7 +117,8 @@ export async function assertTemplateNeutral(params: {
     throw new TemplateNotNeutralError(specific);
   }
 
-  if (params.type) {
+  // A template of a BLIND dynasty (the dynasty's identity, never the type name: BLIND-NAME-LEAK-1105).
+  if (params.type && (await dynastyIdentityOf(params.type)) === "blind") {
     await assertBlindTemplateKeepsClientAnonymous({ type: params.type, prompt, variables, caller });
   }
 }
@@ -186,9 +187,9 @@ async function judgeIdentityRule(rule: {
 }
 
 /**
- * Throws BlindTemplateRevealsClientError (→ 422) when a BLIND-type template tells or
+ * Throws BlindTemplateRevealsClientError (→ 422) when a template of a BLIND dynasty tells or
  * allows the writer to name the client, its website or a link to it (blind-template-rule.ts).
- * Any other type returns at once. Every passage is judged, inherited ones included;
+ * The caller decides it is blind from the dynasty's identity, never the type name. Every passage is judged, inherited ones included;
  * the verdict is persisted beside the neutrality verdicts under its own key, so a
  * resubmission of the same content costs nothing.
  */
@@ -197,15 +198,8 @@ export async function assertBlindTemplateKeepsClientAnonymous(params: {
   prompt: string;
   variables: ReadonlyArray<TemplateVariable>;
   caller: JudgmentCaller;
-  /**
-   * Whether the template is blind. Default: read from the type prefix. A dynasty version
-   * passes its dynasty's identity instead: the identity is the truth, some historical
-   * type names say otherwise (template-dynasties.ts).
-   */
-  blind?: boolean;
 }): Promise<void> {
   const { type, prompt, variables, caller } = params;
-  if (!(params.blind ?? isBlindTemplateType(type))) return;
   const licensing = await judgeIdentityRule({
     name: "blind-template-rule",
     version: BLIND_TEMPLATE_RULE_VERSION,
@@ -256,6 +250,6 @@ export async function assertTemplateKeepsDynastyIdentity(params: {
   identity: "blind" | "named";
 }): Promise<void> {
   const { identity, ...rest } = params;
-  if (identity === "blind") await assertBlindTemplateKeepsClientAnonymous({ ...rest, blind: true });
+  if (identity === "blind") await assertBlindTemplateKeepsClientAnonymous(rest);
   else await assertNamedTemplateNamesClient(rest);
 }

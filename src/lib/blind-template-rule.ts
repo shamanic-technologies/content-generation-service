@@ -29,17 +29,6 @@ import {
 /** Part of the persisted verdict key: bump when the wording, splitting or threshold changes. */
 export const BLIND_TEMPLATE_RULE_VERSION = "blind-1";
 
-/**
- * A template TYPE starting with one of these promises the prospect never learns who the
- * client is from the email (features-service tags "Blind angle" on the type alone).
- */
-export const BLIND_TEMPLATE_TYPE_PREFIXES = ["blind-discovery-email", "feedback-request-blind-email"] as const;
-
-/** True for every version of a blind-type template (`blind-discovery-email-v34`, `-v9-landing-v3`, ...). */
-export function isBlindTemplateType(type: string): boolean {
-  return BLIND_TEMPLATE_TYPE_PREFIXES.some((p) => type === p || type.startsWith(`${p}-`));
-}
-
 /** Every passage of the template and of its variable descriptions. */
 export function blindPassagesToJudge(
   prompt: string,

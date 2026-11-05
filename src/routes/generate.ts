@@ -16,7 +16,9 @@ import { messageWrittenDeclaration, LEAD_SUBJECT_SERVICE } from "../lib/run-outc
 import { messageFromStep } from "../lib/pipe-from-step.js";
 import { declareStoredOutcomes } from "../lib/outcome-declarations.js";
 import { getCampaignFeatureInputs } from "../lib/campaign-client.js";
-import { extractBrandFields, resolveBrandNames } from "../lib/brand-client.js";
+import { extractBrandFields, fetchClientIdentities, resolveBrandNames } from "../lib/brand-client.js";
+import { ClientIdentityError, clientIdentityTerms, maskClientIdentity } from "../lib/client-identity-mask.js";
+import { dynastyIdentityOf } from "../lib/dynasty-membership.js";
 import { fetchOfferGiveLists } from "../lib/offer-give-lists-client.js";
 import { type OfferGiveLists, hasGiveLists } from "../lib/offer-give-lists.js";
 import { fetchWorkflowExamples, toExampleEmail } from "../lib/examples-query.js";
@@ -233,7 +235,22 @@ async function writingMaterials(req: AuthenticatedRequest, data: GenerateBody, s
     traceEvent(req.runId!, { service: "content-generation-service", event: "campaign-brief-applied", detail: `Writing from the campaign's brief (${brief.length} chars)` }, req.headers).catch(() => {});
   }
 
-  return { storedPrompt, campaignContext, language, giveLists, brief };
+  // A BLIND dynasty's writer never sees who the client is (BLIND-NAME-LEAK-1105): its name, domain and
+  // URLs are masked in every input, selling points kept. Keyed on the dynasty's identity, never the type.
+  if ((await dynastyIdentityOf(type)) === "blind") {
+    const terms = clientIdentityTerms(await fetchClientIdentities(brandIds, serviceIdentity));
+    traceEvent(req.runId!, { service: "content-generation-service", event: "blind-client-masked", detail: `Masked ${terms.names.length} name and ${terms.domains.length} domain spellings of the client from the writer's inputs` }, req.headers).catch(() => {});
+    return {
+      storedPrompt,
+      variables: maskClientIdentity(variables, terms),
+      campaignContext: campaignContext && maskClientIdentity(campaignContext, terms),
+      language,
+      giveLists: giveLists && maskClientIdentity(giveLists, terms),
+      brief: brief && maskClientIdentity(brief, terms),
+    };
+  }
+
+  return { storedPrompt, variables, campaignContext, language, giveLists, brief };
 }
 
 const noPrompt = (type: string) => ({
@@ -281,6 +298,11 @@ function generateErrorResponse(req: AuthenticatedRequest, res: Response, error: 
       traceEvent(req.runId, { service: "content-generation-service", event: "incomplete-sequence", detail: error.message, level: "error" }, req.headers).catch(() => {});
     }
     return res.status(502).json({ error: error.message, steps: error.steps });
+  }
+  if (error instanceof ClientIdentityError) {
+    // A blind email is never written with the client's identity unmasked.
+    console.error("Generate error:", error.message);
+    return res.status(error.status).json({ error: error.message, code: "CLIENT_IDENTITY_UNREADABLE" });
   }
   if (error instanceof ClientCommsVoiceError) {
     // No default voice: the email is not written without our client-comms skill.
@@ -331,7 +353,7 @@ router.post("/generate/materials", serviceAuth, async (req: AuthenticatedRequest
       subject: { service: LEAD_SUBJECT_SERVICE, id: data.leadId },
       units: writerUnits({
         promptTemplate: m.storedPrompt.prompt,
-        variables: data.variables,
+        variables: m.variables,
         campaignContext: m.campaignContext,
         language: m.language,
         giveLists: m.giveLists,
@@ -367,7 +389,8 @@ async function recordWrittenByScript(req: AuthenticatedRequest, res: Response, d
     brandIds: scope.brandIds,
     campaignId: leadCampaignId,
     variablesRaw: w.variables,
-    ...variableColumns(w.variables),
+    // The request's own values win: the units are masked for a blind dynasty (BLIND-NAME-LEAK-1105).
+    ...variableColumns({ ...w.variables, ...data.variables }),
     subject: w.subject,
     sequence: w.sequence,
     model: w.model,
@@ -418,7 +441,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
     const data = parsed.data;
-    const { type, variables, model, leadId, apolloEnrichmentId } = data;
+    const { type, model, leadId, apolloEnrichmentId } = data;
 
     // The model name is checked against chat-service's catalogue before anything is read or
     // billed (400 UNKNOWN_MODEL); omitted → the default, resolved at the completion.
@@ -435,7 +458,8 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
 
     const m = await writingMaterials(req, data, scope);
     if (!m) return res.status(404).json(noPrompt(type));
-    const { storedPrompt, campaignContext, language, giveLists, brief } = m;
+    // `variables` = what the writer reads (masked for a blind dynasty); the row's columns keep the request's.
+    const { storedPrompt, variables, campaignContext, language, giveLists, brief } = m;
 
     // This service's run for the writing call, opened BEFORE the completion so chat-service's
     // `/complete` run (and its cost) is its child: the run then declares the message it wrote
@@ -474,7 +498,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
     // The step this message's pipe starts from is what it consumes (PIPE-FROM-STEP-1024).
     const pipeFrom = generationRunId && leadId ? await messageFromStep(campaignId, serviceIdentity) : null;
     const outcomes = generationRunId
-      ? messageWrittenDeclaration({ leadId, variables, pipeFromStep: pipeFrom?.known ? pipeFrom.fromStep : null })
+      ? messageWrittenDeclaration({ leadId, variables: data.variables, pipeFromStep: pipeFrom?.known ? pipeFrom.fromStep : null })
       : null;
     if (generationRunId && !outcomes) {
       console.warn(`[content-gen] message written without a leadId: no outcome declared (run=${generationRunId})`);
@@ -516,8 +540,8 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       brandIds: brandIds,
       campaignId: leadCampaignId,
       variablesRaw: variables,
-      // Populate dedicated lead/client columns from variables
-      ...variableColumns(variables),
+      // Populate dedicated lead/client columns from the request's variables
+      ...variableColumns(data.variables),
       subject: result.subject,
       sequence: result.sequence,
       model: result.model,
