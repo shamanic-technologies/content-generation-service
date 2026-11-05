@@ -6,6 +6,7 @@
  */
 
 import { type Tracking, buildTrackingHeaders } from "./tracking.js";
+import { ClientIdentityError } from "./client-identity-mask.js";
 
 const BRAND_SERVICE_URL = process.env.BRAND_SERVICE_URL || "http://localhost:3030";
 const BRAND_SERVICE_API_KEY = process.env.BRAND_SERVICE_API_KEY || "";
@@ -173,4 +174,31 @@ export async function fetchBrandRows(brandId: string, identity: ServiceIdentity)
     throw new BrandRowsError(404, `brand ${brandId} not found`);
   }
   return rows;
+}
+
+/**
+ * The name, domain and url of each brand a BLIND email is written for (BLIND-NAME-LEAK-1105), read
+ * from brand-service `GET /internal/brands?ids=`, exactly the rows a cold-email DAG reads. Fail loud:
+ * every brand must answer, otherwise the writer could be handed the client's name unmasked.
+ */
+export async function fetchClientIdentities(
+  brandIds: ReadonlyArray<string>,
+  identity: ServiceIdentity
+): Promise<Array<{ id: string; name: unknown; domain: unknown; url: unknown }>> {
+  if (brandIds.length === 0) {
+    throw new ClientIdentityError(400, "A blind email names no brand: who the client is cannot be hidden from the writer");
+  }
+  const response = await fetch(`${BRAND_SERVICE_URL}/internal/brands?ids=${encodeURIComponent(brandIds.join(","))}`, {
+    headers: buildHeaders(identity),
+  });
+  if (!response.ok) {
+    throw new ClientIdentityError(502, `brand-service GET /internal/brands failed: ${response.status} - ${await response.text()}`);
+  }
+  const data = (await response.json()) as { brands?: Array<Record<string, unknown>> };
+  const rows = (data.brands ?? []).filter((b) => brandIds.includes(String(b.id)));
+  const missing = brandIds.filter((id) => !rows.some((r) => r.id === id));
+  if (missing.length > 0) {
+    throw new ClientIdentityError(502, `brand-service returned no brand for ${missing.join(", ")}`);
+  }
+  return rows.map((r) => ({ id: String(r.id), name: r.name, domain: r.domain, url: r.url }));
 }
