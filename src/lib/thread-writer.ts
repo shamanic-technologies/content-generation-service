@@ -11,6 +11,7 @@
  * dash-stripped (dashes.ts) and trimmed, so stored = what the workflow publishes. Our client-comms voice is
  * NOT appended: a public post is not a message to a client or a prospect; the template carries the copy rules.
  */
+import { buildCampaignBriefDirective } from "./campaign-brief.js";
 import { resolveChatModel } from "./chat-model-catalogue.js";
 import { fetchWithRetry } from "./fetch-retry.js";
 import { type Tracking, buildTrackingHeaders } from "./tracking.js";
@@ -60,12 +61,14 @@ export interface ThreadWriteResult {
 }
 
 export async function writeThread(
-  params: { type: string; promptTemplate: string; variables: Record<string, unknown>; context: string; model: string },
+  params: { type: string; promptTemplate: string; variables: Record<string, unknown>; context: string; model: string; brief?: string | null },
   identity: Tracking & { runId: string },
 ): Promise<ThreadWriteResult> {
   const rules = renderThreadTemplate(params.type, params.promptTemplate, params.variables);
   const { provider } = await resolveChatModel(params.model);
-  const systemPrompt = `${rules}\n${OUTPUT_FORMAT}`;
+  // The campaign's brief (campaign-brief.ts) before the output format; absent = byte-identical.
+  const briefDirective = buildCampaignBriefDirective(params.brief);
+  const systemPrompt = `${rules}${briefDirective ? `\n${briefDirective}` : ""}\n${OUTPUT_FORMAT}`;
 
   const base = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
   const response = await fetchWithRetry(

@@ -1,4 +1,4 @@
-import { MAX_INSTRUCTION_LENGTH } from "./lib/campaign-instruction.js";
+import { MAX_BRIEF_LENGTH } from "./lib/campaign-brief.js";
 import { z } from "zod";
 import {
   extendZodWithOpenApi,
@@ -581,7 +581,8 @@ export const GenerateRequestSchema = registry.register(
       workflowSlug: z.string().optional(),
       featureSlug: z.string().optional().describe("Feature slug for tracking"),
       audienceId: z.string().optional().describe("Audience attribution ID. Falls back to x-audience-id header if omitted."),
-      instruction: z.string().max(MAX_INSTRUCTION_LENGTH).nullable().optional().describe("The campaign's own instruction (campaign-service's sales-funnel campaign `instruction`, reported by /start-run; workflow-service threads it into every /generate body). When set, the email is written from it: it outranks the template's angle, pitch and structure, never the output format. Absent, null or blank = the template alone, byte-identical to before."),
+      brief: z.string().max(MAX_BRIEF_LENGTH).nullable().optional().describe("The campaign's brief (campaign-service's campaign `brief`, the text the client edits on the dashboard campaign page; workflow-service threads it into every writer call of a campaign run). When set, the writer's system prompt carries it: it outranks the template's angle, pitch and structure, never the output format, our voice, or the thread. Absent, null or blank = the template alone, byte-identical to before."),
+      instruction: z.string().max(MAX_BRIEF_LENGTH).nullable().optional().describe("DEPRECATED (ONE-BRIEF-1105): the campaign's old second text, folded into `brief`. Read only when `brief` is absent; removed once workflow-service sends `brief`."),
       offerId: z.string().optional().describe("The campaign's offer id. Forwarded to brand-service on the extract-fields request, which refuses brand-scoped reads for a brand selling several offers until one is named. Body only — there is no header fallback. Sent only when a single brand is named; ignored for a multi-brand request, which brand-service rejects with an offer."),
       written: z.record(z.string(), z.unknown()).nullish().describe("FACTORY-P3 script writer: workflow-service's `POST /orgs/scripts/run` answer (run with `trace: true`, `recordedBy: \"content-generation\"`) for the script `message_written/dy_template_writer_full`. When present, /generate does NOT call the LLM: it stores the email the script wrote (same row, prompt_raw, response_raw, chat_request + inputs, generation_run_id = the script's run) and declares its ONE `message_written` on that run. Requires `units`. `null` = absent (a skipped script step answers null). A request already answered (idempotency key, the lead's email for this campaign) returns the stored email, as always."),
       units: z.record(z.string(), z.unknown()).nullish().describe("The materials the script writer was handed: `POST /generate/materials`'s `units`, verbatim. Read with `written`."),
@@ -667,7 +668,7 @@ registry.registerPath({
   summary: "The script writer's materials: everything /generate does before the completion",
   description:
     "Same body as /generate. Runs every step /generate runs BEFORE the LLM call (idempotency and one-email-per-lead hits, the stored " +
-    "template, campaign context, unfilled brand fields, the recipient's language, the offer's give lists, the campaign's instruction) and " +
+    "template, campaign context, unfilled brand fields, the recipient's language, the offer's give lists, the campaign's brief) and " +
     "answers them as the materials of workflow-service's stored script `message_written/dy_template_writer_full`. Writes nothing. Then " +
     "/generate with `written` + `units` stores what the script wrote.",
   request: {
@@ -1817,7 +1818,7 @@ const RecordedChatRequestSchema = z
     message: z.string().describe("The user prompt: template with variables substituted, preceded by the context blocks."),
     systemPrompt: z
       .string()
-      .describe("The system prompt: universal rules, client-comms voice, then language, give lists, campaign instruction, relationship strategy when present."),
+      .describe("The system prompt: universal rules, client-comms voice, then language, give lists, campaign brief, relationship strategy when present."),
     responseSchema: z.record(z.string(), z.unknown()).describe("JSON schema of the answer (strict variant for anthropic)."),
     provider: z.string().describe("Provider read from chat-service's model catalogue."),
     model: z.string().describe("The model name ASKED (dynasty slug, alias or id), as sent."),
@@ -1834,7 +1835,7 @@ const RecordedChatRequestInputsSchema = z
       .object({ giveForFree: z.array(z.string()), neverGive: z.array(z.string()) })
       .nullable()
       .describe("The offer's confirmed give lists as read, or null."),
-    instruction: z.string().nullable().describe("The campaign instruction, or null."),
+    instruction: z.string().nullable().describe("The campaign's brief the writer read (key kept from the old `instruction`), or null."),
     clientCommsVoice: z.string().describe("Our client-comms voice exactly as read from chat-service for this generation."),
   })
   .describe("What the request was built from beyond `variables`.");
@@ -2705,13 +2706,14 @@ export const GenerateWhatsAppRequestSchema = registry.register(
         .string()
         .min(1)
         .describe(
-          "Everything about this run the writer reads, as one text: today, the instruction, why we write now, their local time, " +
+          "Everything about this run the writer reads, as one text: today, why we write now, their local time, " +
             "who we write to, who they are to us, who we are, the client's facts, the thread, the sender's own messages."
         ),
       model: ModelField,
       brandIds: z.array(z.string()).optional().describe("Brand UUIDs. Falls back to x-brand-id."),
       campaignId: z.string().optional().describe("Falls back to x-campaign-id."),
       leadId: z.string().optional().describe("lead-service lead id of the person, when they have one."),
+      brief: z.string().max(MAX_BRIEF_LENGTH).nullable().optional().describe("The campaign's brief (campaign-service's campaign `brief`, the text the client edits on the dashboard campaign page; workflow-service threads it into every writer call of a campaign run). When set, the writer's system prompt carries it: it outranks the template's angle, pitch and structure, never the output format, our voice, or the thread. Absent, null or blank = the template alone, byte-identical to before."),
       workflowSlug: z.string().optional().describe("Falls back to x-workflow-slug."),
       featureSlug: z.string().optional().describe("Falls back to x-feature-slug (cold WhatsApp: `cold-whatsapp-outreach`)."),
     })
@@ -2794,6 +2796,7 @@ export const GenerateThreadRequestSchema = registry.register(
       campaignId: z.string().optional().describe("Falls back to x-campaign-id."),
       workflowSlug: z.string().optional().describe("Falls back to x-workflow-slug."),
       featureSlug: z.string().optional().describe("Falls back to x-feature-slug (`threads-post`)."),
+      brief: z.string().max(MAX_BRIEF_LENGTH).nullable().optional().describe("The campaign's brief (campaign-service's campaign `brief`, the text the client edits on the dashboard campaign page; workflow-service threads it into every writer call of a campaign run). When set, the writer's system prompt carries it: it outranks the template's angle, pitch and structure, never the output format, our voice, or the thread. Absent, null or blank = the template alone, byte-identical to before."),
       dryRun: z.boolean().optional().describe("A staff dry run: the thread is written and stored but never published. Served as `dryRun` so features-service counts none of it. Omitted = false."),
     })
     .openapi("GenerateThreadRequest")

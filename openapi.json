@@ -424,11 +424,17 @@
             "type": "string",
             "description": "Audience attribution ID. Falls back to x-audience-id header if omitted."
           },
+          "brief": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 20000,
+            "description": "The campaign's brief (campaign-service's campaign `brief`, the text the client edits on the dashboard campaign page; workflow-service threads it into every writer call of a campaign run). When set, the writer's system prompt carries it: it outranks the template's angle, pitch and structure, never the output format, our voice, or the thread. Absent, null or blank = the template alone, byte-identical to before."
+          },
           "instruction": {
             "type": "string",
             "nullable": true,
-            "maxLength": 4000,
-            "description": "The campaign's own instruction (campaign-service's sales-funnel campaign `instruction`, reported by /start-run; workflow-service threads it into every /generate body). When set, the email is written from it: it outranks the template's angle, pitch and structure, never the output format. Absent, null or blank = the template alone, byte-identical to before."
+            "maxLength": 20000,
+            "description": "DEPRECATED (ONE-BRIEF-1105): the campaign's old second text, folded into `brief`. Read only when `brief` is absent; removed once workflow-service sends `brief`."
           },
           "offerId": {
             "type": "string",
@@ -1957,7 +1963,7 @@
                     },
                     "systemPrompt": {
                       "type": "string",
-                      "description": "The system prompt: universal rules, client-comms voice, then language, give lists, campaign instruction, relationship strategy when present."
+                      "description": "The system prompt: universal rules, client-comms voice, then language, give lists, campaign brief, relationship strategy when present."
                     },
                     "responseSchema": {
                       "type": "object",
@@ -2033,7 +2039,7 @@
                     "instruction": {
                       "type": "string",
                       "nullable": true,
-                      "description": "The campaign instruction, or null."
+                      "description": "The campaign's brief the writer read (key kept from the old `instruction`), or null."
                     },
                     "clientCommsVoice": {
                       "type": "string",
@@ -3485,7 +3491,7 @@
           "context": {
             "type": "string",
             "minLength": 1,
-            "description": "Everything about this run the writer reads, as one text: today, the instruction, why we write now, their local time, who we write to, who they are to us, who we are, the client's facts, the thread, the sender's own messages."
+            "description": "Everything about this run the writer reads, as one text: today, why we write now, their local time, who we write to, who they are to us, who we are, the client's facts, the thread, the sender's own messages."
           },
           "model": {
             "type": "string",
@@ -3506,6 +3512,12 @@
           "leadId": {
             "type": "string",
             "description": "lead-service lead id of the person, when they have one."
+          },
+          "brief": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 20000,
+            "description": "The campaign's brief (campaign-service's campaign `brief`, the text the client edits on the dashboard campaign page; workflow-service threads it into every writer call of a campaign run). When set, the writer's system prompt carries it: it outranks the template's angle, pitch and structure, never the output format, our voice, or the thread. Absent, null or blank = the template alone, byte-identical to before."
           },
           "workflowSlug": {
             "type": "string",
@@ -3632,6 +3644,12 @@
           "featureSlug": {
             "type": "string",
             "description": "Falls back to x-feature-slug (`threads-post`)."
+          },
+          "brief": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 20000,
+            "description": "The campaign's brief (campaign-service's campaign `brief`, the text the client edits on the dashboard campaign page; workflow-service threads it into every writer call of a campaign run). When set, the writer's system prompt carries it: it outranks the template's angle, pitch and structure, never the output format, our voice, or the thread. Absent, null or blank = the template alone, byte-identical to before."
           },
           "dryRun": {
             "type": "boolean",
@@ -4722,7 +4740,7 @@
           "Content Generation"
         ],
         "summary": "The script writer's materials: everything /generate does before the completion",
-        "description": "Same body as /generate. Runs every step /generate runs BEFORE the LLM call (idempotency and one-email-per-lead hits, the stored template, campaign context, unfilled brand fields, the recipient's language, the offer's give lists, the campaign's instruction) and answers them as the materials of workflow-service's stored script `message_written/dy_template_writer_full`. Writes nothing. Then /generate with `written` + `units` stores what the script wrote.",
+        "description": "Same body as /generate. Runs every step /generate runs BEFORE the LLM call (idempotency and one-email-per-lead hits, the stored template, campaign context, unfilled brand fields, the recipient's language, the offer's give lists, the campaign's brief) and answers them as the materials of workflow-service's stored script `message_written/dy_template_writer_full`. Writes nothing. Then /generate with `written` + `units` stores what the script wrote.",
         "parameters": [
           {
             "schema": {

@@ -13,6 +13,7 @@ import { fetchWithRetry } from "./fetch-retry.js";
 import { type Tracking, buildTrackingHeaders } from "./tracking.js";
 import { readClientCommsVoice, buildClientCommsVoiceDirective } from "./client-comms-voice.js";
 import { stripDashes } from "./dashes.js";
+import { buildCampaignBriefDirective } from "./campaign-brief.js";
 import { unescapeLineBreaks } from "./escaped-line-breaks.js";
 
 export class WhatsAppVariablesMissingError extends Error {
@@ -104,13 +105,15 @@ export interface WhatsAppWriteResult {
 }
 
 export async function writeWhatsApp(
-  params: { type: string; promptTemplate: string; variables: Record<string, unknown>; context: string; model: string },
+  params: { type: string; promptTemplate: string; variables: Record<string, unknown>; context: string; model: string; brief?: string | null },
   identity: Tracking & { runId: string },
 ): Promise<WhatsAppWriteResult> {
   const rules = renderWhatsAppTemplate(params.type, params.promptTemplate, params.variables);
   const { provider } = await resolveChatModel(params.model);
   const voice = await readClientCommsVoice();
-  const systemPrompt = `${rules}\n${buildClientCommsVoiceDirective(voice)}\n${OUTPUT_FORMAT}`;
+  // The campaign's brief (campaign-brief.ts) after our voice, before the output format; absent = byte-identical.
+  const briefDirective = buildCampaignBriefDirective(params.brief);
+  const systemPrompt = `${rules}\n${buildClientCommsVoiceDirective(voice)}${briefDirective ? `\n${briefDirective}` : ""}\n${OUTPUT_FORMAT}`;
 
   const base = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
   const response = await fetchWithRetry(
