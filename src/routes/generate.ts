@@ -1,4 +1,4 @@
-import { normalizeInstruction } from "../lib/campaign-instruction.js";
+import { resolveCampaignBrief } from "../lib/campaign-brief.js";
 import { Router, type Response, type NextFunction } from "express";
 import type { z } from "zod";
 import { WrittenByScriptError, readWrittenByScript, writerUnits } from "../lib/script-writer.js";
@@ -225,14 +225,15 @@ async function writingMaterials(req: AuthenticatedRequest, data: GenerateBody, s
     }
   }
 
-  // The campaign's own instruction, when its run carries one: the email is written from it
-  // (see campaign-instruction.ts). Body only, threaded by workflow-service from /start-run.
-  const instruction = normalizeInstruction(data.instruction);
-  if (instruction) {
-    traceEvent(req.runId!, { service: "content-generation-service", event: "campaign-instruction-applied", detail: `Writing from the campaign's instruction (${instruction.length} chars)` }, req.headers).catch(() => {});
+  // The campaign's brief, when its run carries one: the email is written from it (see
+  // campaign-brief.ts). Body only, threaded by workflow-service from /start-run. The legacy
+  // `instruction` is read only while the run sends no brief (ONE-BRIEF-1105 transition).
+  const brief = resolveCampaignBrief(data);
+  if (brief) {
+    traceEvent(req.runId!, { service: "content-generation-service", event: "campaign-brief-applied", detail: `Writing from the campaign's brief (${brief.length} chars)` }, req.headers).catch(() => {});
   }
 
-  return { storedPrompt, campaignContext, language, giveLists, instruction };
+  return { storedPrompt, campaignContext, language, giveLists, brief };
 }
 
 const noPrompt = (type: string) => ({
@@ -334,7 +335,7 @@ router.post("/generate/materials", serviceAuth, async (req: AuthenticatedRequest
         campaignContext: m.campaignContext,
         language: m.language,
         giveLists: m.giveLists,
-        instruction: m.instruction,
+        brief: m.brief,
       }),
       tactics: { llm: { provider, model } },
     });
@@ -434,7 +435,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
 
     const m = await writingMaterials(req, data, scope);
     if (!m) return res.status(404).json(noPrompt(type));
-    const { storedPrompt, campaignContext, language, giveLists, instruction } = m;
+    const { storedPrompt, campaignContext, language, giveLists, brief } = m;
 
     // This service's run for the writing call, opened BEFORE the completion so chat-service's
     // `/complete` run (and its cost) is its child: the run then declares the message it wrote
@@ -492,7 +493,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
         model,
         language,
         giveLists,
-        instruction,
+        brief,
         onRegenerate: ({ attempt, reason }) => {
           traceEvent(req.runId!, { service: "content-generation-service", event: "llm-regenerate", detail: `Unusable sequence, regenerating (attempt ${attempt}): ${reason}`, level: "warn" }, req.headers).catch(() => {});
         },

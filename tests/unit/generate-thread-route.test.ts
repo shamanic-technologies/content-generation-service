@@ -134,4 +134,14 @@ describe("POST /generate-thread", () => {
     await request(await app()).post("/generate-thread").send(body()).expect(502);
     expect(mockValues).not.toHaveBeenCalled();
   });
+
+  it("puts the campaign's brief in the writer's system prompt (ONE-BRIEF-1105)", async () => {
+    const brief = "Talk about cost per meeting booked.";
+    fetchMock.mockImplementation(async () => completion({ subject: "s", post: "p", replies: [] }));
+    await request(await app()).post("/generate-thread").send(body({ brief })).expect(200);
+    const withBrief = JSON.parse(fetchMock.mock.calls[0][1].body).systemPrompt as string;
+    expect(withBrief).toContain(brief);
+    await request(await app()).post("/generate-thread").send(body()).expect(200);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).systemPrompt).not.toContain("The campaign's BRIEF");
+  });
 });

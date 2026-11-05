@@ -44,7 +44,7 @@ router.post("/generate-thread", (req, res, next) => serviceAuth(req as Authentic
       audienceId: req.audienceId,
     };
     const result = await writeThread(
-      { type: body.type, promptTemplate: template.prompt, variables: body.variables, context: body.context, model: body.model },
+      { type: body.type, promptTemplate: template.prompt, variables: body.variables, context: body.context, model: body.model, brief: body.brief },
       identity,
     );
     const [row] = await db

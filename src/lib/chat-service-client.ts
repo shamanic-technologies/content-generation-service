@@ -2,7 +2,7 @@ import { extractTemplateVariableNames } from "./template-vars.js";
 import { buildLeadContextBlock } from "./lead-context-block.js";
 import { withoutUnquotableBuyingSignal } from "./lead-context-variables.js";
 import { type OfferGiveLists, buildGiveListsDirective } from "./offer-give-lists.js";
-import { buildCampaignInstructionDirective } from "./campaign-instruction.js";
+import { buildCampaignBriefDirective } from "./campaign-brief.js";
 import {
   LEAD_RELATIONSHIP_VARIABLE,
   buildLeadRelationshipBlock,
@@ -45,11 +45,11 @@ export interface GenerateFromTemplateParams {
    */
   giveLists?: OfferGiveLists | null;
   /**
-   * The campaign's own instruction (campaign-service, threaded by workflow-service). Absent,
-   * null or blank → no rule is emitted and the system prompt stays byte-identical. Appended
-   * LAST so it outranks every rule before it. See campaign-instruction.ts.
+   * The campaign's brief (campaign-service, threaded by workflow-service). Absent, null or blank
+   * → no rule is emitted and the system prompt stays byte-identical. Appended after every rule
+   * but the relationship, so it outranks them. See campaign-brief.ts.
    */
-  instruction?: string | null;
+  brief?: string | null;
   /**
    * Called before each REGENERATION (never before the first attempt), with the
    * reason the previous answer was unusable. Lets the route trace it on the run.
@@ -87,6 +87,7 @@ export interface ChatRequestInputs {
   campaignContext: Record<string, unknown> | null;
   language: string | null;
   giveLists: OfferGiveLists | null;
+  /** The campaign's brief the writer read (key kept for the recorded-generation contract). */
   instruction: string | null;
   /** Our client-comms voice exactly as read for this generation (it is read live, no copy). */
   clientCommsVoice: string;
@@ -444,9 +445,9 @@ export async function generateFromTemplate(
   if (giveListsDirective) {
     systemPrompt = `${systemPrompt}\n${giveListsDirective}`;
   }
-  const instructionDirective = buildCampaignInstructionDirective(params.instruction);
-  if (instructionDirective) {
-    systemPrompt = `${systemPrompt}\n${instructionDirective}`;
+  const briefDirective = buildCampaignBriefDirective(params.brief);
+  if (briefDirective) {
+    systemPrompt = `${systemPrompt}\n${briefDirective}`;
   }
   // LAST: who they already are to us wins over the template and an instruction
   // that assumes a first contact.
@@ -532,7 +533,7 @@ export async function generateFromTemplate(
       campaignContext: params.campaignContext ?? null,
       language: params.language ?? null,
       giveLists: params.giveLists ?? null,
-      instruction: params.instruction ?? null,
+      instruction: params.brief ?? null,
       clientCommsVoice: voice,
     },
   };

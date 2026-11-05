@@ -152,4 +152,19 @@ describe("POST /generate-whatsapp", () => {
     const res = await request(await app()).post("/generate-whatsapp").send(body()).expect(402);
     expect(res.body).toMatchObject({ balance_cents: 1, required_cents: 5 });
   });
+
+  it("puts the campaign's brief in the writer's system prompt, before the output format (ONE-BRIEF-1105)", async () => {
+    const brief = "Name the price: $25,000 for 30 days.";
+    fetchMock.mockImplementation(async () => completion({ decision: "later", bubbles: [], reason: "r", nextFollowUpAt: "", nextFollowUpWhy: "w" }));
+    await request(await app()).post("/generate-whatsapp").send(body({ brief })).expect(200);
+    const withBrief = JSON.parse(fetchMock.mock.calls[0][1].body).systemPrompt as string;
+    expect(withBrief).toContain(brief);
+    expect(withBrief.indexOf(brief)).toBeGreaterThan(withBrief.indexOf("TEST VOICE"));
+    expect(withBrief.indexOf(brief)).toBeLessThan(withBrief.indexOf("OUTPUT:"));
+    expect(mockValues.mock.calls[0][0].systemPromptRaw).toBe(withBrief);
+
+    await request(await app()).post("/generate-whatsapp").send(body()).expect(200);
+    const without = JSON.parse(fetchMock.mock.calls[1][1].body).systemPrompt as string;
+    expect(without).not.toContain("The campaign's BRIEF");
+  });
 });
