@@ -82,11 +82,22 @@ const VARS = [
   { name: "brandExtractedFields", description: "What the client sells" },
 ];
 
+// The dynasty's identity decides, never the type name (BLIND-NAME-LEAK-1105). Stubbed in tests/setup.ts.
+const IDENTITY: Record<string, "blind" | "named"> = {
+  "blind-discovery-email-v99": "blind",
+  "feedback-request-blind-email-v9": "blind",
+  "blind-discovery-email-v34": "blind",
+  // A NAMED dynasty storing its versions under the blind prefix (cold-reply-free-offer-named).
+  "blind-discovery-email-v50": "named",
+};
+
 describe("blind templates at write", () => {
   let app: express.Express;
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    const { dynastyIdentityOf } = await import("../../src/lib/dynasty-membership.js");
+    (dynastyIdentityOf as any).mockImplementation(async (type: string) => IDENTITY[type] ?? null);
     blindCalls.length = 0;
     vi.stubGlobal("fetch", fakeJev());
     mockPromptFindFirst.mockResolvedValue(undefined);
@@ -132,6 +143,27 @@ describe("blind templates at write", () => {
     await request(app)
       .post("/platform-prompts")
       .send({ type: "cold-email-v99", prompt: LICENSING, variables: VARS })
+      .expect(201);
+    expect(blindCalls).toHaveLength(0);
+  });
+
+  it("treats a version of a NAMED dynasty as named even when its type starts with blind-discovery-email", async () => {
+    const source = { id: "p50", orgId: null, type: "blind-discovery-email-v50", prompt: CLEAN, variables: VARS, createdAt: NOW, updatedAt: NOW };
+    mockPromptFindFirst.mockResolvedValue(source);
+    const { db } = await import("../../src/db/index.js");
+    (db.query.prompts.findMany as any).mockResolvedValue([{ type: "blind-discovery-email-v50" }]);
+
+    await request(app)
+      .put("/prompts")
+      .send({ sourceType: "blind-discovery-email-v50", prompt: LICENSING, variables: VARS })
+      .expect(201);
+    expect(blindCalls).toHaveLength(0);
+  });
+
+  it("does not judge a loose blind-prefixed template by the blind rule: it has no dynasty, so no identity", async () => {
+    await request(app)
+      .post("/prompts")
+      .send({ type: "blind-discovery-email-v98", prompt: LICENSING, variables: VARS })
       .expect(201);
     expect(blindCalls).toHaveLength(0);
   });
