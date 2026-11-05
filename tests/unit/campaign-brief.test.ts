@@ -17,14 +17,10 @@ describe("normalizeBrief", () => {
   });
 });
 
-describe("resolveCampaignBrief (ONE-BRIEF-1105 transition)", () => {
-  it("the brief wins over the legacy instruction", () => {
-    expect(resolveCampaignBrief({ brief: BRIEF, instruction: "old" })).toBe(BRIEF);
-  });
-
-  it("reads the legacy instruction only while the run sends no brief", () => {
-    expect(resolveCampaignBrief({ instruction: "old" })).toBe("old");
-    expect(resolveCampaignBrief({ brief: "  ", instruction: "old" })).toBe("old");
+describe("resolveCampaignBrief", () => {
+  it("reads the brief only; the old instruction is read nowhere", () => {
+    expect(resolveCampaignBrief({ brief: BRIEF })).toBe(BRIEF);
+    expect(resolveCampaignBrief({ instruction: "old" } as never)).toBeNull();
     expect(resolveCampaignBrief({})).toBeNull();
   });
 });

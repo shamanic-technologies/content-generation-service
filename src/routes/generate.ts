@@ -228,8 +228,7 @@ async function writingMaterials(req: AuthenticatedRequest, data: GenerateBody, s
   }
 
   // The campaign's brief, when its run carries one: the email is written from it (see
-  // campaign-brief.ts). Body only, threaded by workflow-service from /start-run. The legacy
-  // `instruction` is read only while the run sends no brief (ONE-BRIEF-1105 transition).
+  // campaign-brief.ts). Body only, threaded by workflow-service from /start-run.
   const brief = resolveCampaignBrief(data);
   if (brief) {
     traceEvent(req.runId!, { service: "content-generation-service", event: "campaign-brief-applied", detail: `Writing from the campaign's brief (${brief.length} chars)` }, req.headers).catch(() => {});

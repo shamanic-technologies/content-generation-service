@@ -144,10 +144,10 @@ describe("POST /generate — the offer's give lists", () => {
     expect(mockGenerateFromTemplate.mock.calls[0][0].brief).toBe("Thank them, ask ONE open question.");
   });
 
-  it("the brief wins over the legacy instruction; the instruction is read only without a brief", async () => {
+  it("never writes from the old instruction: only the brief reaches the writer", async () => {
     await request(app).post("/generate").send({ ...body, brief: "The brief.", instruction: "Old text." }).expect(200);
     await request(app).post("/generate").send({ ...body, instruction: "Old text." }).expect(200);
-    expect(mockGenerateFromTemplate.mock.calls.map((c) => c[0].brief)).toEqual(["The brief.", "Old text."]);
+    expect(mockGenerateFromTemplate.mock.calls.map((c) => c[0].brief)).toEqual(["The brief.", null]);
   });
 
   it("hands no brief when the run carries none, null or blank", async () => {
