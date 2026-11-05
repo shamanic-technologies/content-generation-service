@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 
-// BLIND-WRITER-REVERT-1017 (owner 2026-10-17: « We dont want to spend extra money!!! The
-// template instructions should be enough, we are ok with some NOISE »): a blind-type email
-// is written like any other, one completion from the template's own text. No brand read,
-// no anonymity rule, no check, no rewrite. The guarantee is the template, checked at SAVE.
+// A blind email is ONE completion from the template's text, never checked or rewritten after
+// (BLIND-WRITER-REVERT-1017, owner: « we are ok with some NOISE »). What the writer SEES is fixed instead
+// (BLIND-NAME-LEAK-1105): for a template of a BLIND dynasty, the client's name, domain and URLs are
+// masked in every input; a NAMED dynasty's writer reads them untouched, whatever its type name says.
 
 vi.mock("../../src/lib/runs-client.js", () => ({
   createRun: vi.fn().mockResolvedValue({ id: "run-456" }),
@@ -47,8 +47,10 @@ vi.mock("../../src/lib/offer-give-lists-client.js", () => ({ fetchOfferGiveLists
 const mockExtractBrandFields = vi.fn();
 // Only the brand-fields read the template asks for: any other brand-client export used by
 // the route would be undefined here and fail the test.
+const mockFetchClientIdentities = vi.fn();
 vi.mock("../../src/lib/brand-client.js", () => ({
   extractBrandFields: (...a: unknown[]) => mockExtractBrandFields(...a),
+  fetchClientIdentities: (...a: unknown[]) => mockFetchClientIdentities(...a),
 }));
 
 const mockGenerate = vi.fn();
@@ -61,17 +63,34 @@ vi.mock("../../src/lib/chat-service-client.js", () => ({
   generateExpertQuotePitchFromTemplate: vi.fn(),
 }));
 
-const body = (type: string, variables: Record<string, unknown> = {}) => ({ type, variables, campaignId: "camp-1", brandIds: ["brand-1"] });
+const INTEL = {
+  clientName: "Shockwave Centers of America",
+  brandExtractedFields: { valueProposition: { value: "Shockwave Centers of America places devices in 300+ clinics, $0 upfront (shockwavecenters.com/learnmore)." } },
+  leadFirstName: "Ann",
+  leadCompanyName: "Ann's Clinic",
+};
+const body = (type: string, variables: Record<string, unknown> = INTEL) => ({ type, variables: structuredClone(variables), campaignId: "camp-1", brandIds: ["brand-1"], leadId: "lead-1" });
 
-describe("POST /generate — a blind template is written like any other", () => {
+// The dynasty's identity, never the type name: `blind-discovery-email-v50` heads a NAMED dynasty.
+const IDENTITY: Record<string, "blind" | "named"> = {
+  "blind-discovery-email-v21-no-url-spaced-v2": "blind",
+  "acquisition-questions-email-v1": "blind",
+  "blind-discovery-email-v50": "named",
+  "cold-email-v77": "named",
+};
+
+describe("POST /generate — a blind dynasty's writer never sees who the client is", () => {
   let app: express.Express;
 
   beforeEach(async () => {
     vi.clearAllMocks();
     vi.spyOn(console, "error").mockImplementation(() => {});
-    mockPromptFindFirst.mockImplementation(async () => ({ id: "p", type: "t", prompt: "Write.", variables: [] }));
+    const { dynastyIdentityOf } = await import("../../src/lib/dynasty-membership.js");
+    (dynastyIdentityOf as any).mockImplementation(async (type: string) => IDENTITY[type] ?? null);
+    mockPromptFindFirst.mockImplementation(async () => ({ id: "p", type: "t", prompt: "Write. {{brandExtractedFields}}", variables: [] }));
     mockValues.mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "gen-1" }]) });
     mockExtractBrandFields.mockResolvedValue(new Map());
+    mockFetchClientIdentities.mockResolvedValue([{ id: "brand-1", name: "Shockwave Centers of America", domain: "shockwavecenters.com", url: "https://shockwavecenters.com/learnmore" }]);
     mockGenerate.mockResolvedValue({ subject: "s", sequence: [], tokensInput: 1, tokensOutput: 1, model: "m", promptRaw: "p", responseRaw: {} });
     app = express();
     app.use(express.json());
@@ -79,23 +98,47 @@ describe("POST /generate — a blind template is written like any other", () => 
     app.use(routes);
   });
 
-  it("makes one writing call, with no anonymity parameter and no brand read, for every blind version", async () => {
-    for (const type of ["blind-discovery-email-v34", "blind-discovery-email-v47", "feedback-request-blind-email-v1"]) {
+  it("masks the client's name and website in what a blind writer reads, keeps the selling points, makes one writing call", async () => {
+    for (const type of ["blind-discovery-email-v21-no-url-spaced-v2", "acquisition-questions-email-v1"]) {
       mockGenerate.mockClear();
+      mockValues.mockClear();
       await request(app).post("/generate").send(body(type)).expect(200);
       expect(mockGenerate).toHaveBeenCalledTimes(1);
       const params = mockGenerate.mock.calls[0][0];
+      const seen = JSON.stringify(params.variables);
+      expect(seen).not.toMatch(/shockwave ?centers/i);
+      expect(seen).toContain("places devices in 300+ clinics, $0 upfront (the client's website).");
+      expect(params.variables.leadCompanyName).toBe("Ann's Clinic");
       expect(params).not.toHaveProperty("blind");
-      expect(params).not.toHaveProperty("onBlindRewrite");
+      // The row stores what the writer read; its columns keep the request's values.
+      const row = mockValues.mock.calls[0][0];
+      expect(JSON.stringify(row.variablesRaw)).not.toMatch(/shockwave ?centers/i);
     }
-    // The template asks for no brand field: nothing is read from brand-service.
-    expect(mockExtractBrandFields).not.toHaveBeenCalled();
+    expect(mockFetchClientIdentities).toHaveBeenCalledWith(["brand-1"], expect.anything());
   });
 
-  it("sends a blind and a named template the same writing parameters", async () => {
-    await request(app).post("/generate").send(body("blind-discovery-email-v34")).expect(200);
-    await request(app).post("/generate").send(body("cold-email-v49")).expect(200);
-    expect(Object.keys(mockGenerate.mock.calls[0][0]).sort()).toEqual(Object.keys(mockGenerate.mock.calls[1][0]).sort());
+  it("hands a NAMED dynasty's writer the client's name, even when its type starts with blind-discovery-email", async () => {
+    for (const type of ["blind-discovery-email-v50", "cold-email-v77"]) {
+      mockGenerate.mockClear();
+      await request(app).post("/generate").send(body(type)).expect(200);
+      expect(mockGenerate.mock.calls[0][0].variables.clientName).toBe("Shockwave Centers of America");
+    }
+    expect(mockFetchClientIdentities).not.toHaveBeenCalled();
+  });
+
+  it("masks the script writer's materials the same way", async () => {
+    const res = await request(app).post("/generate/materials").send(body("blind-discovery-email-v21-no-url-spaced-v2")).expect(200);
+    expect(JSON.stringify(res.body.units)).not.toMatch(/shockwave ?centers/i);
+    expect(res.body.units.brand_context.content.variables.clientName).toBe("the client");
+    expect(res.body.units.lead_identified.content.variables.leadFirstName).toBe("Ann");
+  });
+
+  it("refuses to write a blind email when brand-service cannot say who the client is: nothing written", async () => {
+    const { ClientIdentityError } = await import("../../src/lib/client-identity-mask.js");
+    mockFetchClientIdentities.mockRejectedValue(new ClientIdentityError(502, "brand-service GET /internal/brands failed: 503"));
+    const res = await request(app).post("/generate").send(body("blind-discovery-email-v21-no-url-spaced-v2")).expect(502);
+    expect(res.body.code).toBe("CLIENT_IDENTITY_UNREADABLE");
+    expect(mockGenerate).not.toHaveBeenCalled();
   });
 });
 

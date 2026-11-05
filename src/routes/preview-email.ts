@@ -5,6 +5,8 @@ import { db } from "../db/index.js";
 import { emailPreviews, prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
 import { generateFromTemplate, InsufficientCreditsError } from "../lib/chat-service-client.js";
+import { clientIdentityTerms, maskClientIdentity } from "../lib/client-identity-mask.js";
+import { dynastyIdentityOf } from "../lib/dynasty-membership.js";
 import { extractBrandFields, fetchBrandIntel, fetchBrandRows, BrandIntelError, BrandRowsError } from "../lib/brand-client.js";
 import { unfilledBrandFieldRequests } from "../lib/unfilled-brand-fields.js";
 import { fetchOfferGiveLists, OfferGiveListsError } from "../lib/offer-give-lists-client.js";
@@ -192,14 +194,20 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     // completion, after the email is written, reports which of these each sentence uses.
     const sources = buildHighlightSources({ recipient, audience, brandName, brandFields: intel.fields ?? {}, giveForFree: giveLists?.giveForFree, qualification: leadQualification });
 
+    // A blind dynasty's writer never sees who the client is (BLIND-NAME-LEAK-1105), exactly as on /generate.
+    const blind = (await dynastyIdentityOf(plan.promptType)) === "blind";
+    const terms = blind ? clientIdentityTerms(intel.brands) : null;
+    const writerVariables = terms ? maskClientIdentity(variables, terms) : variables;
+    const writerGiveLists = terms && giveLists ? maskClientIdentity(giveLists, terms) : giveLists;
+
     traceEvent(runId, { service: "content-generation-service", event: "preview-email-start", detail: `brandId=${brandId}, workflow=${plan.workflowSlug}, type=${plan.promptType}, model=${model}, checks=${leadQualification ? (leadQualification.checks as unknown[]).length : 0}` }, req.headers).catch(() => {});
     const result = await generateFromTemplate(
       {
         promptTemplate: storedPrompt.prompt,
-        variables,
+        variables: writerVariables,
         campaignContext: buildPreviewContext(audience),
         model,
-        giveLists,
+        giveLists: writerGiveLists,
         // Nothing preview-specific in the writing call: no annotation, no reasoning
         // override. The email is written exactly as a campaign run writes it.
       },
