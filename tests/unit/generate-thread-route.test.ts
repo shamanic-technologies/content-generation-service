@@ -89,7 +89,7 @@ describe("POST /generate-thread", () => {
     expect(sent.model).toBe("claude-opus");
     expect(sent.responseSchema.additionalProperties).toBe(false);
     expect(sent.responseSchema.required).toEqual(["subject", "post", "replies"]);
-    // No run of our own, nothing declared: the cost rides the workflow run that publishes post_published.
+    // No run of our own, nothing declared: the cost rides the workflow run that publishes threads_post_published.
     expect(mockCreateRun).not.toHaveBeenCalled();
     expect(init.headers["x-run-id"]).toBe("workflow-run-1");
     expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({
