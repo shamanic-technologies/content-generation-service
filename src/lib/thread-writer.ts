@@ -6,7 +6,7 @@
  * The template is the writer's rules (system prompt); the workflow fills its `{{tokens}}` and sends
  * everything it gathered (facts, published figures, angles, history) as the message. One completion
  * through chat-service, billed on the CALLER's run (the workflow run that publishes the thread): no run of
- * our own, no outcome declared here (the publisher declares `post_published` on that run). The writer is
+ * our own, no outcome declared here (the publisher declares `threads_post_published` on that run). The writer is
  * trusted: no count or length check, no retry on shape; the parts are only line-break restored,
  * dash-stripped (dashes.ts) and trimmed, so stored = what the workflow publishes. Our client-comms voice is
  * NOT appended: a public post is not a message to a client or a prospect; the template carries the copy rules.
