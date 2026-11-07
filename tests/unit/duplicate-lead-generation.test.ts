@@ -173,12 +173,13 @@ describe("POST /generate — a lead that already has a generation", () => {
       .send({ ...validBody, leadId: LEAD_ID, campaignId: CAMPAIGN_ID })
       .expect(200);
 
-    expect(res.body.sequence.map((s: { daysSinceLastStep: number }) => s.daysSinceLastStep)).toEqual([0, 3, 7]);
+    // One email per generation (FOLLOWUP-JIT-1107): only the first is re-served.
+    expect(res.body.sequence.map((s: { daysSinceLastStep: number }) => s.daysSinceLastStep)).toEqual([0]);
     expect(mockGenerateFromTemplate).not.toHaveBeenCalled();
   });
 
-  it("fails loud (502) on a stored sequence with no follow-up delays instead of serving it", async () => {
-    // Prod generation ad0a53c1: no delay on any step — not sendable.
+  it("re-serves a stored sequence with no follow-up delays as its first email (FOLLOWUP-JIT-1107)", async () => {
+    // Prod generation ad0a53c1: no delay on any step. Follow-ups are no longer served, so its first email is sendable.
     mockGenFindFirst.mockResolvedValue({
       ...storedGeneration,
       sequence: [
@@ -192,10 +193,9 @@ describe("POST /generate — a lead that already has a generation", () => {
       .set("X-Org-Id", "org-internal-123")
       .set("X-User-Id", "user-internal-456")
       .send({ ...validBody, leadId: LEAD_ID, campaignId: CAMPAIGN_ID })
-      .expect(502);
+      .expect(200);
 
-    expect(res.body.error).toContain(storedGeneration.id);
-    expect(res.body.steps).toEqual([2]);
+    expect(res.body.sequence).toEqual([{ step: 1, bodyText: "a", daysSinceLastStep: 0 }]);
     expect(mockGenerateFromTemplate).not.toHaveBeenCalled();
   });
 
@@ -211,7 +211,9 @@ describe("POST /generate — a lead that already has a generation", () => {
 
     expect(res.body.id).toBe("gen-from-2026-08-13");
     expect(res.body.subject).toBe(storedGeneration.subject);
-    expect(res.body.sequence).toHaveLength(2);
+    // A row stored with a follow-up (before FOLLOWUP-JIT-1107) is re-served as its first email only.
+    expect(res.body.sequence).toHaveLength(1);
+    expect(res.body.sequence[0]).toMatchObject({ step: 1 });
 
     // The whole point: no LLM call, so nothing is billed and nothing is discarded.
     expect(mockGenerateFromTemplate).not.toHaveBeenCalled();

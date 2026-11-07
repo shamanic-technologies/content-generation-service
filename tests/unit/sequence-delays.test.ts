@@ -80,14 +80,17 @@ describe("generateFromTemplate — the model's delays", () => {
     const mockFetch = vi.fn().mockResolvedValueOnce(answer([{ body: "a" }, { body: "b", daysSinceLastStep: 3 }]));
     vi.stubGlobal("fetch", mockFetch);
     const result = await generateFromTemplate(PARAMS, IDENTITY);
-    expect(result.sequence.map((s) => s.daysSinceLastStep)).toEqual([0, 3]);
+    // One email per generation (FOLLOWUP-JIT-1107): only step 1 is served.
+    expect(result.sequence.map((s) => s.daysSinceLastStep)).toEqual([0]);
     vi.unstubAllGlobals();
   });
 
-  it("fails loud when the model omitted a follow-up's delay on every attempt", async () => {
+  it("a follow-up the model wrote without a delay is dropped, never a failure", async () => {
     const mockFetch = vi.fn().mockResolvedValue(answer([{ body: "a", daysSinceLastStep: 0 }, { body: "b" }]));
     vi.stubGlobal("fetch", mockFetch);
-    await expect(generateFromTemplate(PARAMS, IDENTITY)).rejects.toThrow(IncompleteSequenceError);
+    const result = await generateFromTemplate(PARAMS, IDENTITY);
+    expect(result.sequence).toHaveLength(1);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
     vi.unstubAllGlobals();
   });
 });
