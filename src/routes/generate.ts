@@ -36,6 +36,7 @@ import { findGenerationForLead } from "../lib/lead-generation-query.js";
 import { withResolvedBody } from "../lib/generation-body.js";
 import { RECORDED_REQUEST_COLUMNS_OFF } from "../lib/recorded-request.js";
 import { withSequenceDelays, IncompleteSequenceError } from "../lib/sequence-delays.js";
+import { firstEmailOnly } from "../lib/first-email-only.js";
 import { ClientCommsVoiceError } from "../lib/client-comms-voice.js";
 import { ChatModelCatalogueError, UnknownModelError, resolveChatModel } from "../lib/chat-model-catalogue.js";
 import { stripDashes, hasDashes } from "../lib/dashes.js";
@@ -66,8 +67,10 @@ function toGenerationResponse(generation: {
     subject: stripDashes(generation.subject ?? ""),
     // Stored rows predate the generation-time check (glm/deepseek dropped step 1's
     // delay), and the lead-retry path re-serves them — so the same rule applies here.
+    // One email per generation (first-email-only.ts): a row stored with follow-ups before
+    // FOLLOWUP-JIT-1107 is re-served as its first email only.
     sequence: withSequenceDelays(
-      (generation.sequence ?? []) as Array<{ daysSinceLastStep?: unknown; bodyText?: unknown }>,
+      firstEmailOnly((generation.sequence ?? []) as Array<{ daysSinceLastStep?: unknown; bodyText?: unknown }>),
       generation.id
     ).map(withoutDashes),
     tokensInput: generation.tokensInput ?? 0,

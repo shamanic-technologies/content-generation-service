@@ -276,6 +276,14 @@ email-gateway `POST /orgs/send` requires a numeric `daysSinceLastStep` on every 
 - Do not "fix" the gateway's requirement or default follow-up delays here.
 - **An unusable answer is regenerated once before it fails** (`MAX_GENERATION_ATTEMPTS = 2` in `generateFromTemplate`): an `IncompleteSequenceError` or chat-service's 502 `"LLM returned invalid JSON."` (glm/deepseek, stochastic) re-asks the same request; the last attempt's error is thrown unchanged. 402, 429, 400, generic 5xx and connect errors are never regenerated here. chat-service bills each `/complete` itself; stored tokens sum every completion that returned. Each regeneration logs `[content-gen] regenerating unusable sequence` + trace event `llm-regenerate`.
 
+## One email per generation (`src/lib/first-email-only.ts`, FOLLOWUP-JIT-1107, owner 2026-11-07)
+
+A cold-email generation is the FIRST email only. Follow-ups are written on their due day by the follow-up path (lead-service's « Lead follow-up due » campaigns) with the lead's latest context; writing them up front made the sender hold every follow-up's sending cost for 3 to 10 days.
+
+- `GLOBAL_SYSTEM_PROMPT` asks for `emails` with exactly ONE item, even when the template describes a sequence. Template bodies are untouched (no dynasty upgrade, no copy change): the first email's instructions reach the writer as before.
+- `firstEmailOnly` keeps step 1 wherever a writer's answer becomes a served sequence: `parseSequenceFromJson` (before `withSequenceDelays`, so a follow-up's missing delay no longer regenerates), `readWrittenByScript` (the script writer's answer, stored and served), `toGenerationResponse` (a stored row re-served on lead retry / idempotency / race). Deterministic, like the dash strip: never a check, retry or refusal. History reads (`GET /generations`, by-lead, outputs, sequences feed) serve rows as stored.
+- The live writer is workflow-service's stored script `message_written/dy_template_writer_full`, which builds its own copy of the system prompt: until its dynasty is upgraded with the one-email rule, it still WRITES (and pays for) follow-ups, which this service drops before storing.
+
 ## Serving the copy that was written (`bodySource`)
 
 `POST /generate` never writes `body_text` / `body_html`; it writes `sequence`. Every row created since February 2026 therefore has NULL body columns and a populated sequence, and every read that returned the row whole handed consumers a subject with no words. lead-service reads the top-level `bodyText` to assemble a person's history, so the dashboard's "Email we wrote" row rendered empty for every lead contacted since February — silent for seven months because an empty string reads the same as "no copy exists".

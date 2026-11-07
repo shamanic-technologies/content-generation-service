@@ -45,7 +45,8 @@ describe("variable-length email sequences", () => {
     expect(result.sequence[0].daysSinceLastStep).toBe(0);
   });
 
-  it("parses a 3-email sequence", async () => {
+  // FOLLOWUP-JIT-1107: a generation is ONE email, whatever the stored template asks for.
+  it("a template that answers with 3 emails yields only the first", async () => {
     mockFetch.mockResolvedValueOnce(
       mockChatResponse([
         { body: "Initial email", daysSinceLastStep: 0 },
@@ -56,12 +57,12 @@ describe("variable-length email sequences", () => {
 
     const result = await generateFromTemplate(PARAMS, IDENTITY);
 
-    expect(result.sequence).toHaveLength(3);
-    expect(result.sequence.map((s) => s.step)).toEqual([1, 2, 3]);
-    expect(result.sequence.map((s) => s.daysSinceLastStep)).toEqual([0, 3, 7]);
+    expect(result.sequence).toHaveLength(1);
+    expect(result.sequence[0]).toMatchObject({ step: 1, bodyText: "Initial email", daysSinceLastStep: 0 });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
-  it("parses a 5-email sequence", async () => {
+  it("a 5-email answer yields only the first", async () => {
     mockFetch.mockResolvedValueOnce(
       mockChatResponse([
         { body: "Email 1", daysSinceLastStep: 0 },
@@ -74,22 +75,33 @@ describe("variable-length email sequences", () => {
 
     const result = await generateFromTemplate(PARAMS, IDENTITY);
 
-    expect(result.sequence).toHaveLength(5);
-    expect(result.sequence.map((s) => s.step)).toEqual([1, 2, 3, 4, 5]);
-    expect(result.sequence.map((s) => s.daysSinceLastStep)).toEqual([0, 2, 4, 5, 10]);
+    expect(result.sequence.map((s) => s.bodyText)).toEqual(["Email 1"]);
   });
 
-  it("uses daysSinceLastStep from the response, not hardcoded values", async () => {
+  it("asks the writer for one email and sends the template's own text unchanged", async () => {
+    const template = "Write a 3-step sequence to {{name}}.\nEmail 1: open on their hiring.\nEmail 2: a case study.\nEmail 3: a breakup.";
+    mockFetch.mockResolvedValueOnce(mockChatResponse([{ body: "Hi", daysSinceLastStep: 0 }]));
+
+    await generateFromTemplate({ promptTemplate: template, variables: { name: "Ada" } }, IDENTITY);
+
+    const sent = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(sent.systemPrompt).toContain("exactly ONE item, the first email");
+    expect(sent.systemPrompt).toContain("even when the prompt below describes follow-up emails");
+    // The first email's instructions reach the writer exactly as the template wrote them.
+    expect(sent.message).toBe("Write a 3-step sequence to Ada.\nEmail 1: open on their hiring.\nEmail 2: a case study.\nEmail 3: a breakup.");
+  });
+
+  it("a follow-up with no delay is no longer a reason to regenerate (it is dropped)", async () => {
     mockFetch.mockResolvedValueOnce(
       mockChatResponse([
         { body: "Email 1", daysSinceLastStep: 0 },
-        { body: "Email 2", daysSinceLastStep: 14 },
+        { body: "Email 2" } as unknown as { body: string; daysSinceLastStep: number },
       ])
     );
 
     const result = await generateFromTemplate(PARAMS, IDENTITY);
 
-    expect(result.sequence[0].daysSinceLastStep).toBe(0);
-    expect(result.sequence[1].daysSinceLastStep).toBe(14);
+    expect(result.sequence).toHaveLength(1);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });

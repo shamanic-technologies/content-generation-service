@@ -143,9 +143,9 @@ describe("POST /generate records the exact chat-service request", () => {
     mockFetch.mockImplementation(async (url: string) => {
       if (!String(url).endsWith("/complete")) return new Response("{}", { status: 200 });
       n++;
-      // First answer: a follow-up with no delay (unusable) -> regenerated once.
+      // First answer: a first step with an unusable delay -> regenerated once.
       return n === 1
-        ? completion([{ body: "a", daysSinceLastStep: 0 }, { body: "b" }])
+        ? completion([{ body: "a", daysSinceLastStep: -1 }])
         : completion([{ body: "Hallo Marie", daysSinceLastStep: 0 }]);
     });
     await request(app).post("/generate").send(body).expect(200);

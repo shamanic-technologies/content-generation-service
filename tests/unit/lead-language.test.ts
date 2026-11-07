@@ -97,7 +97,7 @@ describe("buildLanguageDirective", () => {
   it("names the language and demands the whole email in it", () => {
     const directive = buildLanguageDirective("German");
     expect(directive).toContain("Write the ENTIRE email in German");
-    expect(directive).toContain("subject line and every step of the sequence");
+    expect(directive).toContain("subject line and body");
   });
 
   it("tells the model the English instructions are not a model for its output", () => {
