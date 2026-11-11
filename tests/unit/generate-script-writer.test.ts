@@ -172,6 +172,29 @@ describe("POST /generate/materials + /generate with written (script writer)", ()
     expect(res.body).toEqual({ id: "gen-2", subject: row.subject, sequence: row.sequence, tokensInput: row.tokensInput, tokensOutput: row.tokensOutput });
   });
 
+  it("written: a script answer with follow-ups is stored and served as its first email only (FOLLOWUP-JIT-1107)", async () => {
+    const row = await servicePathRow();
+    const m = (await request(app).post("/generate/materials").send(body).expect(200)).body;
+    const first = { step: 1, bodyHtml: "<p>Hallo Marie</p>", bodyText: "Hallo Marie", daysSinceLastStep: 0 };
+    const written = {
+      status: "made",
+      runId: "script-run-1",
+      unit: {
+        content: {
+          subject: row.subject,
+          sequence: [first, { step: 2, bodyHtml: "<p>b</p>", bodyText: "b", daysSinceLastStep: 3 }, { step: 3, bodyHtml: "<p>c</p>", bodyText: "c", daysSinceLastStep: 7 }],
+        },
+      },
+      trace: [
+        { name: "voice.read", answer: { ok: true, data: { content: row.chatRequestInputs.clientCommsVoice, version: null } } },
+        { name: "llm.complete", sent: row.chatRequest, raw: row.responseRaw },
+      ],
+    };
+    const res = await request(app).post("/generate").send({ ...body, written, units: m.units }).expect(200);
+    expect(mockValues.mock.calls[0][0].sequence).toEqual([first]);
+    expect(res.body.sequence).toEqual([first]);
+  });
+
   it("a request already answered: materials says so and /generate returns the stored email, writing nothing", async () => {
     const stored = { id: "gen-old", subject: "Old", sequence: [{ step: 1, bodyHtml: "<p>x</p>", bodyText: "x", daysSinceLastStep: 0 }], tokensInput: 5, tokensOutput: 6 };
     mockGenFindFirst.mockResolvedValue(stored);

@@ -2,6 +2,7 @@ import { and, asc, isNotNull, or, eq, sql, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailGenerations } from "../db/schema.js";
 import { encodeCursor, type SequenceCursor } from "./sequence-feed-query.js";
+import { readRecordedValues } from "./recorded-request.js";
 
 /**
  * GET /internal/generations/recorded (FACTORY-P3-RECORD-SYSTEM-PROMPT): every email generation that
@@ -43,6 +44,12 @@ export interface RecordedGeneration {
   inputs: unknown;
   /** chat-service's answer of the last attempt, verbatim. */
   response: unknown;
+  /**
+   * RECORDED-ORDER-1111: `original` = variables/request/inputs/response carry every object's keys in the
+   * order they were written (read from `recorded_text`); `jsonb` = a row written before, read back from
+   * jsonb columns whose key order postgres normalised (a replay of its request may not match byte for byte).
+   */
+  keyOrder: "original" | "jsonb";
   /** What was stored and served: subject + sequence. */
   output: { subject: string | null; sequence: unknown };
 }
@@ -96,6 +103,7 @@ export async function readRecordedGenerations(opts: {
       chatRequest: g.chatRequest,
       chatRequestInputs: g.chatRequestInputs,
       responseRaw: g.responseRaw,
+      recordedText: g.recordedText,
       subject: g.subject,
       sequence: g.sequence,
     })
@@ -108,7 +116,9 @@ export async function readRecordedGenerations(opts: {
   const page = rows.slice(0, opts.limit);
   const last = page[page.length - 1];
   return {
-    generations: page.map((r) => ({
+    generations: page.map((r) => {
+      const recorded = readRecordedValues(r);
+      return {
       generationId: r.id,
       createdAt: new Date(r.createdAt).toISOString(),
       orgId: r.orgId,
@@ -123,12 +133,14 @@ export async function readRecordedGenerations(opts: {
       model: r.model,
       tokensInput: r.tokensInput,
       tokensOutput: r.tokensOutput,
-      variables: r.variablesRaw,
-      request: r.chatRequest,
-      inputs: r.chatRequestInputs,
-      response: r.responseRaw,
+      variables: recorded.variables,
+      request: recorded.request,
+      inputs: recorded.inputs,
+      response: recorded.response,
+      keyOrder: recorded.keyOrder,
       output: { subject: r.subject, sequence: r.sequence },
-    })),
+    };
+    }),
     // Caught up: hand the caller's cursor back so it never moves backwards.
     nextCursor: last ? encodeCursor({ createdAt: last.createdAtText, id: last.id }) : opts.cursor ? encodeCursor(opts.cursor) : null,
     hasMore,

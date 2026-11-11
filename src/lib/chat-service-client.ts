@@ -17,6 +17,7 @@ import { unescapeLineBreaks, collapseEscapedLineBreaks } from "./escaped-line-br
 import { textToHtml } from "./text-to-html.js";
 import { stripDashes } from "./dashes.js";
 import { withSequenceDelays, IncompleteSequenceError } from "./sequence-delays.js";
+import { firstEmailOnly } from "./first-email-only.js";
 import { readClientCommsVoice, buildClientCommsVoiceDirective } from "./client-comms-voice.js";
 
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
@@ -268,11 +269,11 @@ const GLOBAL_SYSTEM_PROMPT = [
   "- Template inputs may arrive as strings, arrays, or objects (this platform is multibrand by default — brand-related inputs frequently describe several brands at once). Read whatever shape is provided and weave it naturally; never invent a single primary brand when multiple are given.",
   "",
   "You must respond with a JSON object matching this exact schema:",
-  '{"subject": "<email subject line>", "emails": [{"body": "<plain text email body>", "daysSinceLastStep": <number>}]}',
+  '{"subject": "<email subject line>", "emails": [{"body": "<plain text email body>", "daysSinceLastStep": 0}]}',
   "- subject: the email subject line (string)",
-  "- emails: array of email steps. Each has:",
+  "- emails: an array holding exactly ONE item, the first email. Write only that first email, even when the prompt below describes follow-up emails or a multi-step sequence: each follow-up is written later, on the day it is due. The item has:",
   "  - body: plain text email body (string)",
-  "  - daysSinceLastStep: days to wait since the previous email, 0 for the first (number)",
+  "  - daysSinceLastStep: 0 (number)",
   "Return ONLY the JSON object, no additional text or markdown.",
 ].join("\n");
 
@@ -294,7 +295,7 @@ export function buildLanguageDirective(language: string): string {
   return [
     "",
     "Language:",
-    `- Write the ENTIRE email in ${language} — subject line and every step of the sequence. The recipient does not read English.`,
+    `- Write the ENTIRE email in ${language} — subject line and body. The recipient does not read English.`,
     "- The instructions and any examples above are written in English purely because that is the language of this prompt. They are NOT a model for the language of your output.",
     `- Keep proper nouns (people, companies, products) as they are given. Everything you write yourself must be natural, idiomatic ${language} as used in business correspondence — not a literal translation of an English sentence.`,
   ].join("\n");
@@ -731,7 +732,9 @@ function parseSequenceFromJson(json: {
 } {
   // The model's delays are checked before anything is stored: step 1 without one
   // is 0, any later step without one fails loud (see sequence-delays.ts).
-  const emails = withSequenceDelays(json.emails);
+  // One email per generation (first-email-only.ts): extra steps an older template asked for are dropped
+  // before anything else reads them.
+  const emails = withSequenceDelays(firstEmailOnly(json.emails));
   const sequence: SequenceStep[] = emails.map((email, i) => {
     // Over-escaped newlines must become real newlines BEFORE textToHtml, or the
     // body renders as one paragraph with visible backslash-n for the prospect.

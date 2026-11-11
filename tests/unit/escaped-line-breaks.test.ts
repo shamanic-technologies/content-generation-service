@@ -168,7 +168,7 @@ describe("email body rendering — over-escaped newlines", () => {
     expect(result.sequence[0].bodyHtml).not.toContain(ESC_N);
   });
 
-  it("fixes every step of a multi-step sequence", async () => {
+  it("fixes the first email of a multi-step answer and drops the follow-ups", async () => {
     mockFetch.mockResolvedValueOnce(
       mockChatResponse([
         { body: `${P1}${ESC_N}${ESC_N}${P2}`, daysSinceLastStep: 0 },
@@ -180,7 +180,6 @@ describe("email body rendering — over-escaped newlines", () => {
 
     expect(result.sequence.map((s) => s.bodyHtml)).toEqual([
       `<p>${P1}</p><p>${P2}</p>`,
-      `<p>${P2}</p><p>${P3}</p>`,
     ]);
   });
 

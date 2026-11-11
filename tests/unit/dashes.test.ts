@@ -39,7 +39,7 @@ vi.stubGlobal("fetch", mockFetch);
 describe("generateFromTemplate strips dashes before anything is stored", () => {
   beforeEach(() => mockFetch.mockReset());
 
-  it("subject, body and every follow-up come back with no em/en dash", async () => {
+  it("subject and body come back with no em/en dash", async () => {
     const json = {
       subject: "Your 2025–2026 plan — a thought",
       emails: [
@@ -60,7 +60,7 @@ describe("generateFromTemplate strips dashes before anything is stored", () => {
 
     expect(out.subject).toBe("Your 2025-2026 plan, a thought");
     expect(out.sequence[0].bodyText).toBe("Hi Ana,\n\nSaw your launch, nice.\n\nWe book 10-20 calls, monthly.");
-    expect(out.sequence[1].bodyText).toBe("Following up, any interest? Teams of 5-50 use it.");
+    expect(out.sequence).toHaveLength(1);
     for (const step of out.sequence) {
       expect(step.bodyText).not.toMatch(DASHES);
       expect(step.bodyHtml).not.toMatch(DASHES);

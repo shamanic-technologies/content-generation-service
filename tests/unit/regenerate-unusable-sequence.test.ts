@@ -32,7 +32,9 @@ const VALID = [
   { body: "a", daysSinceLastStep: 0 },
   { body: "b", daysSinceLastStep: 3 },
 ];
-const MISSING_DELAYS = [{ body: "a", daysSinceLastStep: 0 }, { body: "b" }, { body: "c" }];
+// Only step 1 is ever served (FOLLOWUP-JIT-1107), so only ITS delay can make an answer unusable.
+const BAD_FIRST_DELAY = [{ body: "a", daysSinceLastStep: -1 }];
+const MISSING_FOLLOW_UP_DELAYS = [{ body: "a", daysSinceLastStep: 0 }, { body: "b" }, { body: "c" }];
 
 describe("generateFromTemplate — regenerating an unusable answer", () => {
   beforeEach(() => {
@@ -51,7 +53,7 @@ describe("generateFromTemplate — regenerating an unusable answer", () => {
     const result = await generateFromTemplate({ ...PARAMS, onRegenerate }, IDENTITY);
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
-    expect(result.sequence.map((s) => s.daysSinceLastStep)).toEqual([0, 3]);
+    expect(result.sequence.map((s) => s.daysSinceLastStep)).toEqual([0]);
     expect(onRegenerate).toHaveBeenCalledTimes(1);
     expect(onRegenerate.mock.calls[0][0].attempt).toBe(2);
     expect(onRegenerate.mock.calls[0][0].reason).toContain("LLM returned invalid JSON");
@@ -59,19 +61,28 @@ describe("generateFromTemplate — regenerating an unusable answer", () => {
     expect(mockFetch.mock.calls[1][1].body).toBe(mockFetch.mock.calls[0][1].body);
   });
 
-  it("incomplete delays then valid → succeeds, tokens cover both completions", async () => {
+  it("follow-ups without delays are dropped, never regenerated", async () => {
+    mockFetch.mockResolvedValueOnce(answer(MISSING_FOLLOW_UP_DELAYS));
+
+    const result = await generateFromTemplate(PARAMS, IDENTITY);
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(result.sequence).toHaveLength(1);
+  });
+
+  it("an unusable first-step delay then valid → succeeds, tokens cover both completions", async () => {
     mockFetch
-      .mockResolvedValueOnce(answer(MISSING_DELAYS, { in: 100, out: 40 }))
+      .mockResolvedValueOnce(answer(BAD_FIRST_DELAY, { in: 100, out: 40 }))
       .mockResolvedValueOnce(answer(VALID, { in: 110, out: 50 }));
     const onRegenerate = vi.fn();
 
     const result = await generateFromTemplate({ ...PARAMS, onRegenerate }, IDENTITY);
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
-    expect(result.sequence).toHaveLength(2);
+    expect(result.sequence).toHaveLength(1);
     expect(result.tokensInput).toBe(210);
     expect(result.tokensOutput).toBe(90);
-    expect(onRegenerate.mock.calls[0][0].reason).toContain("step(s) 2, 3");
+    expect(onRegenerate.mock.calls[0][0].reason).toContain("step(s) 1");
   });
 
   it("invalid JSON on every attempt → the same loud error as before, no more attempts", async () => {
@@ -83,8 +94,8 @@ describe("generateFromTemplate — regenerating an unusable answer", () => {
     expect(mockFetch).toHaveBeenCalledTimes(MAX_GENERATION_ATTEMPTS);
   });
 
-  it("incomplete delays on every attempt → IncompleteSequenceError, no more attempts", async () => {
-    mockFetch.mockResolvedValue(answer(MISSING_DELAYS));
+  it("an unusable first-step delay on every attempt → IncompleteSequenceError, no more attempts", async () => {
+    mockFetch.mockResolvedValue(answer(BAD_FIRST_DELAY));
 
     await expect(generateFromTemplate(PARAMS, IDENTITY)).rejects.toThrow(IncompleteSequenceError);
     expect(mockFetch).toHaveBeenCalledTimes(MAX_GENERATION_ATTEMPTS);

@@ -5,6 +5,7 @@ import { emailGenerations } from "../../src/db/schema.js";
 import { decodeCursor } from "../../src/lib/sequence-feed-query.js";
 import { readRecordedGenerations } from "../../src/lib/recorded-generations-query.js";
 import { findGenerationForLead } from "../../src/lib/lead-generation-query.js";
+import { recordedText } from "../../src/lib/recorded-request.js";
 import { closeDb, randomId } from "../helpers/test-db.js";
 
 // FACTORY-P3-RECORD-SYSTEM-PROMPT: the read workflow-service's case recorder pages through.
@@ -12,7 +13,7 @@ import { closeDb, randomId } from "../helpers/test-db.js";
 
 const ids: string[] = [];
 
-async function insertGen(opts: { createdAt: Date; recorded: boolean; runId?: string; generationRunId?: string }) {
+async function insertGen(opts: { createdAt: Date; recorded: boolean; runId?: string; generationRunId?: string; variables?: Record<string, unknown>; withText?: boolean }) {
   const request = {
     message: "Write to Marie.",
     systemPrompt: "Universal rules\nTEST VOICE\nWrite in German.",
@@ -33,7 +34,7 @@ async function insertGen(opts: { createdAt: Date; recorded: boolean; runId?: str
       workflowSlug: "wf-v3",
       promptType: "cold-email-v75",
       model: "claude-sonnet-4-6",
-      variablesRaw: { leadFirstName: "Marie" },
+      variablesRaw: opts.variables ?? { leadFirstName: "Marie" },
       promptRaw: request.message,
       responseRaw: { json: { subject: "Hallo", emails: [{ body: "Hallo Marie", daysSinceLastStep: 0 }] }, model: "claude-sonnet-4-6" },
       subject: "Hallo",
@@ -43,6 +44,14 @@ async function insertGen(opts: { createdAt: Date; recorded: boolean; runId?: str
       chatRequest: opts.recorded ? request : null,
       chatRequestInputs: opts.recorded
         ? { promptTemplate: "Write to {{leadFirstName}}.", campaignContext: null, language: "German", giveLists: null, instruction: null, clientCommsVoice: "TEST VOICE" }
+        : null,
+      recordedText: opts.withText
+        ? recordedText({
+            variables: opts.variables ?? { leadFirstName: "Marie" },
+            request,
+            inputs: { promptTemplate: "Write to {{leadFirstName}}.", campaignContext: null, language: "German", giveLists: null, instruction: null, clientCommsVoice: "TEST VOICE" },
+            response: { json: { subject: "Hallo", emails: [{ body: "Hallo Marie", daysSinceLastStep: 0 }] }, model: "claude-sonnet-4-6" },
+          })
         : null,
       createdAt: opts.createdAt,
     })
@@ -95,6 +104,26 @@ describe("readRecordedGenerations", () => {
     const p3 = await readRecordedGenerations({ ...window, cursor: decodeCursor(p2.nextCursor!), limit: 2 });
     expect(p3.generations).toEqual([]);
     expect(p3.nextCursor).toBe(p2.nextCursor);
+  });
+
+  it("serves the variables in the key order they were written, which jsonb alone loses (RECORDED-ORDER-1111)", async () => {
+    const t0 = Date.UTC(2003, 0, 1);
+    const job = { organization_id: "o-1", organization_name: "Acme", title: "CEO", current: true, end_date: null };
+    const variables = { leadFirstName: "Marie", leadEmploymentHistory: [job] };
+    const written = ["organization_id", "organization_name", "title", "current", "end_date"];
+    const withText = await insertGen({ createdAt: new Date(t0), recorded: true, variables, withText: true });
+    const before = await insertGen({ createdAt: new Date(t0 + 1000), recorded: true, variables });
+
+    const page = await readRecordedGenerations({ from: new Date(t0).toISOString(), to: new Date(t0 + 60_000).toISOString(), cursor: null, limit: 10, settleSeconds: 0 });
+    const [a, b] = page.generations;
+    expect(a.generationId).toBe(withText.id);
+    expect(a.keyOrder).toBe("original");
+    expect(Object.keys((a.variables as typeof variables).leadEmploymentHistory[0])).toEqual(written);
+    expect(JSON.stringify(a.variables)).toBe(JSON.stringify(variables));
+    // A row written before keeps jsonb's order: the store did re-order this object.
+    expect(b.generationId).toBe(before.id);
+    expect(b.keyOrder).toBe("jsonb");
+    expect(Object.keys((b.variables as typeof variables).leadEmploymentHistory[0])).not.toEqual(written);
   });
 
   it("finds a generation by the caller's run or by its own generation run", async () => {

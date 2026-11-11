@@ -138,14 +138,29 @@ describe("POST /generate records the exact chat-service request", () => {
     });
   });
 
+  it("stores the variables, request, inputs and answer as exact JSON text, key order kept (RECORDED-ORDER-1111)", async () => {
+    // An employment history whose keys a jsonb store re-orders (shorter keys first: title, current, ...).
+    const leadEmploymentHistory = [{ organization_id: "o-1", organization_name: "Acme", title: "CEO", current: true, end_date: null }];
+    await request(app).post("/generate").send({ ...body, variables: { ...body.variables, leadEmploymentHistory } }).expect(200);
+    const sent = completeCalls()[0][1].body as string;
+    const row = mockValues.mock.calls[0][0];
+
+    const stored = JSON.parse(row.recordedText);
+    expect(JSON.stringify(stored.request)).toBe(sent);
+    expect(Object.keys(stored.variables.leadEmploymentHistory[0])).toEqual(["organization_id", "organization_name", "title", "current", "end_date"]);
+    expect(stored.inputs).toEqual(row.chatRequestInputs);
+    expect(JSON.stringify(stored.inputs)).toBe(JSON.stringify(row.chatRequestInputs));
+    expect(stored.response).toEqual(row.responseRaw);
+  });
+
   it("stores the one request a regeneration re-sent", async () => {
     let n = 0;
     mockFetch.mockImplementation(async (url: string) => {
       if (!String(url).endsWith("/complete")) return new Response("{}", { status: 200 });
       n++;
-      // First answer: a follow-up with no delay (unusable) -> regenerated once.
+      // First answer: a first step with an unusable delay -> regenerated once.
       return n === 1
-        ? completion([{ body: "a", daysSinceLastStep: 0 }, { body: "b" }])
+        ? completion([{ body: "a", daysSinceLastStep: -1 }])
         : completion([{ body: "Hallo Marie", daysSinceLastStep: 0 }]);
     });
     await request(app).post("/generate").send(body).expect(200);

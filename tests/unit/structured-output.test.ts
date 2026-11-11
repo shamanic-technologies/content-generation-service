@@ -81,7 +81,7 @@ describe("structured JSON output via chat-service", () => {
     });
   });
 
-  it("parses JSON response into subject and 3-step sequence", async () => {
+  it("parses JSON response into subject and its first email only", async () => {
     const result = await generateFromTemplate(
       {
         promptTemplate: "Write an email to {{recipientName}}",
@@ -91,20 +91,12 @@ describe("structured JSON output via chat-service", () => {
     );
 
     expect(result.subject).toBe("Quick question");
-    expect(result.sequence).toHaveLength(3);
-    // Step 1
+    // One email per generation (FOLLOWUP-JIT-1107): the follow-ups the answer carried are dropped.
+    expect(result.sequence).toHaveLength(1);
     expect(result.sequence[0].step).toBe(1);
     expect(result.sequence[0].bodyText).toContain("Hey Sarah");
     expect(result.sequence[0].bodyHtml).toContain("<p>");
     expect(result.sequence[0].daysSinceLastStep).toBe(0);
-    // Step 2
-    expect(result.sequence[1].step).toBe(2);
-    expect(result.sequence[1].bodyText).toContain("circling back");
-    expect(result.sequence[1].daysSinceLastStep).toBe(3);
-    // Step 3
-    expect(result.sequence[2].step).toBe(3);
-    expect(result.sequence[2].bodyText).toContain("Different angle");
-    expect(result.sequence[2].daysSinceLastStep).toBe(7);
   });
 
   it("sends a global system prompt with universal email rules and JSON schema", async () => {

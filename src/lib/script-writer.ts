@@ -16,6 +16,7 @@
  * Pure helpers (no I/O): the units the script reads and the row values read back from its run.
  */
 import type { OfferGiveLists } from "./offer-give-lists.js";
+import { firstEmailOnly } from "./first-email-only.js";
 
 /** The stored script that writes the fleet's cold emails. */
 export const SCRIPT_WRITER = { outcome: "message_written", dynasty: "dy_template_writer_full" } as const;
@@ -104,7 +105,8 @@ export function readWrittenByScript(written: unknown, units: unknown) {
   return {
     runId,
     subject,
-    sequence,
+    // One email per generation (first-email-only.ts): a script version still writing follow-ups is cut here.
+    sequence: firstEmailOnly(sequence),
     model: typeof raw.model === "string" ? raw.model : null,
     tokensInput: Number(raw.tokensInput ?? 0),
     tokensOutput: Number(raw.tokensOutput ?? 0),

@@ -67,6 +67,10 @@ export const emailGenerations = pgTable(
     // exclude both (RECORDED_REQUEST_COLUMNS_OFF, src/lib/recorded-request.ts).
     chatRequest: jsonb("chat_request"),
     chatRequestInputs: jsonb("chat_request_inputs"),
+    // RECORDED-ORDER-1111 (drizzle/0052): JSON.stringify({ variables, request, inputs, response }) as written,
+    // because jsonb re-orders object keys and the replay of a recorded request is byte for byte.
+    // NULL on rows written before. Served only by GET /internal/generations/recorded.
+    recordedText: text("recorded_text"),
 
     // Workflow tracking
     workflowSlug: text("workflow_slug"),
