@@ -829,10 +829,10 @@ export const PreviewEmailRequestSchema = registry.register(
         .max(100)
         .optional()
         .describe(
-          "Write the example the way a campaign running this play of the cold-email pipe would: a features-service strategy id on `sales-cold-email-outreach|lead_found_to_conversation` " +
-            "(`offer-emails-only` = leads with something given for free, `named-emails-only` = names the brand and pitches it, `blind-emails-only` = never names the brand, asks about the problem first; any other play of the pipe works too). " +
-            "The email is written with the template + model of the workflow that play's campaign would run (its measured best, else the first workflow it allows in the leg ranking). " +
-            "Absent = the best mature cold-email workflow, as before. A strategy with no play on the pipe = 400 `code: UNKNOWN_STRATEGY`."
+          "Write the example the way a campaign under this strategy would: a features-service strategy id (e.g. `offer-emails-only`, `named-emails-only`, `blind-emails-only`). " +
+            "The email is written by the email Engine's script that strategy keeps, with the template + LLM features-service picks under it. " +
+            "Absent = no condition: every runnable script of the Engine, and the template + LLM picked for cold email. " +
+            "An unknown strategy = 400 `code: UNKNOWN_STRATEGY`; a strategy that keeps no script = 422 `code: NO_SCRIPT_KEPT` (never another strategy's script)."
         ),
     })
     .openapi("PreviewEmailRequest")
@@ -871,12 +871,17 @@ const PreviewEmailResponseSchema = registry.register(
       bodyText: z.string().describe("The first email of the sequence the product would send, as plain text."),
       bodyHtml: z.string(),
       model: z.string().describe("Resolved model id that wrote the email."),
-      promptType: z.string().describe("The prompt template that wrote the email: the best mature cold-email workflow's, when it was written."),
-      modelAlias: z.string().nullable().describe("The model alias the workflow states (e.g. glm-pro). null on a preview stored before the preview followed the best mature workflow."),
+      promptType: z.string().describe("The prompt template that wrote the email: the head of the template dynasty features-service picked, when it was written."),
+      modelAlias: z.string().nullable().describe("The model name asked (the LLM features-service picked, e.g. flash-lite). null on a preview stored before the preview recorded it."),
+      scriptSlug: z
+        .string()
+        .nullable()
+        .describe("The email Engine's script that wrote it (`message_written/<dynasty>/v<n>`). null on a preview stored before 2026-11-11 (written then by a workflow's template + model)."),
+      templateDynastySlug: z.string().nullable().describe("The template dynasty features-service picked. null on a preview stored before 2026-11-11."),
       workflowSlug: z
         .string()
         .nullable()
-        .describe("The workflow whose template + model wrote the email (the best mature cold-email workflow at the time). null on a preview stored before the preview followed it."),
+        .describe("Only on a preview stored before 2026-11-11: the workflow whose template + model wrote it. null since the email Engine's script writes it."),
       highlights: z
         .array(PreviewHighlightSchema)
         .nullable()
@@ -898,13 +903,14 @@ registry.registerPath({
   tags: ["Content Generation"],
   summary: "Write ONE cold email for a brand and a sample recipient, before any campaign exists",
   description:
-    "Writes the email the visitor would receive once they pay: the prompt template AND model of the fleet's best MATURE " +
-    "cold-email workflow (features-service leg ranking, read at request time, cached a few minutes), with that workflow's " +
-    "own brand intel request and input mapping. 502/503 when the ranking or the workflow cannot be read: there is no " +
-    "fallback template or model. A request carrying `model` is refused (400). The LLM spend is declared and " +
-    "authorized against the calling org by chat-service; an org that cannot afford it gets 402. Creates no campaign, no lead " +
-    "and no email_generations row, so nothing here can be sent or counted. The same brand + recipient (+ audience, offer, model) " +
-    "returns the stored email instead of a second billed completion, as long as the best workflow is unchanged.",
+    "Writes the first email a campaign would send, the way it writes it: by the email Engine's script (workflow-service, Engine " +
+    "`message_written`, the script the strategy keeps per features-service, no campaign needed), with the template + LLM " +
+    "features-service picks for cold email, from the sample recipient's facts and the brand's facts (brand-service). Works for a " +
+    "brand with zero history. No fallback script, template or model: none = a named refusal (422 NO_SCRIPT_KEPT, 503 " +
+    "WRITER_PICK_UNAVAILABLE / SCRIPT_PICK_UNAVAILABLE). A request carrying `model` is refused (400). The LLM spend is authorized " +
+    "against the calling org by chat-service; an org that cannot afford it gets 402. Creates no campaign, no lead and no " +
+    "email_generations row, so nothing here can be sent or counted. The same brand + recipient (+ audience, offer, script, template, " +
+    "model) returns the stored email instead of a second billed completion.",
   request: {
     headers: z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() }),
     body: {
@@ -933,8 +939,16 @@ registry.registerPath({
       description: "The brand sells several offers; name one with offerId",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
+    422: {
+      description: "NO_SCRIPT_KEPT: the strategy keeps no script of the email Engine to write with",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
+    503: {
+      description: "WRITER_PICK_UNAVAILABLE (features-service picks no template or LLM yet) or SCRIPT_PICK_UNAVAILABLE (several scripts kept; the Rating cannot be asked outside a run yet)",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
     502: {
-      description: "brand-service or the model failed",
+      description: "brand-service, features-service, workflow-service or the script failed",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },

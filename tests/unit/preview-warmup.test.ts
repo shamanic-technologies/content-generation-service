@@ -5,7 +5,7 @@ import request from "supertest";
 // POST /preview-email/prepare warms the brand intel the first preview needs, so the visitor
 // waits only for the model. These tests pin: the caller is answered at once (202) while the
 // brand-service read runs in the background; the read is EXACTLY the preview's own request
-// (same workflow field set, same identity headers → same org billed); repeats never start a
+// (same brand field set, same identity headers → same org billed); repeats never start a
 // second read; and a preview arriving mid-warm-up waits for it instead of reading the site
 // a second time.
 
@@ -52,9 +52,9 @@ vi.mock("../../src/lib/brand-client.js", () => {
   };
 });
 
-const mockResolvePreviewWorkflow = vi.fn();
-vi.mock("../../src/lib/preview-workflow-client.js", () => ({
-  resolvePreviewWorkflow: (...a: unknown[]) => mockResolvePreviewWorkflow(...a),
+const mockResolvePreviewWriter = vi.fn();
+vi.mock("../../src/lib/preview-writer-client.js", () => ({
+  resolvePreviewWriter: (...a: unknown[]) => mockResolvePreviewWriter(...a),
 }));
 
 vi.mock("../../src/lib/offer-give-lists-client.js", () => ({
@@ -62,10 +62,10 @@ vi.mock("../../src/lib/offer-give-lists-client.js", () => ({
   fetchOfferGiveLists: vi.fn().mockResolvedValue(null),
 }));
 
-const mockGenerate = vi.fn();
-vi.mock("../../src/lib/chat-service-client.js", () => ({
-  InsufficientCreditsError: class extends Error {},
-  generateFromTemplate: (...a: unknown[]) => mockGenerate(...a),
+const mockRunScript = vi.fn();
+vi.mock("../../src/lib/script-run-client.js", () => ({
+  ScriptRunError: class extends Error {},
+  runScript: (...a: unknown[]) => mockRunScript(...a),
 }));
 
 vi.mock("../../src/lib/trace-event.js", () => ({
@@ -82,14 +82,11 @@ app.use(previewRoutes);
 
 const ORG = "22222222-2222-2222-2222-222222222222";
 const BRAND_ID = "5f0c7a2e-8b1d-4c3e-9a4f-6d2b1e0c9a77";
-const PLAN_FIELDS = [{ key: "companyOverview", description: "A comprehensive overview of the company" }];
 const PLAN = {
-  workflowSlug: "sales-cold-email-outreach-nobelium-v5",
-  workflowDynastySlug: "sales-cold-email-outreach-nobelium",
+  script: { dynasty: "dy_template_writer_full", version: 4 },
+  templateDynastySlug: "cold-reply-three-line-reply-named",
   promptType: "blind-discovery-email-v33",
   model: "glm-pro",
-  brandIntelFields: PLAN_FIELDS,
-  sources: {},
 };
 const INTEL = {
   brands: [{ brandId: BRAND_ID, domain: "brand.io", name: "Brand Co" }],
@@ -112,7 +109,7 @@ const prepare = (body: Record<string, unknown> = { brandId: BRAND_ID }) =>
 beforeEach(() => {
   vi.clearAllMocks();
   __resetPreviewWarmups();
-  mockResolvePreviewWorkflow.mockResolvedValue(PLAN);
+  mockResolvePreviewWriter.mockResolvedValue(PLAN);
 });
 
 describe("POST /preview-email/prepare", () => {
@@ -130,25 +127,17 @@ describe("POST /preview-email/prepare", () => {
     expect(mockFetchBrandIntel).toHaveBeenCalledTimes(1);
   });
 
-  it("sends the preview's own request: the workflow's field set, under the caller's identity (same org billed)", async () => {
+  it("sends the preview's own request: the brand field set, under the caller's identity (same org billed)", async () => {
     mockFetchBrandIntel.mockResolvedValue(INTEL);
     const offerId = "9d7f2c1a-3b4e-4f5a-8c6d-7e8f9a0b1c2d";
 
     await prepare({ brandId: BRAND_ID, offerId });
     await awaitPreviewWarmup(ORG, BRAND_ID);
 
-    expect(mockFetchBrandIntel).toHaveBeenCalledWith(PLAN_FIELDS, { orgId: ORG, userId: "user-9", runId: "run-warm", brandId: BRAND_ID, offerId });
-    expect(mockGenerate).not.toHaveBeenCalled();
-  });
-
-  it("falls back to the same default field set as the preview when the workflow feeds none", async () => {
-    mockResolvePreviewWorkflow.mockResolvedValue({ ...PLAN, brandIntelFields: null });
-    mockFetchBrandIntel.mockResolvedValue(INTEL);
-
-    await prepare();
-    await awaitPreviewWarmup(ORG, BRAND_ID);
-
-    expect(mockFetchBrandIntel.mock.calls[0][0]).toBe(BRAND_INTEL_FIELDS);
+    expect(mockFetchBrandIntel).toHaveBeenCalledWith(BRAND_INTEL_FIELDS, { orgId: ORG, userId: "user-9", runId: "run-warm", brandId: BRAND_ID, offerId });
+    expect(mockRunScript).not.toHaveBeenCalled();
+    // No writer is resolved to warm the brand: the field set is the preview's, whoever writes.
+    expect(mockResolvePreviewWriter).not.toHaveBeenCalled();
   });
 
   it("never starts a second read: in_progress while running, ready once done", async () => {
@@ -181,7 +170,7 @@ describe("POST /preview-email/prepare", () => {
   it("400s a body without a valid brandId and starts nothing", async () => {
     const res = await prepare({ brandId: "nope" });
     expect(res.status).toBe(400);
-    expect(mockResolvePreviewWorkflow).not.toHaveBeenCalled();
+    expect(mockFetchBrandIntel).not.toHaveBeenCalled();
   });
 });
 
