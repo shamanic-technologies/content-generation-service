@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // The preview's writer is read live (PREVIEW-EMAIL-503-1111): features-service's scripts for the email Engine with NO
-// campaign, its writer pick, the picked dynasty's head. No workflow, play or leg ranking of workflows is read.
+// campaign, workflow-service's Rating pick among them, features' writer pick, the picked dynasty's head. No workflow, play or leg ranking of workflows is read.
 
 const mockResolveDynastyHead = vi.fn();
 vi.mock("../../src/lib/template-dynasty-query.js", () => ({
@@ -22,9 +22,13 @@ const writerRanking = {
   llms: { best: { llmDynastySlug: "gemini-flash-lite", aliases: [{ alias: "gemini-flash-lite", status: "active" }] }, unavailableReason: null },
 };
 
-function route(over: { strategy?: unknown; strategyStatus?: number } = {}) {
-  mockFetch.mockImplementation(async (url: string) => {
+function route(over: { strategy?: unknown; strategyStatus?: number; pick?: unknown; pickStatus?: number } = {}) {
+  mockFetch.mockImplementation(async (url: string, init?: { body?: string }) => {
     if (url.includes("/internal/script-strategy")) return json(over.strategy ?? strategyAnswer(), over.strategyStatus ?? 200);
+    if (url.includes("/internal/engines/message_written/pick")) {
+      const asked = JSON.parse(init?.body ?? "{}");
+      return json(over.pick ?? { outcome: "message_written", dynasty: asked.keptDynasties[0], version: 4, scriptId: "s1", draws: [] }, over.pickStatus ?? 200);
+    }
     if (url.includes("/public/stats/leg-writer-ranking")) return json(writerRanking);
     throw new Error(`unexpected fetch ${url}`);
   });
@@ -55,7 +59,7 @@ describe("resolvePreviewWriter", () => {
     route();
     await resolvePreviewWriter("named-emails-only");
     const urls = mockFetch.mock.calls.map((c) => String(c[0]));
-    expect(urls.every((u) => u.includes("strategyId=named-emails-only"))).toBe(true);
+    expect(urls.filter((u) => u.includes("features") || !u.includes("/pick")).every((u) => u.includes("strategyId=named-emails-only"))).toBe(true);
   });
 
   it("an unknown strategy = 400 UNKNOWN_STRATEGY", async () => {
@@ -69,9 +73,17 @@ describe("resolvePreviewWriter", () => {
     expect(mockResolveDynastyHead).not.toHaveBeenCalled();
   });
 
-  it("several kept scripts are the Rating's to choose: refused by name, never picked here", async () => {
-    route({ strategy: strategyAnswer([SCRIPT, { ...SCRIPT, dynasty: "dy_other", scriptId: "s2" }]) });
-    await expect(resolvePreviewWriter()).rejects.toMatchObject({ status: 503, code: "SCRIPT_PICK_UNAVAILABLE" });
+  it("the Rating picks among the kept scripts (workflow-service), on the preview's materials: never picked here", async () => {
+    route({ strategy: strategyAnswer([SCRIPT, { ...SCRIPT, dynasty: "dy_other", scriptId: "s2" }]), pick: { outcome: "message_written", dynasty: "dy_other", version: 2, scriptId: "s2", draws: [] } });
+    const plan = await resolvePreviewWriter();
+    expect(plan.script).toEqual({ dynasty: "dy_other", version: 2 });
+    const pickCall = mockFetch.mock.calls.find((c) => String(c[0]).includes("/pick"))!;
+    expect(JSON.parse(pickCall[1].body)).toEqual({ keptDynasties: ["dy_template_writer_full", "dy_other"], servable: ["lead_identified", "brand_context", "template_written"] });
+  });
+
+  it("the Rating finding nothing it can run = 422 NO_SCRIPT_KEPT", async () => {
+    route({ pick: { code: "no_runnable_script", error: "no kept dynasty runs on these materials" }, pickStatus: 404 });
+    await expect(resolvePreviewWriter()).rejects.toMatchObject({ status: 422, code: "NO_SCRIPT_KEPT" });
   });
 
   it("features-service unreadable = 502, nothing guessed", async () => {
@@ -83,8 +95,8 @@ describe("resolvePreviewWriter", () => {
     route();
     await resolvePreviewWriter();
     await resolvePreviewWriter();
-    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
     await resolvePreviewWriter("named-emails-only");
-    expect(mockFetch).toHaveBeenCalledTimes(4);
+    expect(mockFetch).toHaveBeenCalledTimes(6);
   });
 });
