@@ -8,8 +8,9 @@
  *
  *  - The script: the scripts the strategy keeps for the Engine, asked of features-service with NO campaign
  *    (`GET /internal/script-strategy?outcome=message_written[&strategyId=]`; no strategy = no condition = every
- *    runnable script). One kept = it. Several = workflow-service's Rating picks (never a pick by hand here). None =
- *    a named refusal (`NO_SCRIPT_KEPT`), never another strategy's script.
+ *    runnable script), then workflow-service's Rating picks among them (`POST /internal/engines/{outcome}/pick`, the
+ *    run's own `pickScript`; never a pick by hand here). None = a named refusal (`NO_SCRIPT_KEPT`), never another
+ *    strategy's script.
  *  - The template + LLM: features-service's writer pick for cold email (`GET /public/stats/leg-writer-ranking`, the same
  *    best rows a run's `features.writer_pick` serves), narrowed by the strategy when there is one. The template is the
  *    picked dynasty's head, exactly as a run's `content.template_head` reads it.
@@ -24,6 +25,9 @@ import type { PreviewRecipient } from "./preview-email.js";
 
 /** The email Engine: the outcome its scripts make. */
 export const PREVIEW_ENGINE_OUTCOME = "message_written";
+
+/** The materials a preview hands the script (`writerUnits`): the Rating considers only scripts that run on them. */
+export const PREVIEW_WRITER_MATERIALS = ["lead_identified", "brand_context", "template_written"] as const;
 
 /**
  * Where features-service ranks cold-email templates + LLMs (its writer pick reads the same rows). The only place the

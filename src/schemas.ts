@@ -907,7 +907,7 @@ registry.registerPath({
     "`message_written`, the script the strategy keeps per features-service, no campaign needed), with the template + LLM " +
     "features-service picks for cold email, from the sample recipient's facts and the brand's facts (brand-service). Works for a " +
     "brand with zero history. No fallback script, template or model: none = a named refusal (422 NO_SCRIPT_KEPT, 503 " +
-    "WRITER_PICK_UNAVAILABLE / SCRIPT_PICK_UNAVAILABLE). A request carrying `model` is refused (400). The LLM spend is authorized " +
+    "WRITER_PICK_UNAVAILABLE). Among the kept scripts, workflow-service's Rating picks (as in a campaign run). A request carrying `model` is refused (400). The LLM spend is authorized " +
     "against the calling org by chat-service; an org that cannot afford it gets 402. Creates no campaign, no lead and no " +
     "email_generations row, so nothing here can be sent or counted. The same brand + recipient (+ audience, offer, script, template, " +
     "model) returns the stored email instead of a second billed completion.",
@@ -940,11 +940,11 @@ registry.registerPath({
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     422: {
-      description: "NO_SCRIPT_KEPT: the strategy keeps no script of the email Engine to write with",
+      description: "NO_SCRIPT_KEPT: the strategy keeps no script of the email Engine to write with (or none the Rating can run on a preview's materials)",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     503: {
-      description: "WRITER_PICK_UNAVAILABLE (features-service picks no template or LLM yet) or SCRIPT_PICK_UNAVAILABLE (several scripts kept; the Rating cannot be asked outside a run yet)",
+      description: "WRITER_PICK_UNAVAILABLE: features-service picks no template or LLM yet",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     502: {
