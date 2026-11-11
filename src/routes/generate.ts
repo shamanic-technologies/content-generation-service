@@ -34,7 +34,7 @@ import {
 import { traceEvent } from "../lib/trace-event.js";
 import { findGenerationForLead } from "../lib/lead-generation-query.js";
 import { withResolvedBody } from "../lib/generation-body.js";
-import { RECORDED_REQUEST_COLUMNS_OFF } from "../lib/recorded-request.js";
+import { RECORDED_REQUEST_COLUMNS_OFF, recordedText } from "../lib/recorded-request.js";
 import { withSequenceDelays, IncompleteSequenceError } from "../lib/sequence-delays.js";
 import { firstEmailOnly } from "../lib/first-email-only.js";
 import { ClientCommsVoiceError } from "../lib/client-comms-voice.js";
@@ -402,6 +402,8 @@ async function recordWrittenByScript(req: AuthenticatedRequest, res: Response, d
     responseRaw: w.responseRaw,
     chatRequest: w.chatRequest,
     chatRequestInputs: w.chatRequestInputs,
+    // The same values as exact JSON text: jsonb re-orders object keys (RECORDED-ORDER-1111).
+    recordedText: recordedText({ variables: w.variables, request: w.chatRequest, inputs: w.chatRequestInputs, response: w.responseRaw }),
     workflowSlug: scope.workflowSlug ?? null,
     featureSlug: scope.featureSlug ?? null,
     audienceId: scope.audienceId ?? null,
@@ -554,6 +556,8 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       // The exact chat-service request + its inputs, in the SAME insert (FACTORY-P3-RECORD-SYSTEM-PROMPT).
       chatRequest: result.chatRequest,
       chatRequestInputs: result.chatRequestInputs,
+      // The same values as exact JSON text: jsonb re-orders object keys (RECORDED-ORDER-1111).
+      recordedText: recordedText({ variables, request: result.chatRequest, inputs: result.chatRequestInputs, response: result.responseRaw }),
       workflowSlug: workflowSlug ?? null,
       featureSlug: scope.featureSlug ?? null,
       audienceId: scope.audienceId ?? null,
