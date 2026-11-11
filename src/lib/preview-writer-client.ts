@@ -1,7 +1,7 @@
 /**
  * Reads, at request time, who writes the signed-out preview (PREVIEW-EMAIL-503-1111): the scripts the strategy keeps
  * for the email Engine (features-service, no campaign), the template + LLM features-service picks for cold email, the
- * picked template dynasty's head. The I/O half of `preview-writer.ts` (which holds the rules and is never mocked).
+ * picked template dynasty's head, and workflow-service's Rating pick among the kept scripts. The I/O half of `preview-writer.ts` (which holds the rules and is never mocked).
  *
  * Cached in memory a few minutes per strategy: features-service rebuilds its rankings every 15 minutes, so a visitor
  * asking for three emails does not re-read them three times. Any failure is LOUD (`PreviewWriterError`): there is no
@@ -11,11 +11,13 @@ import { resolveDynastyHead } from "./template-dynasty-query.js";
 import { TemplateDynastyError } from "./template-dynasties.js";
 import {
   PREVIEW_ENGINE_OUTCOME,
+  PREVIEW_WRITER_MATERIALS,
   PreviewWriterError,
   WRITER_RANKING_FEATURE_SLUG,
   WRITER_RANKING_LEG,
   keptScripts,
   writerFromRanking,
+  type PreviewScript,
   type PreviewWriterPlan,
   type ScriptStrategyAnswer,
   type WriterRanking,
@@ -23,6 +25,8 @@ import {
 
 const FEATURES_SERVICE_URL = process.env.FEATURES_SERVICE_URL || "http://localhost:3050";
 const FEATURES_SERVICE_API_KEY = process.env.FEATURES_SERVICE_API_KEY || "";
+const WORKFLOW_SERVICE_URL = process.env.WORKFLOW_SERVICE_URL || "http://localhost:3040";
+const WORKFLOW_SERVICE_API_KEY = process.env.WORKFLOW_SERVICE_API_KEY || "";
 
 export const PREVIEW_WRITER_CACHE_MS = 5 * 60_000;
 
@@ -81,24 +85,42 @@ async function readWriterRanking(strategyId?: string): Promise<WriterRanking> {
 }
 
 /**
- * The script, template and LLM that write the preview (per strategy; none = no condition). Several kept scripts are
- * the Rating's to choose between: until workflow-service answers that choice outside a run, the preview refuses by
- * name rather than pick one itself.
+ * workflow-service's Rating picks among the kept dynasties, exactly as a campaign run does (`POST
+ * /internal/engines/{outcome}/pick`, the run's own `pickScript`, PREVIEW-RATING-PICK-1111): one kept or several, the
+ * choice is never made here. Nothing it can run on the preview's materials = 422 NO_SCRIPT_KEPT.
  */
+async function ratingPick(keptDynasties: string[]): Promise<PreviewScript> {
+  let res: Response;
+  try {
+    res = await fetch(`${WORKFLOW_SERVICE_URL}/internal/engines/${encodeURIComponent(PREVIEW_ENGINE_OUTCOME)}/pick`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Api-Key": WORKFLOW_SERVICE_API_KEY },
+      body: JSON.stringify({ keptDynasties, servable: [...PREVIEW_WRITER_MATERIALS] }),
+    });
+  } catch (err) {
+    throw new PreviewWriterError(502, `workflow-service Rating pick unreachable: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  if (res.status === 404) {
+    throw new PreviewWriterError(422, `workflow-service's Rating finds no script of the email Engine it can run on a preview's materials among ${keptDynasties.join(", ")}: ${await res.text()}`, "NO_SCRIPT_KEPT");
+  }
+  if (!res.ok) {
+    throw new PreviewWriterError(502, `workflow-service Rating pick failed: ${res.status} - ${await res.text()}`);
+  }
+  const body = (await res.json()) as { dynasty?: unknown; version?: unknown };
+  if (typeof body.dynasty !== "string" || typeof body.version !== "number") {
+    throw new PreviewWriterError(502, "workflow-service Rating pick answered without dynasty and version");
+  }
+  return { dynasty: body.dynasty, version: body.version };
+}
+
+/** The script (the Rating's pick among the kept ones), template and LLM that write the preview (per strategy; none = no condition). */
 export async function resolvePreviewWriter(strategyId?: string): Promise<PreviewWriterPlan> {
   const cacheKey = strategyId ?? "";
   const hit = cached.get(cacheKey);
   if (hit && Date.now() - hit.at < PREVIEW_WRITER_CACHE_MS) return hit.plan;
 
   const [strategy, ranking] = await Promise.all([readScriptStrategy(strategyId), readWriterRanking(strategyId)]);
-  const scripts = keptScripts(strategy, strategyId);
-  if (scripts.length > 1) {
-    throw new PreviewWriterError(
-      503,
-      `The email Engine keeps ${scripts.length} scripts (${scripts.map((s) => s.dynasty).join(", ")}); workflow-service's Rating chooses among them and cannot be asked outside a campaign run yet, so no preview can be written`,
-      "SCRIPT_PICK_UNAVAILABLE",
-    );
-  }
+  const script = await ratingPick(keptScripts(strategy, strategyId).map((s) => s.dynasty));
   const pick = writerFromRanking(ranking, strategyId);
   let promptType: string;
   try {
@@ -109,7 +131,7 @@ export async function resolvePreviewWriter(strategyId?: string): Promise<Preview
     }
     throw err;
   }
-  const plan: PreviewWriterPlan = { script: scripts[0], templateDynastySlug: pick.templateDynastySlug, promptType, model: pick.model };
+  const plan: PreviewWriterPlan = { script, templateDynastySlug: pick.templateDynastySlug, promptType, model: pick.model };
   console.log(`[content-generation-service] preview writer${strategyId ? ` for strategy ${strategyId}` : ""}: script=${plan.script.dynasty} v${plan.script.version}, template=${pick.templateDynastySlug} (${promptType}), model=${plan.model}`);
   cached.set(cacheKey, { plan, at: Date.now() });
   return plan;
