@@ -2,24 +2,22 @@
  * The signed-out preview email: ONE cold email written for a brand and a sample
  * recipient, before any campaign or lead exists.
  *
- * It is the email we would send once the visitor pays: written with the template and
- * model of the fleet's best MATURE cold-email workflow, read at request time
- * (`preview-workflow.ts`). This module holds the rest of the identity of a preview:
- * the brand intel request used when that workflow feeds none, the audience context,
- * and the stored row's key.
+ * It is the email a campaign would send: written by the email Engine's script with the
+ * template + LLM features-service picks, read at request time (`preview-writer.ts`). This
+ * module holds the rest of the identity of a preview: the brand intel request, the
+ * audience context, and the stored row's key.
  *
  * Pure leaf module (no I/O, never `vi.mock`'d).
  */
 import { createHash } from "node:crypto";
 import { type OfferGiveLists, giveListsFingerprint } from "./offer-give-lists.js";
-import type { PreviewPlan } from "./preview-workflow.js";
 import { formatQualificationChecks } from "./lead-context-variables.js";
 
 /**
- * The brand-extract-fields request the live cold-email workflows send, used ONLY when the
- * preview's workflow feeds its template no brand intel: the call still checks the brand
- * belongs to the org, names it, and gives the per-sentence highlights their brand facts.
- * When the workflow does feed brand intel, its own node's field list is sent instead.
+ * The brand facts the Engine's cold-email scripts ask brand-service for (their `brandFields`
+ * tactic, read 2026-11-11), handed to the writer as `brandExtractedFields`. The call also checks
+ * the brand belongs to the org, names it, and gives the per-sentence highlights their brand
+ * facts. The warm-up (`preview-warmup.ts`) asks brand-service for exactly this list.
  */
 export const BRAND_INTEL_FIELDS: ReadonlyArray<{ key: string; description: string }> = [
   { key: "companyOverview", description: "A comprehensive overview of the company" },
@@ -42,15 +40,6 @@ export const BRAND_INTEL_FIELDS: ReadonlyArray<{ key: string; description: strin
   { key: "awardsAndRecognition", description: "Awards, recognition, and press mentions" },
   { key: "additionalContext", description: "Any additional relevant context about the company" },
 ];
-
-/**
- * The brand-extract-fields request a preview sends for its workflow: the workflow's own
- * node's field list, else `BRAND_INTEL_FIELDS`. The one place this is decided, so the
- * warm-up (`preview-warmup.ts`) asks brand-service for exactly what the preview will read.
- */
-export function previewBrandIntelFields(plan: Pick<PreviewPlan, "brandIntelFields">): ReadonlyArray<{ key: string; description: string }> {
-  return plan.brandIntelFields ?? BRAND_INTEL_FIELDS;
-}
 
 export interface PreviewRecipient {
   firstName: string;
@@ -110,8 +99,8 @@ export function previewRecipientKey(input: {
   offerId?: string;
   promptType: string;
   model: string;
-  /** The workflow whose template + model wrote it, so a new best workflow re-writes. */
-  workflowSlug: string;
+  /** The email Engine's script (`message_written/<dynasty>/v<n>`), so a new script version re-writes. */
+  writerSlug: string;
   /** Part of the identity so a stored preview written under an older contract is rewritten. */
   annotationVersion: string;
   /**
@@ -140,7 +129,7 @@ export function previewRecipientKey(input: {
     norm(input.offerId),
     input.promptType,
     input.model,
-    input.workflowSlug,
+    input.writerSlug,
     input.annotationVersion,
   ]);
   const lists = giveListsFingerprint(input.giveLists);

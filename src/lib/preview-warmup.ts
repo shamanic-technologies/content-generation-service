@@ -3,8 +3,7 @@
  *
  * The first `POST /preview-email` for a brand used to spend most of its time in
  * brand-service extract-fields (map the whole site, scrape pages, run an LLM: 125 s of
- * 137 s measured in prod 2026-10-06), because the best mature workflow's own field set
- * was never cached yet. The onboarding knows the brand long before it asks for the
+ * 137 s measured in prod 2026-10-06), because the brand's facts were never cached yet. The onboarding knows the brand long before it asks for the
  * preview, so it calls `POST /preview-email/prepare` early and this module sends brand-
  * service the SAME request the preview will send. brand-service caches each field per
  * (brand, field key, description hash, campaign) for days, not per offer, so the
@@ -20,8 +19,7 @@
  * warm-up; the preview then pays the read itself, as it did before this existed.
  */
 import { fetchBrandIntel, type ServiceIdentity } from "./brand-client.js";
-import { resolvePreviewWorkflow } from "./preview-workflow-client.js";
-import { previewBrandIntelFields } from "./preview-email.js";
+import { BRAND_INTEL_FIELDS } from "./preview-email.js";
 
 /** A completed warm-up answers repeats as `ready` without re-asking brand-service for this long. */
 export const PREVIEW_WARMUP_READY_MS = 10 * 60_000;
@@ -54,12 +52,11 @@ export function startPreviewWarmup(identity: ServiceIdentity & { orgId: string; 
 
   const startedAt = Date.now();
   const work = (async () => {
-    const plan = await resolvePreviewWorkflow(identity);
-    const intel = await fetchBrandIntel(previewBrandIntelFields(plan), identity);
+    const intel = await fetchBrandIntel(BRAND_INTEL_FIELDS, identity);
     const fields = Object.values(intel.fields ?? {});
     const fromCache = fields.filter((f) => Object.values(f.byBrand ?? {}).every((b) => b.cached)).length;
     readyAt.set(key, Date.now());
-    console.log(`[content-generation-service] preview warm-up done brandId=${identity.brandId} org=${identity.orgId} run=${identity.runId} workflow=${plan.workflowSlug} fields=${fields.length} alreadyCached=${fromCache} ms=${Date.now() - startedAt}`);
+    console.log(`[content-generation-service] preview warm-up done brandId=${identity.brandId} org=${identity.orgId} run=${identity.runId} fields=${fields.length} alreadyCached=${fromCache} ms=${Date.now() - startedAt}`);
   })()
     .catch((err) => {
       // Nobody is waiting on this answer: say it loudly here. The preview, when it comes,

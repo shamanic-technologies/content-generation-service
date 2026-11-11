@@ -7,7 +7,7 @@ import { buildLeadContextBlock } from "../../src/lib/lead-context-block.js";
 const R = { firstName: "Jane", lastName: "Doe", title: "VP Sales", companyName: "Acme" };
 
 describe("previewRecipientKey", () => {
-  const base = { recipient: R, promptType: "blind-discovery-email-v33", model: "glm-pro", workflowSlug: "sales-cold-email-outreach-nobelium-v5", annotationVersion: "highlights-v1" };
+  const base = { recipient: R, promptType: "blind-discovery-email-v33", model: "glm-pro", writerSlug: "message_written/dy_template_writer_full/v4", annotationVersion: "highlights-v1" };
 
   it("treats casing and stray whitespace as the same recipient", () => {
     const a = previewRecipientKey(base);
@@ -21,8 +21,8 @@ describe("previewRecipientKey", () => {
     expect(previewRecipientKey({ ...base, audience: "SaaS" })).not.toBe(a);
     expect(previewRecipientKey({ ...base, model: "flash" })).not.toBe(a);
     expect(previewRecipientKey({ ...base, promptType: "cold-email-v55" })).not.toBe(a);
-    // A new best workflow re-writes, even when it states the same template + model.
-    expect(previewRecipientKey({ ...base, workflowSlug: "sales-cold-email-outreach-nobelium-v6" })).not.toBe(a);
+    // A new script version re-writes, even with the same template + model.
+    expect(previewRecipientKey({ ...base, writerSlug: "message_written/dy_template_writer_full/v5" })).not.toBe(a);
     expect(previewRecipientKey({ ...base, offerId: "o" })).not.toBe(a);
     // A preview stored under an older annotation contract is rewritten, not served.
     expect(previewRecipientKey({ ...base, annotationVersion: "highlights-v2" })).not.toBe(a);
@@ -48,7 +48,7 @@ describe("previewQualificationVariable", () => {
   });
 
   it("keeps the key byte-identical without checks", () => {
-    const base = { recipient: R, promptType: "t", model: "m", workflowSlug: "w", annotationVersion: "v" };
+    const base = { recipient: R, promptType: "t", model: "m", writerSlug: "w", annotationVersion: "v" };
     expect(previewRecipientKey({ ...base, qualification: { checks: [] } })).toBe(previewRecipientKey(base));
     expect(previewRecipientKey({ ...base, qualification: Q })).not.toBe(previewRecipientKey(base));
   });
@@ -66,7 +66,7 @@ describe("no hardcoded preview template or model", () => {
   const read = (p: string) => readFileSync(join(__dirname, "../..", p), "utf8");
 
   it("the preview route and its modules name no template type and no model alias", () => {
-    for (const file of ["src/routes/preview-email.ts", "src/lib/preview-email.ts", "src/lib/preview-workflow.ts", "src/lib/preview-workflow-client.ts"]) {
+    for (const file of ["src/routes/preview-email.ts", "src/lib/preview-email.ts", "src/lib/preview-writer.ts", "src/lib/preview-writer-client.ts"]) {
       const src = read(file);
       expect(src, file).not.toMatch(/["'`][a-z-]*email-v\d+["'`]/);
       expect(src, file).not.toMatch(/PREVIEW_MODEL|PREVIEW_PROMPT_TYPE|disableThinking: true/);

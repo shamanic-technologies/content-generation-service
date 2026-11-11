@@ -2,12 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 
-// POST /preview-email writes ONE cold email for a brand + a sample recipient, before any
-// campaign exists. These tests pin: the best mature workflow's template + model + brand-intel
-// request are used (no hardcoded template/model, no fallback when the ranking is unreadable),
-// the spend goes through chat-service under the calling org, a refusal to pay is a clean
-// 402, a repeat is answered from storage with no downstream call, and nothing is written
-// to email_generations.
+// POST /preview-email writes ONE cold email for a brand + a sample recipient, before any campaign exists
+// (PREVIEW-EMAIL-503-1111). These tests pin: the email Engine's script the strategy keeps writes it (run through
+// workflow-service under the caller's identity, recorded by us, declaring nothing), with the template + LLM
+// features-service picks and the materials every script writer gets; a brand with zero history and no campaign gets
+// an email with or without a strategy; no fallback script/template/model; a refusal to pay is a clean 402; a repeat is
+// answered from storage with no downstream call; nothing is written to email_generations.
 
 vi.mock("../../src/middleware/auth.js", () => ({
   serviceAuth: (req: any, _res: any, next: any) => {
@@ -45,8 +45,12 @@ vi.mock("../../src/db/index.js", () => ({
   },
 }));
 
+const mockDynastyIdentityOf = vi.fn();
+vi.mock("../../src/lib/dynasty-membership.js", () => ({
+  dynastyIdentityOf: (...a: unknown[]) => mockDynastyIdentityOf(...a),
+}));
+
 const mockFetchBrandIntel = vi.fn();
-const mockFetchBrandRows = vi.fn();
 const mockExtractBrandFields = vi.fn();
 vi.mock("../../src/lib/brand-client.js", () => {
   class BrandIntelError extends Error {
@@ -54,23 +58,16 @@ vi.mock("../../src/lib/brand-client.js", () => {
       super(`brand-service extract-fields failed: ${status} - ${body}`);
     }
   }
-  class BrandRowsError extends Error {
-    constructor(public status: number, public body: string) {
-      super(`brand-service GET /internal/brands failed: ${status} - ${body}`);
-    }
-  }
   return {
     BrandIntelError,
-    BrandRowsError,
     fetchBrandIntel: (...a: unknown[]) => mockFetchBrandIntel(...a),
-    fetchBrandRows: (...a: unknown[]) => mockFetchBrandRows(...a),
     extractBrandFields: (...a: unknown[]) => mockExtractBrandFields(...a),
   };
 });
 
-const mockResolvePreviewWorkflow = vi.fn();
-vi.mock("../../src/lib/preview-workflow-client.js", () => ({
-  resolvePreviewWorkflow: (...a: unknown[]) => mockResolvePreviewWorkflow(...a),
+const mockResolvePreviewWriter = vi.fn();
+vi.mock("../../src/lib/preview-writer-client.js", () => ({
+  resolvePreviewWriter: (...a: unknown[]) => mockResolvePreviewWriter(...a),
 }));
 
 const mockFetchGiveLists = vi.fn();
@@ -86,17 +83,14 @@ vi.mock("../../src/lib/offer-give-lists-client.js", () => {
   };
 });
 
-const mockGenerate = vi.fn();
-vi.mock("../../src/lib/chat-service-client.js", () => {
-  class InsufficientCreditsError extends Error {
-    constructor(public balance_cents: number, public required_cents: number) {
-      super("Insufficient credits");
+const mockRunScript = vi.fn();
+vi.mock("../../src/lib/script-run-client.js", () => {
+  class ScriptRunError extends Error {
+    constructor(public status: number, message: string) {
+      super(message);
     }
   }
-  return {
-    InsufficientCreditsError,
-    generateFromTemplate: (...a: unknown[]) => mockGenerate(...a),
-  };
+  return { ScriptRunError, runScript: (...a: unknown[]) => mockRunScript(...a) };
 });
 
 const mockAnnotate = vi.fn();
@@ -109,10 +103,11 @@ vi.mock("../../src/lib/trace-event.js", () => ({
 }));
 
 import previewRoutes from "../../src/routes/preview-email.js";
-import { InsufficientCreditsError } from "../../src/lib/chat-service-client.js";
 import { BrandIntelError } from "../../src/lib/brand-client.js";
 import { OfferGiveListsError } from "../../src/lib/offer-give-lists-client.js";
-import { PreviewWorkflowError, type PreviewPlan } from "../../src/lib/preview-workflow.js";
+import { ScriptRunError } from "../../src/lib/script-run-client.js";
+import { PreviewWriterError, type PreviewWriterPlan } from "../../src/lib/preview-writer.js";
+import { BRAND_INTEL_FIELDS } from "../../src/lib/preview-email.js";
 
 const app = express();
 app.use(express.json());
@@ -131,32 +126,45 @@ const INTEL = {
   provenance: {},
 };
 
-const TEMPLATE = "Today {{currentDate}}. Prospect {{leadFirstName}} {{leadLastName}}, {{leadTitle}} at {{leadCompanyName}} ({{leadCompanyIndustry}}). Client {{clientName}}. Intel {{brandExtractedFields}}. Brands {{brands}}. Page {{landingPageContent}}";
+const TEMPLATE = "Today {{currentDate}}. Prospect {{leadFirstName}} {{leadLastName}}, {{leadTitle}} at {{leadCompanyName}} ({{leadCompanyIndustry}}, {{leadCompanySize}}). Client {{clientName}}. Intel {{brandExtractedFields}}. Site {{brandWebsiteUrl}}";
 
-// The best mature workflow's plan, as resolvePreviewWorkflow reads it off the ranking + DAG.
-// Deliberately NOT cold-email-v39 / sonnet: the route must use whatever the plan says.
-const PLAN_FIELDS = [{ key: "companyOverview", description: "A comprehensive overview of the company" }];
-const PLAN: PreviewPlan = {
-  workflowSlug: "sales-cold-email-outreach-nobelium-v5",
-  workflowDynastySlug: "sales-cold-email-outreach-nobelium",
+// The writer features-service + workflow-service name today. Deliberately not a real head: the route uses whatever the plan says.
+const PLAN: PreviewWriterPlan = {
+  script: { dynasty: "dy_template_writer_full", version: 4 },
+  templateDynastySlug: "cold-reply-three-line-reply-named",
   promptType: "blind-discovery-email-v33",
   model: "glm-pro",
-  brandIntelFields: PLAN_FIELDS,
-  sources: {
-    currentDate: { kind: "current-date" },
-    leadFirstName: { kind: "recipient", field: "firstName" },
-    leadLastName: { kind: "recipient", field: "lastName" },
-    leadTitle: { kind: "recipient", field: "title" },
-    leadCompanyName: { kind: "recipient", field: "companyName" },
-    leadCompanyIndustry: { kind: "recipient", field: "companyIndustry" },
-    leadCompanyWebsiteUrl: { kind: "recipient", field: "companyDomain" },
-    leadCity: { kind: "lead-unknown", path: "city" },
-    clientName: { kind: "brand", path: "name" },
-    brandExtractedFields: { kind: "brand-intel", part: "fields" },
-    brands: { kind: "brands" },
-  },
 };
-const BRAND_ROWS = [{ id: BRAND_ID, name: "Brand Co", domain: "brand.io", clickDestinationUrl: "https://brand.io/start" }];
+
+/** What workflow-service answers for a made script run with `trace: true`. */
+function scriptAnswer(over: Record<string, unknown> = {}) {
+  return {
+    scriptId: "1fd82c22-b7bc-42ee-a8ed-26081d0d921c",
+    scriptSlug: "message_written/dy_template_writer_full/v4",
+    version: 4,
+    runId: "script-run-1",
+    status: "made",
+    unit: {
+      outcome: "message_written",
+      subject: { service: "content-generation-service", id: "preview:k" },
+      content: {
+        subject: "Quick question",
+        sequence: [
+          { step: 1, bodyText: "Hi Jane,\n\nHello.", bodyHtml: "<p>Hi Jane,</p><p>Hello.</p>", daysSinceLastStep: 0 },
+          { step: 2, bodyText: "Following up.", bodyHtml: "<p>Following up.</p>", daysSinceLastStep: 3 },
+        ],
+      },
+    },
+    error: null,
+    vendorCalls: [],
+    declared: { produced: [], consumed: [] },
+    trace: [
+      { name: "voice.read", args: {}, answer: { data: { content: "Our voice." } } },
+      { name: "llm.complete", args: {}, answer: {}, sent: { message: "the message", systemPrompt: "the system", responseSchema: {}, provider: "zai", model: "glm-pro" }, raw: { model: "glm-5.1", tokensInput: 100, tokensOutput: 50 } },
+    ],
+    ...over,
+  };
+}
 
 function storedRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -172,33 +180,28 @@ function storedRow(overrides: Record<string, unknown> = {}) {
     bodyText: "Hi Jane,\n\nHello.",
     bodyHtml: "<p>Hi Jane,</p><p>Hello.</p>",
     sequence: [],
-    model: "gemini-3.1-pro-preview",
+    model: "glm-5.1",
     createdAt: new Date("2026-09-28T10:00:00Z"),
     ...overrides,
   };
+}
+
+/** The variables the script was handed (the lead and brand halves of its materials, merged). */
+function sentVariables(call = 0): Record<string, unknown> {
+  const units = mockRunScript.mock.calls[call][0].units;
+  return { ...units.lead_identified.content.variables, ...units.brand_context.content.variables };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockPreviewFindFirst.mockResolvedValue(undefined);
   mockPromptFindFirst.mockResolvedValue({ type: PLAN.promptType, prompt: TEMPLATE });
-  mockResolvePreviewWorkflow.mockResolvedValue(PLAN);
-  mockFetchBrandRows.mockResolvedValue(BRAND_ROWS);
+  mockResolvePreviewWriter.mockResolvedValue(PLAN);
+  mockDynastyIdentityOf.mockResolvedValue("named");
   mockExtractBrandFields.mockResolvedValue(new Map());
   mockFetchBrandIntel.mockResolvedValue(INTEL);
   mockFetchGiveLists.mockResolvedValue({ giveForFree: [], neverGive: [] });
-  mockGenerate.mockResolvedValue({
-    subject: "Quick question",
-    sequence: [
-      { step: 1, bodyText: "Hi Jane,\n\nHello.", bodyHtml: "<p>Hi Jane,</p><p>Hello.</p>", daysSinceLastStep: 0 },
-      { step: 2, bodyText: "Following up.", bodyHtml: "<p>Following up.</p>", daysSinceLastStep: 3 },
-    ],
-    tokensInput: 100,
-    tokensOutput: 50,
-    model: "gemini-3.1-pro-preview",
-    promptRaw: "p",
-    responseRaw: {},
-  });
+  mockRunScript.mockResolvedValue(scriptAnswer());
   mockAnnotate.mockResolvedValue({
     highlights: [
       { text: "Hello.", source: "recipient.title", reason: "She runs sales." },
@@ -212,137 +215,158 @@ beforeEach(() => {
 });
 
 describe("POST /preview-email", () => {
-  it("fills a template input the workflow does not map from brand-service, as a campaign /generate does", async () => {
-    mockExtractBrandFields.mockResolvedValue(new Map([["landingPageContent", "Brand Co sells X"]]));
-    const res = await request(app).post("/preview-email").send(BODY);
-    expect(res.status).toBe(200);
-    expect(mockGenerate.mock.calls[0][0].variables.landingPageContent).toBe("Brand Co sells X");
-  });
-
-  it("never asks brand-service when the workflow maps every template input", async () => {
-    mockPromptFindFirst.mockResolvedValue({ type: PLAN.promptType, prompt: "Hi {{leadFirstName}} from {{clientName}}" });
-    const res = await request(app).post("/preview-email").send(BODY);
-    expect(res.status).toBe(200);
-    expect(mockExtractBrandFields).not.toHaveBeenCalled();
-  });
-
-  it("writes with the best mature workflow's template, model, brand-intel request and input mapping", async () => {
+  it("a brand with zero history and no campaign gets an email written by the email Engine's script", async () => {
     const res = await request(app).post("/preview-email").send(BODY);
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({
-      brandId: BRAND_ID,
-      brandName: "Brand Co",
-      subject: "Quick question",
-      bodyText: "Hi Jane,\n\nHello.",
-      cached: false,
+    expect(res.body).toMatchObject({ brandId: BRAND_ID, brandName: "Brand Co", subject: "Quick question", bodyText: "Hi Jane,\n\nHello.", cached: false });
+
+    // The writer is read with no strategy: every runnable script, the picked template + LLM.
+    expect(mockResolvePreviewWriter).toHaveBeenCalledWith(undefined);
+
+    // The script run: the kept script, under the caller's identity, recorded by us (it declares nothing), traced.
+    const [body, identity] = mockRunScript.mock.calls[0];
+    expect(body).toMatchObject({
+      outcome: "message_written",
+      dynasty: "dy_template_writer_full",
+      version: 4,
+      recordedBy: "content-generation",
+      trace: true,
+      tactics: { llm: { provider: "zai", model: "glm-pro" } },
     });
-
-    // The workflow is read at request time, under the caller's identity.
-    expect(mockResolvePreviewWorkflow.mock.calls[0][0]).toMatchObject({ orgId: "11111111-1111-1111-1111-111111111111", runId: "run-1", brandId: BRAND_ID });
-
-    // The workflow's own brand-extract-fields request, under the caller's org.
-    const [fields, identity] = mockFetchBrandIntel.mock.calls[0];
-    expect(fields).toEqual(PLAN_FIELDS);
+    expect(body.subject.service).toBe("content-generation-service");
     expect(identity).toMatchObject({ orgId: "11111111-1111-1111-1111-111111111111", userId: "user-1", runId: "run-1", brandId: BRAND_ID });
-    expect(mockFetchBrandRows.mock.calls[0][0]).toBe(BRAND_ID);
 
-    const [params, chatIdentity] = mockGenerate.mock.calls[0];
-    expect(params.promptTemplate).toBe(TEMPLATE);
-    expect(params.model).toBe("glm-pro");
-    // No reasoning override: /generate sends none.
-    expect("disableThinking" in params).toBe(false);
-    expect(params.variables).toMatchObject({
-      leadFirstName: "Jane",
-      leadTitle: "VP Sales",
-      leadCompanyName: "Acme",
-      leadCompanyWebsiteUrl: "acme.com",
-      clientName: "Brand Co",
-      brandExtractedFields: INTEL.fields,
-      brands: BRAND_ROWS,
-      leadCompanyIndustry: "",
-      // A template input the workflow does not map, and brand-service cannot answer, is empty, never invented.
-      landingPageContent: "",
-    });
-    // ...after asking brand-service for it, exactly as /generate does (Convention 1).
-    expect(mockExtractBrandFields.mock.calls[0][0]).toEqual([{ key: "landingPageContent", description: 'Value for the "landingPageContent" field needed in content generation' }]);
-    expect(mockExtractBrandFields.mock.calls[0][1]).toMatchObject({ orgId: "11111111-1111-1111-1111-111111111111", brandId: BRAND_ID });
-    expect(params.variables.currentDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    // A lead fact the sample recipient lacks and the template never asks for is absent.
-    expect("leadCity" in params.variables).toBe(false);
-    expect(params.campaignContext).toEqual({ audience: BODY.audience });
-    expect(chatIdentity).toMatchObject({ orgId: "11111111-1111-1111-1111-111111111111", runId: "run-1", brandId: BRAND_ID });
-
-    // The template is looked up by the workflow's type, not a constant.
-    expect(mockPromptFindFirst).toHaveBeenCalledTimes(1);
+    // The materials every script writer gets: the picked head's text, the lead half, the brand half.
+    expect(body.units.template_written.content.text).toBe(TEMPLATE);
+    expect(body.units.lead_identified.content.variables).toMatchObject({ leadFirstName: "Jane", leadTitle: "VP Sales", leadCompanyName: "Acme", leadCompanyWebsiteUrl: "acme.com", leadCompanySize: "" });
+    expect(body.units.brand_context.content).toMatchObject({ variables: { clientName: "Brand Co", brandExtractedFields: INTEL.fields }, campaignContext: { audience: BODY.audience } });
+    expect("language" in body.units.lead_identified.content).toBe(false);
+    expect("instruction" in body.units.brand_context.content).toBe(false);
   });
 
-  it("records which workflow, template and model alias wrote the stored preview", async () => {
+  it("with a strategyId: the script, template and LLM that strategy keeps", async () => {
+    await request(app).post("/preview-email").send({ ...BODY, strategyId: "named-emails-only" });
+    expect(mockResolvePreviewWriter).toHaveBeenCalledWith("named-emails-only");
+    expect(mockRunScript).toHaveBeenCalledTimes(1);
+  });
+
+  it("a strategy that keeps no script answers its named refusal: nothing written, nothing billed", async () => {
+    mockResolvePreviewWriter.mockRejectedValue(new PreviewWriterError(422, "Under strategy blind-emails-only, the email Engine keeps no script", "NO_SCRIPT_KEPT"));
+    const res = await request(app).post("/preview-email").send({ ...BODY, strategyId: "blind-emails-only" });
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ code: "NO_SCRIPT_KEPT" });
+    expect(mockRunScript).not.toHaveBeenCalled();
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it("answers an unknown strategy with a named 400, nothing billed", async () => {
+    mockResolvePreviewWriter.mockRejectedValue(new PreviewWriterError(400, 'strategyId: features-service knows no strategy "nope"', "UNKNOWN_STRATEGY"));
+    const res = await request(app).post("/preview-email").send({ ...BODY, strategyId: "nope" });
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ code: "UNKNOWN_STRATEGY" });
+    expect(mockRunScript).not.toHaveBeenCalled();
+    expect((await request(app).post("/preview-email").send({ ...BODY, strategyId: "" })).status).toBe(400);
+  });
+
+  it("fails loud when no writer can be read: no fallback script, template or model", async () => {
+    mockResolvePreviewWriter.mockRejectedValue(new PreviewWriterError(503, "features-service picks no template", "WRITER_PICK_UNAVAILABLE"));
+    const res = await request(app).post("/preview-email").send(BODY);
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe("WRITER_PICK_UNAVAILABLE");
+    expect(mockPromptFindFirst).not.toHaveBeenCalled();
+    expect(mockRunScript).not.toHaveBeenCalled();
+  });
+
+  it("fills a template input nothing else fills from brand-service, as /generate does; a lead fact never", async () => {
+    mockExtractBrandFields.mockResolvedValue(new Map([["brandWebsiteUrl", "https://brand.io/start"]]));
+    const res = await request(app).post("/preview-email").send(BODY);
+    expect(res.status).toBe(200);
+    expect(mockExtractBrandFields.mock.calls[0][0]).toEqual([{ key: "brandWebsiteUrl", description: 'Value for the "brandWebsiteUrl" field needed in content generation' }]);
+    const v = sentVariables();
+    expect(v.brandWebsiteUrl).toBe("https://brand.io/start");
+    // Lead facts the recipient lacks are empty, never invented, never asked of brand-service.
+    expect(v.leadCompanyIndustry).toBe("");
+    expect(v.leadCompanySize).toBe("");
+    expect(v.currentDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it("an input brand-service cannot answer is empty, so no {{token}} leaks", async () => {
+    expect((await request(app).post("/preview-email").send(BODY)).status).toBe(200);
+    expect(sentVariables().brandWebsiteUrl).toBe("");
+  });
+
+  it("asks brand-service the facts the Engine's cold-email script asks, under the caller's org", async () => {
+    await request(app).post("/preview-email").send(BODY);
+    const [fields, identity] = mockFetchBrandIntel.mock.calls[0];
+    expect(fields).toBe(BRAND_INTEL_FIELDS);
+    expect(identity).toMatchObject({ orgId: "11111111-1111-1111-1111-111111111111", userId: "user-1", runId: "run-1", brandId: BRAND_ID });
+  });
+
+  it("a blind template's writer never sees who the client is", async () => {
+    mockDynastyIdentityOf.mockResolvedValue("blind");
+    await request(app).post("/preview-email").send(BODY);
+    expect(JSON.stringify(mockRunScript.mock.calls[0][0].units.brand_context)).not.toContain("Brand Co");
+  });
+
+  it("records the script, template and model that wrote the stored preview", async () => {
     mockReturning.mockImplementation(async () => [storedRow({ runId: "run-1", ...mockValues.mock.calls[0][0] })]);
     const res = await request(app).post("/preview-email").send(BODY);
     expect(mockValues.mock.calls[0][0]).toMatchObject({
       promptType: "blind-discovery-email-v33",
       modelAlias: "glm-pro",
-      workflowSlug: "sales-cold-email-outreach-nobelium-v5",
+      scriptSlug: "message_written/dy_template_writer_full/v4",
+      templateDynastySlug: "cold-reply-three-line-reply-named",
+      model: "glm-5.1",
+      tokensInput: 100,
+      tokensOutput: 50,
+      promptRaw: "the message",
+      subject: "Quick question",
     });
-    expect(res.body).toMatchObject({ promptType: "blind-discovery-email-v33", modelAlias: "glm-pro", workflowSlug: "sales-cold-email-outreach-nobelium-v5" });
+    // One email per generation (FOLLOWUP-JIT-1107): the follow-up the script wrote is not kept.
+    expect(mockValues.mock.calls[0][0].sequence).toHaveLength(1);
+    expect(res.body).toMatchObject({ scriptSlug: "message_written/dy_template_writer_full/v4", templateDynastySlug: "cold-reply-three-line-reply-named", workflowSlug: null });
   });
 
-  it("writes a new preview when the best workflow changes", async () => {
+  it("writes a new preview when the script version, template or LLM changes", async () => {
     await request(app).post("/preview-email").send(BODY);
     const first = mockValues.mock.calls[0][0].recipientKey;
-    mockResolvePreviewWorkflow.mockResolvedValue({ ...PLAN, workflowSlug: "sales-cold-email-outreach-nobelium-v6" });
+    mockResolvePreviewWriter.mockResolvedValue({ ...PLAN, script: { ...PLAN.script, version: 5 } });
     await request(app).post("/preview-email").send(BODY);
-    expect(mockValues.mock.calls[1][0].recipientKey).not.toBe(first);
-    mockResolvePreviewWorkflow.mockResolvedValue({ ...PLAN, model: "deepseek-flash" });
+    mockResolvePreviewWriter.mockResolvedValue({ ...PLAN, model: "deepseek-flash" });
     await request(app).post("/preview-email").send(BODY);
-    expect(mockValues.mock.calls[2][0].recipientKey).not.toBe(first);
-  });
-
-  it("fails loud when the ranking cannot be read: no fallback template or model, nothing billed", async () => {
-    mockResolvePreviewWorkflow.mockRejectedValue(new PreviewWorkflowError(503, "features-service has not computed the cold-email workflow ranking yet"));
-    const res = await request(app).post("/preview-email").send(BODY);
-    expect(res.status).toBe(503);
-    expect(res.body.error).toContain("ranking");
-    expect(mockPromptFindFirst).not.toHaveBeenCalled();
-    expect(mockGenerate).not.toHaveBeenCalled();
-    expect(mockInsert).not.toHaveBeenCalled();
-
-    mockResolvePreviewWorkflow.mockRejectedValue(new PreviewWorkflowError(502, "features-service leg-workflow-ranking failed: 500"));
-    expect((await request(app).post("/preview-email").send(BODY)).status).toBe(502);
-    expect(mockGenerate).not.toHaveBeenCalled();
-  });
-
-  it("asks for the play a strategyId names, and passes none when the body has none", async () => {
-    await request(app).post("/preview-email").send(BODY);
-    expect(mockResolvePreviewWorkflow.mock.calls[0][1]).toBeUndefined();
-
-    await request(app).post("/preview-email").send({ ...BODY, strategyId: "blind-emails-only" });
-    expect(mockResolvePreviewWorkflow.mock.calls[1][1]).toBe("blind-emails-only");
-  });
-
-  it("answers an unknown strategy with a named 400, nothing billed", async () => {
-    mockResolvePreviewWorkflow.mockRejectedValue(new PreviewWorkflowError(400, 'strategyId: no play "nope" on the cold-email pipe', "UNKNOWN_STRATEGY"));
-    const res = await request(app).post("/preview-email").send({ ...BODY, strategyId: "nope" });
-    expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ code: "UNKNOWN_STRATEGY" });
-    expect(mockGenerate).not.toHaveBeenCalled();
-
-    expect((await request(app).post("/preview-email").send({ ...BODY, strategyId: "" })).status).toBe(400);
+    const keys = mockValues.mock.calls.map((c) => c[0].recipientKey);
+    expect(new Set(keys).size).toBe(3);
   });
 
   it("refuses a caller-chosen model", async () => {
     const res = await request(app).post("/preview-email").send({ ...BODY, model: "sonnet" });
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("model");
-    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockRunScript).not.toHaveBeenCalled();
   });
 
-  it("reads no brand rows when the workflow's template is not fed from them", async () => {
-    const { brands: _b, clientName: _c, ...sources } = PLAN.sources;
-    mockResolvePreviewWorkflow.mockResolvedValue({ ...PLAN, sources });
-    expect((await request(app).post("/preview-email").send(BODY)).status).toBe(200);
-    expect(mockFetchBrandRows).not.toHaveBeenCalled();
+  it("a script that made nothing is a named 502, nothing stored", async () => {
+    mockRunScript.mockResolvedValue(scriptAnswer({ status: "nothing", unit: null }));
+    const res = await request(app).post("/preview-email").send(BODY);
+    expect(res.status).toBe(502);
+    expect(res.body.code).toBe("SCRIPT_WROTE_NOTHING");
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it("refuses an org that cannot afford the completion with a clean 402", async () => {
+    mockRunScript.mockRejectedValue(new ScriptRunError(402, "workflow-service script message_written/dy_template_writer_full failed: 502 - llm.complete 402"));
+    const res = await request(app).post("/preview-email").send(BODY);
+    expect(res.status).toBe(402);
+    expect(res.body.error).toBe("Insufficient credits");
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it("a failed script run is a named 502", async () => {
+    mockRunScript.mockRejectedValue(new ScriptRunError(502, "workflow-service script failed: 502 - boom"));
+    const res = await request(app).post("/preview-email").send(BODY);
+    expect(res.status).toBe(502);
+    expect(res.body.code).toBe("SCRIPT_RUN_FAILED");
   });
 
   it("stores the preview in email_previews only — never in email_generations", async () => {
@@ -359,15 +383,7 @@ describe("POST /preview-email", () => {
     expect(res.body.cached).toBe(true);
     expect(res.body.subject).toBe("Quick question");
     expect(mockFetchBrandIntel).not.toHaveBeenCalled();
-    expect(mockGenerate).not.toHaveBeenCalled();
-    expect(mockInsert).not.toHaveBeenCalled();
-  });
-
-  it("refuses an org that cannot afford the completion with a clean 402", async () => {
-    mockGenerate.mockRejectedValue(new InsufficientCreditsError(5, 40));
-    const res = await request(app).post("/preview-email").send(BODY);
-    expect(res.status).toBe(402);
-    expect(res.body).toEqual({ error: "Insufficient credits", balance_cents: 5, required_cents: 40 });
+    expect(mockRunScript).not.toHaveBeenCalled();
     expect(mockInsert).not.toHaveBeenCalled();
   });
 
@@ -378,7 +394,7 @@ describe("POST /preview-email", () => {
     expect((await request(app).post("/preview-email").send(BODY)).status).toBe(409);
     mockFetchBrandIntel.mockRejectedValueOnce(new BrandIntelError(500, "boom"));
     expect((await request(app).post("/preview-email").send(BODY)).status).toBe(502);
-    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockRunScript).not.toHaveBeenCalled();
   });
 
   it("writes with the offer's give lists: passed to the completion, and the free-give list is a highlight source", async () => {
@@ -390,8 +406,7 @@ describe("POST /preview-email", () => {
     const [identity] = mockFetchGiveLists.mock.calls[0];
     expect(identity).toMatchObject({ brandId: BRAND_ID, offerId: "9a1b2c3d-0000-4000-8000-000000000001" });
 
-    const [params] = mockGenerate.mock.calls[0];
-    expect(params.giveLists).toEqual(lists);
+    expect(mockRunScript.mock.calls[0][0].units.brand_context.content.giveLists).toEqual(lists);
     const [annotateInput] = mockAnnotate.mock.calls[0];
     const source = annotateInput.sources.find((s: { id: string }) => s.id === "offer.giveForFree");
     expect(source).toBeDefined();
@@ -401,8 +416,7 @@ describe("POST /preview-email", () => {
 
   it("offers no free-give highlight source when the lists are empty", async () => {
     await request(app).post("/preview-email").send(BODY);
-    const [params] = mockGenerate.mock.calls[0];
-    expect(params.giveLists).toEqual({ giveForFree: [], neverGive: [] });
+    expect(mockRunScript.mock.calls[0][0].units.brand_context.content.giveLists).toEqual({ giveForFree: [], neverGive: [] });
     expect(mockAnnotate.mock.calls[0][0].sources.map((s: { id: string }) => s.id)).not.toContain("offer.giveForFree");
   });
 
@@ -416,10 +430,7 @@ describe("POST /preview-email", () => {
 
   it("hands the writer the company's check results as leadQualification, verbatim, like a campaign /generate", async () => {
     await request(app).post("/preview-email").send({ ...BODY, qualification: QUALIFICATION });
-    const [params] = mockGenerate.mock.calls[0];
-    expect(params.variables.leadQualification).toEqual(QUALIFICATION);
-    // Nothing else preview-specific reaches the writing call.
-    expect(Object.keys(params).sort()).toEqual(["campaignContext", "giveLists", "model", "promptTemplate", "variables"]);
+    expect(sentVariables().leadQualification).toEqual(QUALIFICATION);
     const ids = mockAnnotate.mock.calls[0][0].sources.map((s: { id: string }) => s.id);
     expect(ids).toEqual(expect.arrayContaining(["check.1", "check.2"]));
   });
@@ -427,8 +438,8 @@ describe("POST /preview-email", () => {
   it("writes exactly as without checks when there are none (absent or checks: [])", async () => {
     await request(app).post("/preview-email").send(BODY);
     await request(app).post("/preview-email").send({ ...BODY, qualification: { domain: "acme.com", checks: [] } });
-    for (const call of mockGenerate.mock.calls) {
-      expect("leadQualification" in call[0].variables).toBe(false);
+    for (const n of [0, 1]) {
+      expect("leadQualification" in sentVariables(n)).toBe(false);
     }
     expect(mockValues.mock.calls[1][0].recipientKey).toBe(mockValues.mock.calls[0][0].recipientKey);
     expect(mockAnnotate.mock.calls[0][0].sources).toEqual(mockAnnotate.mock.calls[1][0].sources);
@@ -450,7 +461,7 @@ describe("POST /preview-email", () => {
   it("rejects a qualification whose checks are not a list", async () => {
     const res = await request(app).post("/preview-email").send({ ...BODY, qualification: { domain: "acme.com", checks: "yes" } });
     expect(res.status).toBe(400);
-    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockRunScript).not.toHaveBeenCalled();
   });
 
   it("stores a different preview once the give lists change, and the same one while they are empty", async () => {
@@ -470,7 +481,7 @@ describe("POST /preview-email", () => {
     expect((await request(app).post("/preview-email").send(BODY)).status).toBe(409);
     mockFetchGiveLists.mockRejectedValueOnce(new OfferGiveListsError(500, "boom"));
     expect((await request(app).post("/preview-email").send(BODY)).status).toBe(502);
-    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockRunScript).not.toHaveBeenCalled();
   });
 
   it("returns the winner's email when drizzle wraps the duplicate key in a DrizzleQueryError", async () => {
@@ -490,16 +501,12 @@ describe("POST /preview-email", () => {
     expect(res.body.cached).toBe(true);
   });
 
-  it("writes with the plain /generate call, then asks a second call for highlights on the finished email, storing only the verified ones", async () => {
+  it("the script writes, then a second call reads the finished email for highlights, storing only the verified ones", async () => {
     mockReturning.mockImplementation(async () => [storedRow({ runId: "run-1", highlights: mockValues.mock.calls[0][0].highlights })]);
     const res = await request(app).post("/preview-email").send(BODY);
     expect(res.status).toBe(200);
-    expect(mockGenerate).toHaveBeenCalledTimes(1);
+    expect(mockRunScript).toHaveBeenCalledTimes(1);
     expect(mockAnnotate).toHaveBeenCalledTimes(1);
-
-    // Nothing preview-specific reaches the writing call.
-    const [params] = mockGenerate.mock.calls[0];
-    expect(Object.keys(params).sort()).toEqual(["campaignContext", "giveLists", "model", "promptTemplate", "variables"]);
 
     const [annotateInput, annotateIdentity] = mockAnnotate.mock.calls[0];
     expect(annotateInput.bodyText).toBe("Hi Jane,\n\nHello.");

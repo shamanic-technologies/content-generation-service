@@ -164,10 +164,14 @@ export const emailPreviews = pgTable(
     // Validated per-sentence reasons (src/lib/preview-highlights.ts). NULL on rows
     // written before highlights existed.
     highlights: jsonb("highlights"),
-    // The best mature cold-email workflow whose template + model wrote it, and the model
-    // alias that workflow states. NULL on rows written before the preview followed it.
+    // The workflow whose template + model wrote it (rows written 2026-10-06 to 2026-11-11, when
+    // the preview followed the best mature cold-email workflow), and the model alias asked.
     workflowSlug: text("workflow_slug"),
     modelAlias: text("model_alias"),
+    // The email Engine's script that wrote it (`message_written/<dynasty>/v<n>`) and the template
+    // dynasty picked (PREVIEW-EMAIL-503-1111). NULL on rows written before.
+    scriptSlug: text("script_slug"),
+    templateDynastySlug: text("template_dynasty_slug"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
