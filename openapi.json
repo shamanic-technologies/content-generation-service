@@ -2057,6 +2057,14 @@
                   },
                   "description": "chat-service's answer (last attempt), verbatim: content, json, tokens, model."
                 },
+                "keyOrder": {
+                  "type": "string",
+                  "enum": [
+                    "original",
+                    "jsonb"
+                  ],
+                  "description": "RECORDED-ORDER-1111. `original`: `variables`, `request`, `inputs` and `response` carry every object's keys in the order they were written, so the request re-renders byte for byte from the variables (rows written since 2026-11-11). `jsonb`: a row written before, read back from jsonb columns whose key order postgres normalised (shorter keys first); its replay may differ on key order only."
+                },
                 "output": {
                   "type": "object",
                   "properties": {
@@ -2100,6 +2108,7 @@
                 "request",
                 "inputs",
                 "response",
+                "keyOrder",
                 "output"
               ]
             },

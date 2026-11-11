@@ -365,6 +365,13 @@
       "when": 1780686100000,
       "tag": "0051_threads_leg_rekey",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1780786100000,
+      "tag": "0052_recorded_text",
+      "breakpoints": true
     }
   ]
 }

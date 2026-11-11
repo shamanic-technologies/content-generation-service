@@ -1858,6 +1858,11 @@ const RecordedGenerationSchema = z.object({
   request: RecordedChatRequestSchema,
   inputs: RecordedChatRequestInputsSchema,
   response: z.record(z.string(), z.unknown()).describe("chat-service's answer (last attempt), verbatim: content, json, tokens, model."),
+  keyOrder: z
+    .enum(["original", "jsonb"])
+    .describe(
+      "RECORDED-ORDER-1111. `original`: `variables`, `request`, `inputs` and `response` carry every object's keys in the order they were written, so the request re-renders byte for byte from the variables (rows written since 2026-11-11). `jsonb`: a row written before, read back from jsonb columns whose key order postgres normalised (shorter keys first); its replay may differ on key order only.",
+    ),
   output: z.object({
     subject: z.string().nullable(),
     sequence: z.array(z.record(z.string(), z.unknown())).describe("Stored and served steps: step, bodyText, bodyHtml, daysSinceLastStep."),
