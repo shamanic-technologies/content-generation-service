@@ -10,6 +10,7 @@
  * a recorded decision of that run. Any failure is LOUD (`PreviewWriterError`): there is no fallback script, template
  * or model.
  */
+import { fetchChannelCatalogue } from "./pipe-from-step.js";
 import { resolveDynastyHead } from "./template-dynasty-query.js";
 import { TemplateDynastyError } from "./template-dynasties.js";
 import {
@@ -18,6 +19,7 @@ import {
   PREVIEW_WRITER_PLACE,
   PreviewWriterError,
   keptScripts,
+  writerEngineOnCatalogue,
   writerFromPicks,
   type LlmPickAnswer,
   type PreviewScript,
@@ -69,12 +71,26 @@ async function readScriptStrategy(strategyId?: string): Promise<ScriptStrategyAn
 }
 
 /**
- * One GTM Factory Rating pick (template or LLM) for the email Engine's writing call, recorded on the preview's run.
+ * The Engine the preview's template + LLM picks are asked for: the one features-service's channel catalogue states on
+ * the cold email pipe (catalogue held 5 min, `fetchChannelCatalogue`). Unreadable = 502, never a hand-typed Engine.
+ */
+async function writerEngine(): Promise<string> {
+  let catalogue;
+  try {
+    catalogue = await fetchChannelCatalogue();
+  } catch (err) {
+    throw new PreviewWriterError(502, `features-service channel catalogue unreadable: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return writerEngineOnCatalogue(catalogue);
+}
+
+/**
+ * One GTM Factory Rating pick (template or LLM) for the cold email pipe's Engine's writing call, recorded on the preview's run.
  * 422 = the Engine has nothing to pick (none in its universe, or none the strategy keeps): a named refusal, nothing is
  * written. 404 = the strategy is unknown.
  */
-async function ratingWriterPick<T>(kind: "template" | "llm", runId: string, strategyId?: string): Promise<T> {
-  const query = new URLSearchParams({ outcome: PREVIEW_ENGINE_OUTCOME, place: PREVIEW_WRITER_PLACE });
+async function ratingWriterPick<T>(kind: "template" | "llm", engine: string, runId: string, strategyId?: string): Promise<T> {
+  const query = new URLSearchParams({ outcome: engine, place: PREVIEW_WRITER_PLACE });
   if (strategyId) query.set("strategyId", strategyId);
   const res = await featuresGet(`/internal/${kind}-pick?${query}`, `${kind}-pick`, runId);
   if (res.status === 404 && strategyId) {
@@ -83,7 +99,7 @@ async function ratingWriterPick<T>(kind: "template" | "llm", runId: string, stra
   if (res.status === 422) {
     const text = await res.text();
     const code = kind === "template" ? "NO_TEMPLATE_FOR_ENGINE" : "NO_LLM_IN_ENGINE_UNIVERSE";
-    throw new PreviewWriterError(422, `The Rating picks no ${kind === "template" ? "template" : "LLM"} for the ${PREVIEW_ENGINE_OUTCOME} Engine's writing call${strategyId ? ` under strategy ${strategyId}` : ""}, so no preview can be written: ${text}`, code);
+    throw new PreviewWriterError(422, `The Rating picks no ${kind === "template" ? "template" : "LLM"} for the ${engine} Engine's writing call${strategyId ? ` under strategy ${strategyId}` : ""}, so no preview can be written: ${text}`, code);
   }
   if (!res.ok) {
     throw new PreviewWriterError(502, `features-service ${kind}-pick failed: ${res.status} - ${await res.text()}`);
@@ -136,12 +152,13 @@ async function previewScript(strategyId?: string): Promise<PreviewScript> {
  * call, recorded on `runId`) that write one preview (per strategy; none = no condition).
  */
 export async function resolvePreviewWriter(runId: string, strategyId?: string): Promise<PreviewWriterPlan> {
+  const engine = await writerEngine();
   const [script, templatePick, llmPick] = await Promise.all([
     previewScript(strategyId),
-    ratingWriterPick<TemplatePickAnswer>("template", runId, strategyId),
-    ratingWriterPick<LlmPickAnswer>("llm", runId, strategyId),
+    ratingWriterPick<TemplatePickAnswer>("template", engine, runId, strategyId),
+    ratingWriterPick<LlmPickAnswer>("llm", engine, runId, strategyId),
   ]);
-  const pick = writerFromPicks(templatePick, llmPick);
+  const pick = writerFromPicks(templatePick, llmPick, engine);
   let promptType: string;
   try {
     promptType = (await resolveDynastyHead(pick.templateDynastySlug)).template.type;

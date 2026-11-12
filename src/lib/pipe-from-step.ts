@@ -23,12 +23,20 @@ export interface CataloguePipe {
   legKey: string;
 }
 
+/** One pipe of the catalogue: its leg, the step it starts from, the step it reaches, the Engine (outcome) it states. */
+export interface CatalogueTransition {
+  legKey: string;
+  from: { key: string } | null;
+  to?: { key: string } | null;
+  outcome?: string | null;
+}
+
 /** The slice of `GET /public/channels` this module reads. */
 export interface ChannelCatalogue {
   channels: Array<{
     slug: string;
     channelType?: string | null;
-    stepTransitions: Array<{ legKey: string; from: { key: string } | null }>;
+    stepTransitions: CatalogueTransition[];
   }>;
   legKeyCorrespondence?: Array<{ channelType: string; legacyLegKey: string; legKey: string }>;
 }
@@ -37,18 +45,23 @@ export type PipeFromStep =
   | { known: true; fromStep: string | null }
   | { known: false; reason: "no_campaign" | "campaign_states_no_leg" | "campaign_unreadable" | "catalogue_unreadable" | "pipe_not_in_catalogue" };
 
-/** Pure: the `from` step of (featureSlug, legKey) on the catalogue. */
-export function fromStepOnCatalogue(catalogue: ChannelCatalogue, pipe: CataloguePipe): PipeFromStep {
+/** Pure: the catalogue's transition of (featureSlug, legKey), a legacy leg spelling resolved; null = not in the catalogue. */
+export function transitionOnCatalogue(catalogue: ChannelCatalogue, pipe: CataloguePipe): CatalogueTransition | null {
   const channel = catalogue.channels.find((c) => c.slug === pipe.featureSlug);
-  if (!channel) return { known: false, reason: "pipe_not_in_catalogue" };
+  if (!channel) return null;
   const direct = channel.stepTransitions.find((t) => t.legKey === pipe.legKey);
-  if (direct) return { known: true, fromStep: direct.from?.key ?? null };
+  if (direct) return direct;
   const renamed = (catalogue.legKeyCorrespondence ?? []).find(
     (c) => c.legacyLegKey === pipe.legKey && c.channelType === channel.channelType,
   );
-  const viaRename = renamed ? channel.stepTransitions.find((t) => t.legKey === renamed.legKey) : undefined;
-  if (viaRename) return { known: true, fromStep: viaRename.from?.key ?? null };
-  return { known: false, reason: "pipe_not_in_catalogue" };
+  return (renamed ? channel.stepTransitions.find((t) => t.legKey === renamed.legKey) : undefined) ?? null;
+}
+
+/** Pure: the `from` step of (featureSlug, legKey) on the catalogue. */
+export function fromStepOnCatalogue(catalogue: ChannelCatalogue, pipe: CataloguePipe): PipeFromStep {
+  const transition = transitionOnCatalogue(catalogue, pipe);
+  if (!transition) return { known: false, reason: "pipe_not_in_catalogue" };
+  return { known: true, fromStep: transition.from?.key ?? null };
 }
 
 const FEATURES_SERVICE_URL = () => process.env.FEATURES_SERVICE_URL || "http://localhost:3050";
