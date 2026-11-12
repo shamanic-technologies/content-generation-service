@@ -1,26 +1,29 @@
 /**
  * Reads, at request time, who writes the signed-out preview (PREVIEW-EMAIL-503-1111): the scripts the strategy keeps
- * for the email Engine (features-service, no campaign), the template + LLM features-service picks for cold email, the
- * picked template dynasty's head, and workflow-service's Rating pick among the kept scripts. The I/O half of `preview-writer.ts` (which holds the rules and is never mocked).
+ * for the email Engine (features-service, no campaign), workflow-service's Rating pick among them, and the template +
+ * LLM the GTM Factory Rating picks for that Engine's writing call (features-service `/internal/template-pick` +
+ * `/internal/llm-pick`, LLM-RATING-PER-ENGINE-1112), then the picked template dynasty's head. The I/O half of
+ * `preview-writer.ts` (which holds the rules and is never mocked).
  *
- * Cached in memory a few minutes per strategy: features-service rebuilds its rankings every 15 minutes, so a visitor
- * asking for three emails does not re-read them three times. Any failure is LOUD (`PreviewWriterError`): there is no
- * fallback script, template or model.
+ * The SCRIPT half is cached a few minutes per strategy (a visitor asking for three emails does not re-read the
+ * strategy three times). The template + LLM picks are asked on EVERY preview with its run as `x-run-id`: each pick is
+ * a recorded decision of that run. Any failure is LOUD (`PreviewWriterError`): there is no fallback script, template
+ * or model.
  */
 import { resolveDynastyHead } from "./template-dynasty-query.js";
 import { TemplateDynastyError } from "./template-dynasties.js";
 import {
   PREVIEW_ENGINE_OUTCOME,
   PREVIEW_WRITER_MATERIALS,
+  PREVIEW_WRITER_PLACE,
   PreviewWriterError,
-  WRITER_RANKING_FEATURE_SLUG,
-  WRITER_RANKING_LEG,
   keptScripts,
-  writerFromRanking,
+  writerFromPicks,
+  type LlmPickAnswer,
   type PreviewScript,
   type PreviewWriterPlan,
   type ScriptStrategyAnswer,
-  type WriterRanking,
+  type TemplatePickAnswer,
 } from "./preview-writer.js";
 
 const FEATURES_SERVICE_URL = process.env.FEATURES_SERVICE_URL || "http://localhost:3050";
@@ -30,17 +33,17 @@ const WORKFLOW_SERVICE_API_KEY = process.env.WORKFLOW_SERVICE_API_KEY || "";
 
 export const PREVIEW_WRITER_CACHE_MS = 5 * 60_000;
 
-/** Keyed by strategy id ("" = no strategy). */
-const cached = new Map<string, { plan: PreviewWriterPlan; at: number }>();
+/** The script the Rating picked, keyed by strategy id ("" = no strategy). */
+const cached = new Map<string, { script: PreviewScript; at: number }>();
 
 /** Test seam. */
 export function __resetPreviewWriterCache(): void {
   cached.clear();
 }
 
-async function featuresGet(path: string, what: string): Promise<Response> {
+async function featuresGet(path: string, what: string, runId?: string): Promise<Response> {
   try {
-    return await fetch(`${FEATURES_SERVICE_URL}${path}`, { headers: { "X-Api-Key": FEATURES_SERVICE_API_KEY } });
+    return await fetch(`${FEATURES_SERVICE_URL}${path}`, { headers: { "X-Api-Key": FEATURES_SERVICE_API_KEY, ...(runId ? { "x-run-id": runId } : {}) } });
   } catch (err) {
     throw new PreviewWriterError(502, `features-service ${what} unreachable: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -65,23 +68,27 @@ async function readScriptStrategy(strategyId?: string): Promise<ScriptStrategyAn
   return { strategyId: body.strategyId ?? null, keptDynasties: body.keptDynasties, scripts: body.scripts };
 }
 
-/** features-service's template + LLM ranking for cold email, narrowed by the strategy when there is one. */
-async function readWriterRanking(strategyId?: string): Promise<WriterRanking> {
-  const res = await featuresGet(
-    `/public/stats/leg-writer-ranking?featureSlug=${encodeURIComponent(WRITER_RANKING_FEATURE_SLUG)}&leg=${encodeURIComponent(WRITER_RANKING_LEG)}${strategyId ? `&strategyId=${encodeURIComponent(strategyId)}` : ""}`,
-    "leg-writer-ranking",
-  );
-  if (res.status === 503) {
-    throw new PreviewWriterError(503, `features-service is still computing which template and LLM write cold emails: ${await res.text()}`, "WRITER_PICK_UNAVAILABLE");
+/**
+ * One GTM Factory Rating pick (template or LLM) for the email Engine's writing call, recorded on the preview's run.
+ * 422 = the Engine has nothing to pick (none in its universe, or none the strategy keeps): a named refusal, nothing is
+ * written. 404 = the strategy is unknown.
+ */
+async function ratingWriterPick<T>(kind: "template" | "llm", runId: string, strategyId?: string): Promise<T> {
+  const query = new URLSearchParams({ outcome: PREVIEW_ENGINE_OUTCOME, place: PREVIEW_WRITER_PLACE });
+  if (strategyId) query.set("strategyId", strategyId);
+  const res = await featuresGet(`/internal/${kind}-pick?${query}`, `${kind}-pick`, runId);
+  if (res.status === 404 && strategyId) {
+    throw new PreviewWriterError(400, `strategyId: features-service knows no strategy "${strategyId}": ${await res.text()}`, "UNKNOWN_STRATEGY");
+  }
+  if (res.status === 422) {
+    const text = await res.text();
+    const code = kind === "template" ? "NO_TEMPLATE_FOR_ENGINE" : "NO_LLM_IN_ENGINE_UNIVERSE";
+    throw new PreviewWriterError(422, `The Rating picks no ${kind === "template" ? "template" : "LLM"} for the ${PREVIEW_ENGINE_OUTCOME} Engine's writing call${strategyId ? ` under strategy ${strategyId}` : ""}, so no preview can be written: ${text}`, code);
   }
   if (!res.ok) {
-    throw new PreviewWriterError(502, `features-service leg-writer-ranking failed: ${res.status} - ${await res.text()}`);
+    throw new PreviewWriterError(502, `features-service ${kind}-pick failed: ${res.status} - ${await res.text()}`);
   }
-  const body = (await res.json()) as Partial<WriterRanking>;
-  if (!body.templates || !body.llms) {
-    throw new PreviewWriterError(502, "features-service leg-writer-ranking answered without templates or llms");
-  }
-  return { computedAt: body.computedAt ?? null, templates: body.templates, llms: body.llms };
+  return (await res.json()) as T;
 }
 
 /**
@@ -113,26 +120,38 @@ async function ratingPick(keptDynasties: string[]): Promise<PreviewScript> {
   return { dynasty: body.dynasty, version: body.version };
 }
 
-/** The script (the Rating's pick among the kept ones), template and LLM that write the preview (per strategy; none = no condition). */
-export async function resolvePreviewWriter(strategyId?: string): Promise<PreviewWriterPlan> {
+/** The email Engine's script the strategy keeps, as the Rating picks it (cached a few minutes per strategy). */
+async function previewScript(strategyId?: string): Promise<PreviewScript> {
   const cacheKey = strategyId ?? "";
   const hit = cached.get(cacheKey);
-  if (hit && Date.now() - hit.at < PREVIEW_WRITER_CACHE_MS) return hit.plan;
-
-  const [strategy, ranking] = await Promise.all([readScriptStrategy(strategyId), readWriterRanking(strategyId)]);
+  if (hit && Date.now() - hit.at < PREVIEW_WRITER_CACHE_MS) return hit.script;
+  const strategy = await readScriptStrategy(strategyId);
   const script = await ratingPick(keptScripts(strategy, strategyId).map((s) => s.dynasty));
-  const pick = writerFromRanking(ranking, strategyId);
+  cached.set(cacheKey, { script, at: Date.now() });
+  return script;
+}
+
+/**
+ * The script (the Rating's pick among the kept ones), template and LLM (the Rating's picks for the Engine's writing
+ * call, recorded on `runId`) that write one preview (per strategy; none = no condition).
+ */
+export async function resolvePreviewWriter(runId: string, strategyId?: string): Promise<PreviewWriterPlan> {
+  const [script, templatePick, llmPick] = await Promise.all([
+    previewScript(strategyId),
+    ratingWriterPick<TemplatePickAnswer>("template", runId, strategyId),
+    ratingWriterPick<LlmPickAnswer>("llm", runId, strategyId),
+  ]);
+  const pick = writerFromPicks(templatePick, llmPick);
   let promptType: string;
   try {
     promptType = (await resolveDynastyHead(pick.templateDynastySlug)).template.type;
   } catch (err) {
     if (err instanceof TemplateDynastyError) {
-      throw new PreviewWriterError(503, `features-service picked template dynasty ${pick.templateDynastySlug}, which has no template to write with here: ${err.message}`, "WRITER_PICK_UNAVAILABLE");
+      throw new PreviewWriterError(503, `The Rating picked template dynasty ${pick.templateDynastySlug}, which has no template to write with here: ${err.message}`, "WRITER_PICK_UNAVAILABLE");
     }
     throw err;
   }
   const plan: PreviewWriterPlan = { script, templateDynastySlug: pick.templateDynastySlug, promptType, model: pick.model };
-  console.log(`[content-generation-service] preview writer${strategyId ? ` for strategy ${strategyId}` : ""}: script=${plan.script.dynasty} v${plan.script.version}, template=${pick.templateDynastySlug} (${promptType}), model=${plan.model}`);
-  cached.set(cacheKey, { plan, at: Date.now() });
+  console.log(`[content-generation-service] preview writer${strategyId ? ` for strategy ${strategyId}` : ""} (run ${runId}): script=${plan.script.dynasty} v${plan.script.version}, template=${pick.templateDynastySlug} (${promptType}), model=${plan.model}`);
   return plan;
 }

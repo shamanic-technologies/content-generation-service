@@ -11,9 +11,11 @@
  *    runnable script), then workflow-service's Rating picks among them (`POST /internal/engines/{outcome}/pick`, the
  *    run's own `pickScript`; never a pick by hand here). None = a named refusal (`NO_SCRIPT_KEPT`), never another
  *    strategy's script.
- *  - The template + LLM: features-service's writer pick for cold email (`GET /public/stats/leg-writer-ranking`, the same
- *    best rows a run's `features.writer_pick` serves), narrowed by the strategy when there is one. The template is the
- *    picked dynasty's head, exactly as a run's `content.template_head` reads it.
+ *  - The template + LLM: the GTM Factory Rating picks them per Engine, like the scripts (LLM-RATING-PER-ENGINE-1112):
+ *    features-service `GET /internal/template-pick` and `GET /internal/llm-pick` for the email Engine at the writing
+ *    call's place (`writer`, the place the cold email script names), under the caller's strategy when there is one,
+ *    with the preview's run as `x-run-id` (the pick is recorded on it). Asked per preview, never cached: each preview
+ *    is one decision. None (422) = a named refusal, nothing written. The template is the picked dynasty's head.
  *  - The inputs: a preview has no lead. Its lead facts come from the sample recipient, the brand's from brand-service,
  *    under the variable names the Engine's cold-email script fills (`previewVariables`). A template input nothing
  *    fills is asked of brand-service like `/generate` (Convention 1), then "" (never invented).
@@ -28,13 +30,6 @@ export const PREVIEW_ENGINE_OUTCOME = "message_written";
 
 /** The materials a preview hands the script (`writerUnits`): the Rating considers only scripts that run on them. */
 export const PREVIEW_WRITER_MATERIALS = ["lead_identified", "brand_context", "template_written"] as const;
-
-/**
- * Where features-service ranks cold-email templates + LLMs (its writer pick reads the same rows). The only place the
- * preview names it; the script is chosen per Engine, never per pipe.
- */
-export const WRITER_RANKING_FEATURE_SLUG = "sales-cold-email-outreach";
-export const WRITER_RANKING_LEG = "lead_found_to_conversation";
 
 /** A refusal to write the preview, carried with the status the route answers. */
 export class PreviewWriterError extends Error {
@@ -75,39 +70,32 @@ export function keptScripts(answer: ScriptStrategyAnswer, strategyId?: string): 
 }
 
 /**
- * One side (templates or LLMs) of features-service's `GET /public/stats/leg-writer-ranking`, as far as the preview
- * reads it. `best` is the row a run's writer pick serves.
+ * The name the email Engine's scripts give their writing call when they ask the GTM Factory Rating for its LLM
+ * (`pickLlm(ctx, "writer", "message_written")` in the cold email script). The preview IS that call, made before any
+ * campaign, so it asks the Rating at the same place: its picks and their outcome feed the same belief.
  */
-export interface WriterRanking {
-  computedAt: string | null;
-  templates: { best: { templateDynastySlug: string } | null; unavailableReason: string | null };
-  llms: {
-    best: { llmDynastySlug: string; aliases: Array<{ alias: string; status: string }> } | null;
-    unavailableReason: string | null;
-  };
+export const PREVIEW_WRITER_PLACE = "writer";
+
+/** features-service `GET /internal/template-pick` (200), as far as the preview reads it. */
+export interface TemplatePickAnswer {
+  template: { templateDynastySlug: string; name?: string | null; head?: string | null } | null;
+}
+
+/** features-service `GET /internal/llm-pick` (200), as far as the preview reads it. `model` is the name chat-service takes. */
+export interface LlmPickAnswer {
+  llm: { llmDynastySlug: string; name?: string | null; provider?: string | null; model: string } | null;
 }
 
 /**
- * The template dynasty + model name a run writes cold email with today. The model name follows the writer pick's own
- * rule: the LLM dynasty slug when it is an active alias, else the first active alias of that dynasty. No pick = 503 in
- * plain words, never another template or model.
+ * The template dynasty + model name the Rating picked for the email Engine's writing call. An answer without them is
+ * features-service's bug: 502 in plain words, never another template or model.
  */
-export function writerFromRanking(ranking: WriterRanking, strategyId?: string): { templateDynastySlug: string; model: ChatModel } {
-  const scope = strategyId ? `cold email under strategy ${strategyId}` : "cold email";
-  if (!ranking.computedAt) {
-    throw new PreviewWriterError(503, `features-service has not computed which template and LLM write ${scope} yet`, "WRITER_PICK_UNAVAILABLE");
-  }
-  const t = ranking.templates.best;
-  if (!t?.templateDynastySlug) {
-    throw new PreviewWriterError(503, `features-service picks no template to write ${scope} with (${ranking.templates.unavailableReason ?? "no reason given"}), so no preview can be written`, "WRITER_PICK_UNAVAILABLE");
-  }
-  const l = ranking.llms.best;
-  const active = (l?.aliases ?? []).filter((a) => a.status === "active");
-  const alias = active.find((a) => a.alias === l?.llmDynastySlug) ?? active[0];
-  if (!l || !alias) {
-    throw new PreviewWriterError(503, `features-service picks no LLM to write ${scope} with (${ranking.llms.unavailableReason ?? (l ? `no active name for ${l.llmDynastySlug}` : "no reason given")}), so no preview can be written`, "WRITER_PICK_UNAVAILABLE");
-  }
-  return { templateDynastySlug: t.templateDynastySlug, model: alias.alias as ChatModel };
+export function writerFromPicks(template: TemplatePickAnswer, llm: LlmPickAnswer): { templateDynastySlug: string; model: ChatModel } {
+  const t = template.template?.templateDynastySlug;
+  if (!t) throw new PreviewWriterError(502, `features-service's template pick for the ${PREVIEW_ENGINE_OUTCOME} Engine answered no template dynasty`);
+  const m = llm.llm?.model;
+  if (!m) throw new PreviewWriterError(502, `features-service's LLM pick for the ${PREVIEW_ENGINE_OUTCOME} Engine answered no model`);
+  return { templateDynastySlug: t, model: m };
 }
 
 /** Everything that writes one preview: the Engine's script, the picked template (dynasty head) and LLM. */
