@@ -97,7 +97,7 @@ function isPreviewDuplicateError(err: unknown): boolean {
  * POST /preview-email — ONE cold email for a brand of the calling org and a sample recipient, written before any
  * campaign or lead exists (the onboarding's and the Copilot's "show me the first email"). It is written the way a
  * campaign writes it (PREVIEW-EMAIL-503-1111): by the email Engine's script (workflow-service, the script the strategy
- * keeps, features-service), with the template + LLM features-service picks for cold email, from the materials this
+ * keeps, features-service), with the template + LLM the GTM Factory Rating picks for that Engine's writing call, from the materials this
  * service builds for every script writer. No fallback script, template or model: none = a named refusal.
  *
  * Billing: the only paid call is the script's completion, which chat-service provisions, authorizes and declares
@@ -115,7 +115,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
       return res.status(400).json({ error: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ") });
     }
     if (req.body && typeof req.body === "object" && "model" in req.body) {
-      return res.status(400).json({ error: "model: not accepted; the preview writes with the LLM features-service picks for cold email" });
+      return res.status(400).json({ error: "model: not accepted; the preview writes with the LLM the Rating picks for the email Engine" });
     }
     const { brandId, recipient, audience, offerId, qualification, strategyId } = parsed.data;
     const orgId = req.orgId!;
@@ -126,9 +126,10 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     // A plain read, nothing billed; a refusal fails the preview like its brand intel does.
     const giveLists = await fetchOfferGiveLists(identity);
 
-    // The email Engine's script the strategy keeps, and the template + LLM picked for cold email (cached a few
-    // minutes). Part of the stored preview's identity, so a new script version, template or LLM writes a new preview.
-    const plan = await resolvePreviewWriter(strategyId);
+    // The email Engine's script the strategy keeps (cached a few minutes), and the template + LLM the Rating picks for
+    // its writing call, recorded on this run. Part of the stored preview's identity, so a new script version, template
+    // or LLM writes a new preview.
+    const plan = await resolvePreviewWriter(runId, strategyId);
     const scriptSlug = scriptSlugOf(plan.script);
 
     const recipientKey = previewRecipientKey({ recipient, audience, offerId, promptType: plan.promptType, model: plan.model, writerSlug: scriptSlug, annotationVersion: PREVIEW_ANNOTATION_VERSION, giveLists, qualification });

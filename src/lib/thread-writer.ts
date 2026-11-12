@@ -1,7 +1,7 @@
 /**
  * Writes ONE Threads thread (a main post + the replies chained under it) with a stored template
  * (THREADS-IDEAS-AB, owner 2026-10-31: many template dynasties on the Threads posts pipe, the best kept
- * by features-service writer-pick, exactly as for cold email and WhatsApp).
+ * by the caller's template pick, exactly as for cold email and WhatsApp).
  *
  * The template is the writer's rules (system prompt); the workflow fills its `{{tokens}}` and sends
  * everything it gathered (facts, published figures, angles, history) as the message. One completion
