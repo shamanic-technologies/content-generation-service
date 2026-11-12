@@ -12,8 +12,8 @@
  *    run's own `pickScript`; never a pick by hand here). None = a named refusal (`NO_SCRIPT_KEPT`), never another
  *    strategy's script.
  *  - The template + LLM: the GTM Factory Rating picks them per Engine, like the scripts (LLM-RATING-PER-ENGINE-1112):
- *    features-service `GET /internal/template-pick` and `GET /internal/llm-pick` for the email Engine at the writing
- *    call's place (`writer`, the place the cold email script names), under the caller's strategy when there is one,
+ *    features-service `GET /internal/template-pick` and `GET /internal/llm-pick` for the Engine the catalogue states on
+ *    the cold email pipe (`PREVIEW_WRITER_PIPE`, `writerEngineOnCatalogue`) at the writing call's place (`writer`, the place the cold email script names), under the caller's strategy when there is one,
  *    with the preview's run as `x-run-id` (the pick is recorded on it). Asked per preview, never cached: each preview
  *    is one decision. None (422) = a named refusal, nothing written. The template is the picked dynasty's head.
  *  - The inputs: a preview has no lead. Its lead facts come from the sample recipient, the brand's from brand-service,
@@ -23,9 +23,10 @@
  * Pure leaf (no I/O, never `vi.mock`'d).
  */
 import type { ChatModel } from "./chat-models.js";
+import { transitionOnCatalogue, type ChannelCatalogue } from "./pipe-from-step.js";
 import type { PreviewRecipient } from "./preview-email.js";
 
-/** The email Engine: the outcome its scripts make. */
+/** The email Engine whose SCRIPTS the preview runs: the outcome its scripts make. */
 export const PREVIEW_ENGINE_OUTCOME = "message_written";
 
 /** The materials a preview hands the script (`writerUnits`): the Rating considers only scripts that run on them. */
@@ -76,6 +77,28 @@ export function keptScripts(answer: ScriptStrategyAnswer, strategyId?: string): 
  */
 export const PREVIEW_WRITER_PLACE = "writer";
 
+/**
+ * The pipe whose writing the preview stands for: the cold email pipe (Lead found -> Positive reply). The template +
+ * LLM picks are asked for the Engine the catalogue states on THIS pipe (`stepTransitions[].outcome`, else its `to`
+ * step), never a hand-typed outcome: the cold email templates and the fleet's past cold-email writing calls are filed
+ * under that Engine (prod 2026-11-12: `email_sent`; `message_written` has no catalogue pipe, so the template pick
+ * answered 422 and every preview wrote nothing).
+ */
+export const PREVIEW_WRITER_PIPE = { featureSlug: "sales-cold-email-outreach", legKey: "lead_found_to_conversation" } as const;
+
+/** The Engine the catalogue states for the preview's pipe. Absent = features-service's catalogue moved: 502, no guess. */
+export function writerEngineOnCatalogue(catalogue: ChannelCatalogue): string {
+  const transition = transitionOnCatalogue(catalogue, PREVIEW_WRITER_PIPE);
+  const engine = transition?.outcome || transition?.to?.key;
+  if (!engine) {
+    throw new PreviewWriterError(
+      502,
+      `features-service's channel catalogue states no Engine for the cold email pipe (${PREVIEW_WRITER_PIPE.featureSlug} ${PREVIEW_WRITER_PIPE.legKey}), so the preview cannot ask for its template and LLM`,
+    );
+  }
+  return engine;
+}
+
 /** features-service `GET /internal/template-pick` (200), as far as the preview reads it. */
 export interface TemplatePickAnswer {
   template: { templateDynastySlug: string; name?: string | null; head?: string | null } | null;
@@ -90,11 +113,11 @@ export interface LlmPickAnswer {
  * The template dynasty + model name the Rating picked for the email Engine's writing call. An answer without them is
  * features-service's bug: 502 in plain words, never another template or model.
  */
-export function writerFromPicks(template: TemplatePickAnswer, llm: LlmPickAnswer): { templateDynastySlug: string; model: ChatModel } {
+export function writerFromPicks(template: TemplatePickAnswer, llm: LlmPickAnswer, engine: string): { templateDynastySlug: string; model: ChatModel } {
   const t = template.template?.templateDynastySlug;
-  if (!t) throw new PreviewWriterError(502, `features-service's template pick for the ${PREVIEW_ENGINE_OUTCOME} Engine answered no template dynasty`);
+  if (!t) throw new PreviewWriterError(502, `features-service's template pick for the ${engine} Engine answered no template dynasty`);
   const m = llm.llm?.model;
-  if (!m) throw new PreviewWriterError(502, `features-service's LLM pick for the ${PREVIEW_ENGINE_OUTCOME} Engine answered no model`);
+  if (!m) throw new PreviewWriterError(502, `features-service's LLM pick for the ${engine} Engine answered no model`);
   return { templateDynastySlug: t, model: m };
 }
 
