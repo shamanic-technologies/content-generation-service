@@ -10,6 +10,7 @@ vi.mock("../../src/lib/template-dynasty-query.js", () => ({
   resolveDynastyHead: (...a: unknown[]) => mockResolveDynastyHead(...a),
 }));
 import { resolvePreviewWriter, __resetPreviewWriterCache } from "../../src/lib/preview-writer-client.js";
+import { clearChannelCatalogueCache } from "../../src/lib/pipe-from-step.js";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -18,12 +19,22 @@ const json = (body: unknown, status = 200) => ({ ok: status < 400, status, json:
 
 const SCRIPT = { dynasty: "dy_template_writer_full", scriptId: "s1", version: 4, kept: true, reason: null };
 const strategyAnswer = (scripts = [SCRIPT]) => ({ campaignId: null, outcome: "message_written", strategyId: null, keptDynasties: scripts.filter((s) => s.kept).map((s) => s.dynasty), scripts });
-const templatePick = { outcome: "message_written", place: "writer", template: { templateDynastySlug: "cold-reply-three-line-reply-named", name: "Three line", head: "t-9" }, candidates: [], evidenceComputedAt: null, evidenceUnavailableReason: null };
-const llmPick = { outcome: "message_written", place: "writer", llm: { llmDynastySlug: "gemini-flash-lite", name: "Gemini Flash Lite", provider: "google", model: "gemini-flash-lite" }, candidates: [], evidenceComputedAt: null, evidenceUnavailableReason: null };
+const templatePick = { outcome: "email_sent", place: "writer", template: { templateDynastySlug: "cold-reply-three-line-reply-named", name: "Three line", head: "t-9" }, candidates: [], evidenceComputedAt: null, evidenceUnavailableReason: null };
+const llmPick = { outcome: "email_sent", place: "writer", llm: { llmDynastySlug: "gemini-flash-lite", name: "Gemini Flash Lite", provider: "google", model: "gemini-flash-lite" }, candidates: [], evidenceComputedAt: null, evidenceUnavailableReason: null };
+// features-service's channel catalogue: the cold email pipe states the Engine its writing is filed under.
+const catalogue = (outcome: string | null = "email_sent", toKey = "positive_reply") => ({
+  channels: [
+    { slug: "sales-cold-email-outreach", channelType: "outbound", stepTransitions: [
+      { legKey: "lead_found_to_lead_found", from: { key: "lead_found" }, to: { key: "lead_found" }, outcome: "lead_identified" },
+      { legKey: "lead_found_to_conversation", from: { key: "lead_found" }, to: { key: toKey }, outcome },
+    ] },
+  ],
+});
 const RUN = "11111111-2222-3333-4444-555555555555";
 
-function route(over: { strategy?: unknown; strategyStatus?: number; pick?: unknown; pickStatus?: number; tpl?: unknown; tplStatus?: number; llm?: unknown; llmStatus?: number } = {}) {
+function route(over: { catalogue?: unknown; catalogueStatus?: number; strategy?: unknown; strategyStatus?: number; pick?: unknown; pickStatus?: number; tpl?: unknown; tplStatus?: number; llm?: unknown; llmStatus?: number } = {}) {
   mockFetch.mockImplementation(async (url: string, init?: { body?: string }) => {
+    if (url.includes("/public/channels")) return json(over.catalogue ?? catalogue(), over.catalogueStatus ?? 200);
     if (url.includes("/internal/script-strategy")) return json(over.strategy ?? strategyAnswer(), over.strategyStatus ?? 200);
     if (url.includes("/internal/engines/message_written/pick")) {
       const asked = JSON.parse(init?.body ?? "{}");
@@ -38,6 +49,7 @@ function route(over: { strategy?: unknown; strategyStatus?: number; pick?: unkno
 beforeEach(() => {
   vi.clearAllMocks();
   __resetPreviewWriterCache();
+  clearChannelCatalogueCache();
   mockResolveDynastyHead.mockResolvedValue({ dynasty: {}, template: { type: "yc-cold-email-v3" } });
 });
 
@@ -60,7 +72,7 @@ describe("resolvePreviewWriter", () => {
     route();
     await resolvePreviewWriter(RUN, "named-emails-only");
     const urls = mockFetch.mock.calls.map((c) => String(c[0]));
-    expect(urls.filter((u) => u.includes("features") || !u.includes("/pick")).every((u) => u.includes("strategyId=named-emails-only"))).toBe(true);
+    expect(urls.filter((u) => !u.includes("/public/channels") && (u.includes("features") || !u.includes("/pick"))).every((u) => u.includes("strategyId=named-emails-only"))).toBe(true);
   });
 
   it("an unknown strategy = 400 UNKNOWN_STRATEGY", async () => {
@@ -105,18 +117,41 @@ describe("resolvePreviewWriter", () => {
     expect(count(/script-strategy/)).toBe(2);
   });
 
-  it("asks the Rating for the Engine's writing call, with the preview's run as x-run-id", async () => {
+  it("asks the Rating for the Engine the catalogue states on the cold email pipe, with the preview's run as x-run-id", async () => {
     route();
     await resolvePreviewWriter(RUN);
     for (const kind of ["template-pick", "llm-pick"]) {
       const call = mockFetch.mock.calls.find((c) => String(c[0]).includes(`/internal/${kind}?`))!;
       const url = new URL(String(call[0]));
-      expect(url.searchParams.get("outcome")).toBe("message_written");
+      // The catalogue's transition of sales-cold-email-outreach / lead_found_to_conversation, never message_written.
+      expect(url.searchParams.get("outcome")).toBe("email_sent");
       expect(url.searchParams.get("place")).toBe("writer");
       expect(url.searchParams.get("campaignId")).toBeNull();
       expect(url.searchParams.get("strategyId")).toBeNull();
       expect(call[1].headers["x-run-id"]).toBe(RUN);
     }
+  });
+
+  it("the Engine comes from the catalogue transition: whatever it states is asked, its `to` step when it states no outcome", async () => {
+    route({ catalogue: catalogue("some_new_engine") });
+    await resolvePreviewWriter(RUN);
+    const outcomes = () => mockFetch.mock.calls.filter((c) => /\/internal\/(template|llm)-pick\?/.test(String(c[0]))).map((c) => new URL(String(c[0])).searchParams.get("outcome"));
+    expect(outcomes()).toEqual(["some_new_engine", "some_new_engine"]);
+    vi.clearAllMocks();
+    clearChannelCatalogueCache();
+    route({ catalogue: catalogue(null, "positive_reply") });
+    await resolvePreviewWriter("run-2");
+    expect(outcomes()).toEqual(["positive_reply", "positive_reply"]);
+  });
+
+  it("the catalogue unreadable, or stating no cold email pipe = 502, no pick asked, nothing written", async () => {
+    route({ catalogueStatus: 503, catalogue: { error: "down" } });
+    await expect(resolvePreviewWriter(RUN)).rejects.toMatchObject({ status: 502 });
+    clearChannelCatalogueCache();
+    route({ catalogue: { channels: [] } });
+    await expect(resolvePreviewWriter(RUN)).rejects.toMatchObject({ status: 502 });
+    expect(mockFetch.mock.calls.some((c) => /-pick\?/.test(String(c[0])))).toBe(false);
+    expect(mockResolveDynastyHead).not.toHaveBeenCalled();
   });
 
   it("the Rating's template pick has nothing for the Engine (422) = NO_TEMPLATE_FOR_ENGINE, nothing written", async () => {

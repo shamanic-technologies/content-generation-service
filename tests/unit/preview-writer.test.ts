@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { PreviewWriterError, keptScripts, previewVariables, scriptSlugOf, writerFromPicks, type ScriptStrategyAnswer } from "../../src/lib/preview-writer.js";
+import { PreviewWriterError, keptScripts, writerEngineOnCatalogue, previewVariables, scriptSlugOf, writerFromPicks, type ScriptStrategyAnswer } from "../../src/lib/preview-writer.js";
 
 // PREVIEW-EMAIL-503-1111: the preview is written by the email Engine's script the strategy keeps, with the template +
 // LLM the GTM Factory Rating picks for the Engine. These pin the rules: never a script the strategy rules out, never an invented fact.
@@ -36,17 +36,29 @@ describe("keptScripts", () => {
   });
 });
 
+describe("writerEngineOnCatalogue", () => {
+  const cat = (t: Record<string, unknown>) => ({ channels: [{ slug: "sales-cold-email-outreach", channelType: "outbound", stepTransitions: [{ legKey: "lead_found_to_conversation", from: { key: "lead_found" }, ...t }] }] });
+  it("the Engine the catalogue states on the cold email pipe, else its to step", () => {
+    expect(writerEngineOnCatalogue(cat({ to: { key: "positive_reply" }, outcome: "email_sent" }))).toBe("email_sent");
+    expect(writerEngineOnCatalogue(cat({ to: { key: "positive_reply" }, outcome: null }))).toBe("positive_reply");
+  });
+  it("no cold email pipe in the catalogue = 502, never a hand-typed Engine", () => {
+    expect(() => writerEngineOnCatalogue({ channels: [] })).toThrow(expect.objectContaining({ status: 502 }));
+    expect(() => writerEngineOnCatalogue(cat({ to: null, outcome: null }))).toThrow(expect.objectContaining({ status: 502 }));
+  });
+});
+
 describe("writerFromPicks", () => {
   const tpl = { template: { templateDynastySlug: "cold-reply-three-line-reply-named", name: "Three line", head: "t-9" } };
   const llm = { llm: { llmDynastySlug: "gemini-flash-lite", name: "Gemini Flash Lite", provider: "google", model: "gemini-flash-lite" } };
 
   it("takes the Rating's template dynasty and the model name its LLM pick hands chat-service", () => {
-    expect(writerFromPicks(tpl, llm)).toEqual({ templateDynastySlug: "cold-reply-three-line-reply-named", model: "gemini-flash-lite" });
+    expect(writerFromPicks(tpl, llm, "email_sent")).toEqual({ templateDynastySlug: "cold-reply-three-line-reply-named", model: "gemini-flash-lite" });
   });
 
   it("an answer naming no template or no model = 502, never a default", () => {
-    expect(() => writerFromPicks({ template: null }, llm)).toThrow(expect.objectContaining({ status: 502 }));
-    expect(() => writerFromPicks(tpl, { llm: null })).toThrow(expect.objectContaining({ status: 502 }));
+    expect(() => writerFromPicks({ template: null }, llm, "email_sent")).toThrow(expect.objectContaining({ status: 502 }));
+    expect(() => writerFromPicks(tpl, { llm: null }, "email_sent")).toThrow(expect.objectContaining({ status: 502 }));
   });
 });
 
