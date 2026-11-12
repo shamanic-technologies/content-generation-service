@@ -221,8 +221,9 @@ describe("POST /preview-email", () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ brandId: BRAND_ID, brandName: "Brand Co", subject: "Quick question", bodyText: "Hi Jane,\n\nHello.", cached: false });
 
-    // The writer is read with no strategy: every runnable script, the picked template + LLM.
-    expect(mockResolvePreviewWriter).toHaveBeenCalledWith(undefined);
+    // The writer is read with no strategy (every runnable script, the Rating's template + LLM), the picks recorded on
+    // the preview's own run.
+    expect(mockResolvePreviewWriter).toHaveBeenCalledWith("run-1", undefined);
 
     // The script run: the kept script, under the caller's identity, recorded by us (it declares nothing), traced.
     const [body, identity] = mockRunScript.mock.calls[0];
@@ -247,7 +248,7 @@ describe("POST /preview-email", () => {
 
   it("with a strategyId: the script, template and LLM that strategy keeps", async () => {
     await request(app).post("/preview-email").send({ ...BODY, strategyId: "named-emails-only" });
-    expect(mockResolvePreviewWriter).toHaveBeenCalledWith("named-emails-only");
+    expect(mockResolvePreviewWriter).toHaveBeenCalledWith("run-1", "named-emails-only");
     expect(mockRunScript).toHaveBeenCalledTimes(1);
   });
 

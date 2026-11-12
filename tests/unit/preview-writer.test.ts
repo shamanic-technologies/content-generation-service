@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { PreviewWriterError, keptScripts, previewVariables, scriptSlugOf, writerFromRanking, type ScriptStrategyAnswer, type WriterRanking } from "../../src/lib/preview-writer.js";
+import { PreviewWriterError, keptScripts, previewVariables, scriptSlugOf, writerFromPicks, type ScriptStrategyAnswer } from "../../src/lib/preview-writer.js";
 
 // PREVIEW-EMAIL-503-1111: the preview is written by the email Engine's script the strategy keeps, with the template +
-// LLM features-service picks. These pin the rules: never a script the strategy rules out, never an invented fact.
+// LLM the GTM Factory Rating picks for the Engine. These pin the rules: never a script the strategy rules out, never an invented fact.
 
 const answer = (scripts: ScriptStrategyAnswer["scripts"]): ScriptStrategyAnswer => ({
   strategyId: null,
@@ -36,27 +36,17 @@ describe("keptScripts", () => {
   });
 });
 
-const ranking = (over: Partial<WriterRanking> = {}): WriterRanking => ({
-  computedAt: "2026-11-11T12:17:35Z",
-  templates: { best: { templateDynastySlug: "cold-reply-three-line-reply-named" }, unavailableReason: null },
-  llms: { best: { llmDynastySlug: "gemini-flash-lite", aliases: [{ alias: "flash", status: "active" }, { alias: "gemini-flash-lite", status: "active" }] }, unavailableReason: null },
-  ...over,
-});
+describe("writerFromPicks", () => {
+  const tpl = { template: { templateDynastySlug: "cold-reply-three-line-reply-named", name: "Three line", head: "t-9" } };
+  const llm = { llm: { llmDynastySlug: "gemini-flash-lite", name: "Gemini Flash Lite", provider: "google", model: "gemini-flash-lite" } };
 
-describe("writerFromRanking", () => {
-  it("takes the best template dynasty and the LLM dynasty slug when it is an active name", () => {
-    expect(writerFromRanking(ranking())).toEqual({ templateDynastySlug: "cold-reply-three-line-reply-named", model: "gemini-flash-lite" });
+  it("takes the Rating's template dynasty and the model name its LLM pick hands chat-service", () => {
+    expect(writerFromPicks(tpl, llm)).toEqual({ templateDynastySlug: "cold-reply-three-line-reply-named", model: "gemini-flash-lite" });
   });
 
-  it("else the first active name of the picked dynasty", () => {
-    const r = ranking({ llms: { best: { llmDynastySlug: "kimi", aliases: [{ alias: "kimi-old", status: "deprecated" }, { alias: "kimi-k3", status: "active" }] }, unavailableReason: null } });
-    expect(writerFromRanking(r).model).toBe("kimi-k3");
-  });
-
-  it("no pick = 503 WRITER_PICK_UNAVAILABLE, never a default", () => {
-    for (const r of [ranking({ computedAt: null }), ranking({ templates: { best: null, unavailableReason: "nothing ranked" } }), ranking({ llms: { best: null, unavailableReason: "x" } })]) {
-      expect(() => writerFromRanking(r, "named-emails-only")).toThrow(expect.objectContaining({ status: 503, code: "WRITER_PICK_UNAVAILABLE" }));
-    }
+  it("an answer naming no template or no model = 502, never a default", () => {
+    expect(() => writerFromPicks({ template: null }, llm)).toThrow(expect.objectContaining({ status: 502 }));
+    expect(() => writerFromPicks(tpl, { llm: null })).toThrow(expect.objectContaining({ status: 502 }));
   });
 });
 
