@@ -1,0 +1,71 @@
+You're writing a 3-email cold sequence on behalf of a client. You name the client and say what they do. Every email has one goal: a reply from the prospect.
+
+## Email 1: three sentences
+Each sentence sits on its own line, separated by a blank line. The prospect reads it in under 60 seconds.
+1. What the client does, by name, in plain words, with its unique position and its numbers. Zero jargon, no adjectives piled on.
+2. Why it matters to this prospect: who does the work and the best proof in the brand intel (a named customer, a result with a number, a launch, a known backer), condensed. A real name beats any adjective.
+3. The ask, explicit, alone on the last line.
+
+Open with "Hi {{leadFirstName}}," on its own line. No sign-off line: the signature is added after.
+
+## Use every selling point the client gave
+A prospect replies when they see, at a glance, why this beats what they would do otherwise. Read the brand intel and what the sender offers for every selling point the client has: its unique position (often a price, a timeline or a guarantee set against what the prospect would otherwise pay or wait), who does the work (seniority, credentials), and its proof (named customers, results with numbers). Every one the intel states belongs in email 1, with the client's own numbers: "a fixed price" without the figure, or "fast" without the timeline, throws the argument away.
+
+Short is never a reason to drop one. Condensing them into the length this template allows is your job: several arguments can share one sentence ("[who does the work] delivers [what] in [timeline] for [price], where [the usual alternative] costs [its figure]"). Never add an argument the intel does not state.
+
+## The ask
+Never ask for a meeting, a call or a demo. Let them escalate. Ask for something small they can answer in one line: whether this is a problem for them, who handles it at their company, or whether they want the link.
+
+## Make it about them
+Their problem, in the words someone in their job would use. Find one real reason it is them and not a thousand others: something specific in their company description, keywords, industry or headline. If nothing real stands out, do not fake one. A sentence that could go to 1,000 prospects unchanged is cut.
+
+## What to leave out
+- Backstory: no history of the client, no awards, no "founded in", no origin story.
+- Flattery: no compliments on the prospect, their company, their role or their posts.
+- Any word that does not serve the reply.
+
+## Voice
+Write like you talk to a friend. Read it out loud in your head: if it sounds like marketing or like an AI, rewrite it. No em dashes, no en dashes.
+
+## Subject (email 1 only)
+Two to five words, casual and relevant, like a friend wrote it. Not marketing.
+
+## Follow-ups
+Emails 2 and 3 go in the same thread (no new subject), about 3 days and about 7 days later. Each is one or two sentences: one new reason to reply (a fresh proof or angle from the brand intel), then the same small ask on its own line. Never restate email 1. Never "just bumping" or "did you see my email".
+
+## Honesty floor
+Use only what's in the brand intel. Don't invent results, customer names, backers or urgency. If a sentence would require making something up, cut it.
+
+## Data hygiene
+Apollo data comes in weird shapes: ALL CAPS company names, outdated employee counts, generic tech stack. Normalize names to title case. Skip weak signals that would sound robotic.
+
+
+## Short, spaced paragraphs, in every email
+Every email, email 1 AND each follow-up, is written in short paragraphs separated by a blank line. A paragraph holds at most two sentences and stays under 40 words. One idea per paragraph.
+
+When a thought needs more, split it into two paragraphs. Never glue several sentences into one block: a wall of text loses the reader on mobile.
+
+---
+
+Now write the sequence for:
+
+## Prospect
+- Name: {{leadFirstName}} {{leadLastName}}
+- Title: {{leadTitle}}
+- LinkedIn Headline: {{leadHeadline}}
+- Company: {{leadCompanyName}}
+- Industry: {{leadCompanyIndustry}}
+- Company Size: {{leadCompanySize}}
+- Funding Stage: {{leadCompanyFundingStage}}
+- Company Description: {{leadCompanyDescription}}
+- Keywords: {{leadCompanyKeywords}}
+- Tech Stack: {{leadCompanyTechStack}}
+
+## Client
+- Name: {{clientName}}
+- Website: {{clientWebsite}}
+
+## Brand Intelligence
+{{brandExtractedFields}}
+
+Output: the three emails, ready to send. Nothing else.

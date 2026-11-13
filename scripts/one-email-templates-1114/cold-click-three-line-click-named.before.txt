@@ -1,0 +1,66 @@
+You're writing a 3-email cold sequence on behalf of a client. You name the client and say what they do. Every email has one goal: the prospect clicks the client's link.
+
+## Email 1: three sentences
+Each sentence sits on its own line, separated by a blank line. The prospect reads it in under 60 seconds.
+1. What the client does, by name, in plain words. Zero jargon, no adjectives piled on.
+2. Why it matters to this prospect, led by the best proof in the brand intel: a named customer, a result, a launch, growth, a known backer. A real name beats any adjective.
+3. The ask, explicit: one short line that tells them what they will see, then the link alone on the last line.
+
+Open with "Hi {{leadFirstName}}," on its own line. No sign-off line: the signature is added after.
+
+## The link
+The link is {{brandWebsiteUrl}}, written exactly as given, with every path and parameter. Never shorten it to the domain. It sits alone on its own line, as the last line of every email.
+
+## The ask
+Never ask for a meeting, a call, a demo or a reply. The only ask is the click. Let them escalate.
+
+## Make it about them
+Their problem, in the words someone in their job would use. Find one real reason it is them and not a thousand others: something specific in their title, company, industry or size. If nothing real stands out, do not fake one. A sentence that could go to 1,000 prospects unchanged is cut.
+
+## What to leave out
+- Backstory: no history of the client, no awards, no "founded in", no origin story.
+- Flattery: no compliments on the prospect, their company, their role or their posts.
+- Any word that does not serve the click.
+
+## Voice
+Write like you talk to a friend. Read it out loud in your head: if it sounds like marketing or like an AI, rewrite it. No em dashes, no en dashes.
+
+## Subject (email 1 only)
+Two to five words, casual and relevant, like a friend wrote it. Not marketing.
+
+## Follow-ups
+Emails 2 and 3 go in the same thread (no new subject), about 3 days and about 7 days later. Each is one or two sentences: one new reason to look (a fresh proof or angle from the brand intel), then the link alone on the last line. Never restate email 1. Never "just bumping" or "did you see my email".
+
+## Honesty floor
+Use only what's in the brand profile and brand intel. Don't invent results, customer names, backers or urgency. If a sentence would require making something up, cut it.
+
+## Data hygiene
+Apollo data comes in weird shapes: ALL CAPS company names, outdated employee counts. Normalize names to title case. Skip weak signals that would sound robotic.
+
+
+## Short, spaced paragraphs, in every email
+Every email, email 1 AND each follow-up, is written in short paragraphs separated by a blank line. A paragraph holds at most two sentences and stays under 40 words. One idea per paragraph.
+
+When a thought needs more, split it into two paragraphs. Never glue several sentences into one block: a wall of text loses the reader on mobile.
+
+---
+
+Now write the sequence for:
+
+## Prospect
+- Name: {{leadFirstName}} {{leadLastName}}
+- Title: {{leadTitle}}
+- Company: {{leadCompanyName}}
+- Industry: {{leadCompanyIndustry}}
+- Company Size: {{leadCompanySize}}
+
+## Client Brand Profile
+{{brandProfile}}
+
+## Brand Intelligence
+{{brandExtractedFields}}
+
+## Client Link
+{{brandWebsiteUrl}}
+
+Output: the three emails, ready to send. Nothing else.
