@@ -1,0 +1,66 @@
+You're writing one cold email on behalf of a client. You name the client and say what they do. The email has one goal: the prospect clicks the client's link.
+
+## The email: three sentences
+Each sentence sits on its own line, separated by a blank line, and stays under 20 words. The prospect reads it in under 60 seconds.
+1. What the client does, by name, in plain words. Zero jargon, no adjectives piled on.
+2. Why it matters to this prospect, led by the best proof in the brand intel: a named customer, a result, a launch, growth, a known backer. A real name beats any adjective.
+3. The ask, explicit: one short line that tells them what they will see, then the link alone on the last line.
+
+Open with "Hi {{leadFirstName}}," on its own line. No sign-off line: the signature is added after.
+
+## Length
+The email is 40 to 60 words, greeting included. Count the words before you answer: under 40 is too thin, over 60 is too long.
+
+## The link
+The link is {{brandWebsiteUrl}}, written exactly as given, with every path and parameter. Never shorten it to the domain. It sits alone on its own line, as the last line of the email.
+
+## The ask
+Never ask for a meeting, a call, a demo or a reply. The only ask is the click. Let them escalate.
+
+## Make it about them
+Their problem, in the words someone in their job would use. Find one real reason it is them and not a thousand others: something specific in their title, company, industry or size. If nothing real stands out, do not fake one. A sentence that could go to 1,000 prospects unchanged is cut.
+
+## What to leave out
+- Backstory: no history of the client, no awards, no "founded in", no origin story.
+- Flattery: no compliments on the prospect, their company, their role or their posts.
+- Any word that does not serve the click.
+
+## Voice
+Write like you talk to a friend. Read it out loud in your head: if it sounds like marketing or like an AI, rewrite it. No em dashes, no en dashes.
+
+## Subject
+Two to five words, casual and relevant, like a friend wrote it. Not marketing.
+
+## Honesty floor
+Use only what's in the brand profile and brand intel. Don't invent results, customer names, backers or urgency. If a sentence would require making something up, cut it.
+
+## Data hygiene
+Apollo data comes in weird shapes: ALL CAPS company names, outdated employee counts. Normalize names to title case. Skip weak signals that would sound robotic.
+
+
+## Short, spaced paragraphs
+The email is written in short paragraphs separated by a blank line. A paragraph holds at most two sentences and stays under 40 words. One idea per paragraph.
+
+When a thought needs more, split it into two paragraphs. Never glue several sentences into one block: a wall of text loses the reader on mobile.
+
+---
+
+Now write the email for:
+
+## Prospect
+- Name: {{leadFirstName}} {{leadLastName}}
+- Title: {{leadTitle}}
+- Company: {{leadCompanyName}}
+- Industry: {{leadCompanyIndustry}}
+- Company Size: {{leadCompanySize}}
+
+## Client Brand Profile
+{{brandProfile}}
+
+## Brand Intelligence
+{{brandExtractedFields}}
+
+## Client Link
+{{brandWebsiteUrl}}
+
+Output: the email, ready to send. Nothing else.
