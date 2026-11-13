@@ -131,6 +131,7 @@ const TEMPLATE = "Today {{currentDate}}. Prospect {{leadFirstName}} {{leadLastNa
 // The writer features-service + workflow-service name today. Deliberately not a real head: the route uses whatever the plan says.
 const PLAN: PreviewWriterPlan = {
   script: { dynasty: "dy_template_writer_full", version: 4 },
+  emailScript: { engine: "email_sent", dynasty: "dy_cold_email", version: 10 },
   templateDynastySlug: "cold-reply-three-line-reply-named",
   promptType: "blind-discovery-email-v33",
   model: "glm-pro",
@@ -223,7 +224,7 @@ describe("POST /preview-email", () => {
 
     // The writer is read with no strategy (every runnable script, the Rating's template + LLM), the picks recorded on
     // the preview's own run.
-    expect(mockResolvePreviewWriter).toHaveBeenCalledWith("run-1", undefined);
+    expect(mockResolvePreviewWriter).toHaveBeenCalledWith(expect.objectContaining({ runId: "run-1" }), undefined);
 
     // The script run: the kept script, under the caller's identity, recorded by us (it declares nothing), traced.
     const [body, identity] = mockRunScript.mock.calls[0];
@@ -248,7 +249,7 @@ describe("POST /preview-email", () => {
 
   it("with a strategyId: the script, template and LLM that strategy keeps", async () => {
     await request(app).post("/preview-email").send({ ...BODY, strategyId: "named-emails-only" });
-    expect(mockResolvePreviewWriter).toHaveBeenCalledWith("run-1", "named-emails-only");
+    expect(mockResolvePreviewWriter).toHaveBeenCalledWith(expect.objectContaining({ runId: "run-1" }), "named-emails-only");
     expect(mockRunScript).toHaveBeenCalledTimes(1);
   });
 
@@ -271,7 +272,7 @@ describe("POST /preview-email", () => {
   });
 
   it("fails loud when no writer can be read: no fallback script, template or model", async () => {
-    mockResolvePreviewWriter.mockRejectedValue(new PreviewWriterError(503, "features-service picks no template", "WRITER_PICK_UNAVAILABLE"));
+    mockResolvePreviewWriter.mockRejectedValue(new PreviewWriterError(503, "the cold email script states a template dynasty with no head", "WRITER_PICK_UNAVAILABLE"));
     const res = await request(app).post("/preview-email").send(BODY);
     expect(res.status).toBe(503);
     expect(res.body.code).toBe("WRITER_PICK_UNAVAILABLE");

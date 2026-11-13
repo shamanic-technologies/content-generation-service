@@ -2,7 +2,7 @@
  * WHO WRITES THE SIGNED-OUT PREVIEW, AND WITH WHAT (PREVIEW-EMAIL-503-1111).
  *
  * The preview is the first email a campaign would send, written the way the campaign writes it: by the email
- * Engine's SCRIPT (workflow-service, Engine `message_written`), with the template + LLM features-service picks, from
+ * Engine's SCRIPT (workflow-service, Engine `message_written`), with the template + LLM the picked cold email script states, from
  * the materials this service builds for every script writer (`script-writer.ts` `writerUnits`). No workflow, no play,
  * no leg ranking of workflows: a brand with zero history and no campaign always gets an email.
  *
@@ -11,11 +11,13 @@
  *    runnable script), then workflow-service's Rating picks among them (`POST /internal/engines/{outcome}/pick`, the
  *    run's own `pickScript`; never a pick by hand here). None = a named refusal (`NO_SCRIPT_KEPT`), never another
  *    strategy's script.
- *  - The template + LLM: the GTM Factory Rating picks them per Engine, like the scripts (LLM-RATING-PER-ENGINE-1112):
- *    features-service `GET /internal/template-pick` and `GET /internal/llm-pick` for the Engine the catalogue states on
- *    the cold email pipe (`PREVIEW_WRITER_PIPE`, `writerEngineOnCatalogue`) at the writing call's place (`writer`, the place the cold email script names), under the caller's strategy when there is one,
- *    with the preview's run as `x-run-id` (the pick is recorded on it). Asked per preview, never cached: each preview
- *    is one decision. None (422) = a named refusal, nothing written. The template is the picked dynasty's head.
+ *  - The template + LLM: the TACTICS of the cold email script the Rating picks (SCRIPT-VALUE-RATING-1113, owner
+ *    2026-11-13: « un pick = toujours un script », « le LLM et le template sont des tactics du script »). The Engine is
+ *    the one the catalogue states on the cold email pipe (`PREVIEW_WRITER_PIPE`, `writerEngineOnCatalogue`); its
+ *    scripts the strategy keeps (no campaign) that write through `message_written` (tactic `asks`) go to
+ *    workflow-service's Rating pick; the picked version's tactics for its `writer` call (`templates.writer` else
+ *    `template`, `llms.writer` else `llm`) are what the preview writes with. None stated = a named refusal. The
+ *    template is the stated dynasty's head. No side template or LLM pick is asked anywhere.
  *  - The inputs: a preview has no lead. Its lead facts come from the sample recipient, the brand's from brand-service,
  *    under the variable names the Engine's cold-email script fills (`previewVariables`). A template input nothing
  *    fills is asked of brand-service like `/generate` (Convention 1), then "" (never invented).
@@ -71,18 +73,15 @@ export function keptScripts(answer: ScriptStrategyAnswer, strategyId?: string): 
 }
 
 /**
- * The name the email Engine's scripts give their writing call when they ask the GTM Factory Rating for its LLM
- * (`pickLlm(ctx, "writer", "message_written")` in the cold email script). The preview IS that call, made before any
- * campaign, so it asks the Rating at the same place: its picks and their outcome feed the same belief.
+ * The name the cold email scripts give their writing call (`pickLlm(ctx, "writer", "message_written")`, reading tactic
+ * `llms.writer` else `llm`). The preview IS that call, made before any campaign.
  */
 export const PREVIEW_WRITER_PLACE = "writer";
 
 /**
- * The pipe whose writing the preview stands for: the cold email pipe (Lead found -> Positive reply). The template +
- * LLM picks are asked for the Engine the catalogue states on THIS pipe (`stepTransitions[].outcome`, else its `to`
- * step), never a hand-typed outcome: the cold email templates and the fleet's past cold-email writing calls are filed
- * under that Engine (prod 2026-11-12: `email_sent`; `message_written` has no catalogue pipe, so the template pick
- * answered 422 and every preview wrote nothing).
+ * The pipe whose writing the preview stands for: the cold email pipe (Lead found -> Positive reply). Its cold email
+ * script is picked in the Engine the catalogue states on THIS pipe (`stepTransitions[].outcome`, else its `to` step),
+ * never a hand-typed outcome (prod 2026-11-13: `email_sent`).
  */
 export const PREVIEW_WRITER_PIPE = { featureSlug: "sales-cold-email-outreach", legKey: "lead_found_to_conversation" } as const;
 
@@ -93,37 +92,80 @@ export function writerEngineOnCatalogue(catalogue: ChannelCatalogue): string {
   if (!engine) {
     throw new PreviewWriterError(
       502,
-      `features-service's channel catalogue states no Engine for the cold email pipe (${PREVIEW_WRITER_PIPE.featureSlug} ${PREVIEW_WRITER_PIPE.legKey}), so the preview cannot ask for its template and LLM`,
+      `features-service's channel catalogue states no Engine for the cold email pipe (${PREVIEW_WRITER_PIPE.featureSlug} ${PREVIEW_WRITER_PIPE.legKey}), so the preview cannot pick its cold email script`,
     );
   }
   return engine;
 }
 
-/** features-service `GET /internal/template-pick` (200), as far as the preview reads it. */
-export interface TemplatePickAnswer {
-  template: { templateDynastySlug: string; name?: string | null; head?: string | null } | null;
-}
-
-/** features-service `GET /internal/llm-pick` (200), as far as the preview reads it. `model` is the name chat-service takes. */
-export interface LlmPickAnswer {
-  llm: { llmDynastySlug: string; name?: string | null; provider?: string | null; model: string } | null;
+/** One live version of the cold email pipe's Engine's scripts (workflow-service `GET /scripts?outcome=`), as far as the preview reads it. */
+export interface EngineScriptRow {
+  dynasty: string;
+  version: number;
+  tactics: Record<string, unknown> | null;
 }
 
 /**
- * The template dynasty + model name the Rating picked for the email Engine's writing call. An answer without them is
- * features-service's bug: 502 in plain words, never another template or model.
+ * The kept scripts of the cold email pipe's Engine that WRITE their email: those whose tactic `asks` names the Engine
+ * the preview runs (`message_written`), handing it the template + LLM they state. A script of that Engine that asks no
+ * writer (an email pushed already written) has no writing call a preview can stand for. None = a named refusal.
  */
-export function writerFromPicks(template: TemplatePickAnswer, llm: LlmPickAnswer, engine: string): { templateDynastySlug: string; model: ChatModel } {
-  const t = template.template?.templateDynastySlug;
-  if (!t) throw new PreviewWriterError(502, `features-service's template pick for the ${engine} Engine answered no template dynasty`);
-  const m = llm.llm?.model;
-  if (!m) throw new PreviewWriterError(502, `features-service's LLM pick for the ${engine} Engine answered no model`);
-  return { templateDynastySlug: t, model: m };
+export function writingScriptsOf(rows: EngineScriptRow[], keptDynasties: string[], engine: string, strategyId?: string): string[] {
+  const kept = new Set(keptDynasties);
+  const writing = [
+    ...new Set(
+      rows
+        .filter((r) => kept.has(r.dynasty))
+        .filter((r) => {
+          const asks = r.tactics?.asks;
+          return Array.isArray(asks) && asks.includes(PREVIEW_ENGINE_OUTCOME);
+        })
+        .map((r) => r.dynasty),
+    ),
+  ];
+  if (writing.length === 0) {
+    throw new PreviewWriterError(
+      422,
+      `Under ${strategyId ? `strategy ${strategyId}` : "no strategy"}, the ${engine} Engine keeps no script that writes its email through ${PREVIEW_ENGINE_OUTCOME} (kept: ${keptDynasties.join(", ") || "none"}), so no preview can be written`,
+      "NO_SCRIPT_KEPT",
+    );
+  }
+  return writing;
+}
+
+/** The value a script states for one of its calls: the per-place tactic (`<plural>[place]`) first, else the script-wide one. */
+function placedTactic(tactics: Record<string, unknown> | null, singular: string, plural: string, place: string): unknown {
+  const perPlace = tactics?.[plural];
+  if (perPlace && typeof perPlace === "object" && !Array.isArray(perPlace) && place in perPlace) {
+    return (perPlace as Record<string, unknown>)[place];
+  }
+  return tactics?.[singular];
+}
+
+/**
+ * The template dynasty + LLM the picked cold email script states for its writing call (`PREVIEW_WRITER_PLACE`):
+ * `templates.writer` else `template` (a template dynasty slug), `llms.writer` else `llm` (`{ provider, model, name }`,
+ * `model` = the name chat-service takes). A script stating none = a named refusal, never a default template or model.
+ */
+export function writerFromTactics(tactics: Record<string, unknown> | null, script: PreviewScript, engine: string): { templateDynastySlug: string; model: ChatModel } {
+  const name = `${engine}/${script.dynasty} v${script.version}`;
+  const template = placedTactic(tactics, "template", "templates", PREVIEW_WRITER_PLACE);
+  if (typeof template !== "string" || !template.trim()) {
+    throw new PreviewWriterError(422, `The Rating picked the cold email script ${name}, which states no template for its ${PREVIEW_WRITER_PLACE} call, so no preview can be written`, "SCRIPT_STATES_NO_TEMPLATE");
+  }
+  const llm = placedTactic(tactics, "llm", "llms", PREVIEW_WRITER_PLACE) as { model?: unknown } | undefined | null;
+  const model = llm && typeof llm === "object" ? llm.model : undefined;
+  if (typeof model !== "string" || !model.trim()) {
+    throw new PreviewWriterError(422, `The Rating picked the cold email script ${name}, which states no LLM for its ${PREVIEW_WRITER_PLACE} call, so no preview can be written`, "SCRIPT_STATES_NO_LLM");
+  }
+  return { templateDynastySlug: template, model };
 }
 
 /** Everything that writes one preview: the Engine's script, the picked template (dynasty head) and LLM. */
 export interface PreviewWriterPlan {
   script: PreviewScript;
+  /** The cold email script the Rating picked, whose tactics name the template + LLM. */
+  emailScript: PreviewScript & { engine: string };
   templateDynastySlug: string;
   promptType: string;
   model: ChatModel;
