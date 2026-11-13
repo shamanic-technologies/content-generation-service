@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { PreviewWriterError, keptScripts, writerEngineOnCatalogue, previewVariables, scriptSlugOf, writerFromPicks, type ScriptStrategyAnswer } from "../../src/lib/preview-writer.js";
+import { PreviewWriterError, keptScripts, writerEngineOnCatalogue, previewVariables, scriptSlugOf, writerFromTactics, writingScriptsOf, type ScriptStrategyAnswer } from "../../src/lib/preview-writer.js";
 
 // PREVIEW-EMAIL-503-1111: the preview is written by the email Engine's script the strategy keeps, with the template +
-// LLM the GTM Factory Rating picks for the Engine. These pin the rules: never a script the strategy rules out, never an invented fact.
+// LLM the cold email script the Rating picks states for its writing call (SCRIPT-VALUE-RATING-1113). These pin the rules: never a script the strategy rules out, never an invented fact.
 
 const answer = (scripts: ScriptStrategyAnswer["scripts"]): ScriptStrategyAnswer => ({
   strategyId: null,
@@ -48,17 +48,48 @@ describe("writerEngineOnCatalogue", () => {
   });
 });
 
-describe("writerFromPicks", () => {
-  const tpl = { template: { templateDynastySlug: "cold-reply-three-line-reply-named", name: "Three line", head: "t-9" } };
-  const llm = { llm: { llmDynastySlug: "gemini-flash-lite", name: "Gemini Flash Lite", provider: "google", model: "gemini-flash-lite" } };
+describe("writingScriptsOf", () => {
+  const row = (dynasty: string, tactics: Record<string, unknown> | null, version = 1) => ({ dynasty, version, tactics });
+  const rows = [
+    row("dy_cold_email", { asks: ["message_written"], template: "t", llm: { model: "glm" } }),
+    row("dy_cold_email", { asks: ["message_written"] }, 9),
+    row("dy_pushed_email", { recorded_by: "email-gateway" }),
+    row("dy_cold_email_site", { asks: ["message_written"] }),
+  ];
 
-  it("takes the Rating's template dynasty and the model name its LLM pick hands chat-service", () => {
-    expect(writerFromPicks(tpl, llm, "email_sent")).toEqual({ templateDynastySlug: "cold-reply-three-line-reply-named", model: "gemini-flash-lite" });
+  it("keeps the kept scripts that write their email through message_written, once each", () => {
+    expect(writingScriptsOf(rows, ["dy_cold_email", "dy_pushed_email", "dy_cold_email_site"], "email_sent")).toEqual(["dy_cold_email", "dy_cold_email_site"]);
   });
 
-  it("an answer naming no template or no model = 502, never a default", () => {
-    expect(() => writerFromPicks({ template: null }, llm, "email_sent")).toThrow(expect.objectContaining({ status: 502 }));
-    expect(() => writerFromPicks(tpl, { llm: null }, "email_sent")).toThrow(expect.objectContaining({ status: 502 }));
+  it("a script the strategy does not keep is never a candidate", () => {
+    expect(writingScriptsOf(rows, ["dy_cold_email_site"], "email_sent")).toEqual(["dy_cold_email_site"]);
+  });
+
+  it("none writing = 422 NO_SCRIPT_KEPT", () => {
+    expect(() => writingScriptsOf(rows, ["dy_pushed_email"], "email_sent")).toThrow(expect.objectContaining({ status: 422, code: "NO_SCRIPT_KEPT" }));
+  });
+});
+
+describe("writerFromTactics", () => {
+  const script = { dynasty: "dy_cold_email", version: 10 };
+
+  it("the script-wide template + LLM the script states", () => {
+    expect(writerFromTactics({ template: "cold-reply-three-line-reply-named", llm: { name: "Gemini Flash-Lite", provider: "google", model: "gemini-flash-lite" } }, script, "email_sent")).toEqual({ templateDynastySlug: "cold-reply-three-line-reply-named", model: "gemini-flash-lite" });
+  });
+
+  it("the writer call's own tactic wins over the script-wide one", () => {
+    const tactics = { template: "wide", templates: { writer: "placed", angles: "x" }, llm: { model: "wide-llm" }, llms: { writer: { model: "placed-llm", provider: "zai" } } };
+    expect(writerFromTactics(tactics, script, "email_sent")).toEqual({ templateDynastySlug: "placed", model: "placed-llm" });
+  });
+
+  it("a per-place map naming other calls only falls back to the script-wide tactic", () => {
+    expect(writerFromTactics({ template: "wide", templates: { angles: "x" }, llm: { model: "m" }, llms: { judge: { model: "j" } } }, script, "email_sent")).toEqual({ templateDynastySlug: "wide", model: "m" });
+  });
+
+  it("no template or no LLM stated = a named refusal, never a default", () => {
+    expect(() => writerFromTactics({ llm: { model: "m" } }, script, "email_sent")).toThrow(expect.objectContaining({ status: 422, code: "SCRIPT_STATES_NO_TEMPLATE" }));
+    expect(() => writerFromTactics({ template: "t" }, script, "email_sent")).toThrow(expect.objectContaining({ status: 422, code: "SCRIPT_STATES_NO_LLM" }));
+    expect(() => writerFromTactics(null, script, "email_sent")).toThrow(expect.objectContaining({ code: "SCRIPT_STATES_NO_TEMPLATE" }));
   });
 });
 
