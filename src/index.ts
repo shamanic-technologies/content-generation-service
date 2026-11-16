@@ -20,6 +20,7 @@ import composeRoutes from "./routes/compose.js";
 import submagicRoutes from "./routes/submagic.js";
 import transferBrandRoutes from "./routes/transfer-brand.js";
 import catalogueStatusRoutes from "./routes/catalogue-status.js";
+import engineModelRoutes from "./routes/engine-models.js";
 import templateDynastyRoutes from "./routes/template-dynasties.js";
 import workflowDynastyOutputRoutes from "./routes/workflow-dynasty-outputs.js";
 import modelDynastyOutputRoutes from "./routes/model-dynasty-outputs.js";
@@ -76,6 +77,7 @@ app.use(transferBrandRoutes);
 app.use(sequenceRoutes);
 app.use(recordedGenerationRoutes);
 app.use(catalogueStatusRoutes);
+app.use(engineModelRoutes);
 app.use(templateDynastyRoutes);
 app.use(workflowDynastyOutputRoutes);
 app.use(modelDynastyOutputRoutes);
@@ -113,7 +115,7 @@ if (process.env.NODE_ENV !== "test") {
         startOutcomeDeclarationSweep();
         // Each generation is matched to the completion run(s) that wrote it (MODEL-RUN-COST-1024-CG).
         startCompletionRunSweep();
-        // A writer model's status on a pipe is its dynasty's: align any split rows (LLM-DYNASTY-DEPRECATE-1025).
+        // A writer model's status on an Engine is its dynasty's: align any split rows (LLM-DYNASTY-DEPRECATE-1025).
         alignModelDynastyStatuses()
           .then((n) => console.log(`[catalogue-status] model dynasty statuses aligned: ${n} row(s) written`))
           .catch((err) => console.error("[catalogue-status] model dynasty status alignment at boot failed:", err));

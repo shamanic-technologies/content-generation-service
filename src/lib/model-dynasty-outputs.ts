@@ -1,6 +1,6 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { emailGenerations, templateDynasties, templateDynastyVersions, whatsappGenerations } from "../db/schema.js";
+import { emailGenerations, templateDynasties, templateDynastyVersions, threadGenerations, whatsappGenerations } from "../db/schema.js";
 import { outputEmails, type TemplateOutputEmail } from "./catalogue-status-query.js";
 import { resolveModelDynastyVersions } from "./model-dynasty-client.js";
 import { newestFirst } from "./whatsapp-outputs.js";
@@ -14,13 +14,13 @@ import { newestFirst } from "./whatsapp-outputs.js";
  *   (one template = one dynasty = one pipe), the same version membership features-service pools
  *   Research by. A generation records no leg itself, so a message whose template sits in no dynasty
  *   is on no pipe. Texts written before `drizzle/0038` split the shared ones read on the reply pipe.
- * - Email and WhatsApp messages both, merged newest first.
+ * - Email, WhatsApp (sent) and Threads (not a staff dry run) messages, merged newest first.
  * Never an org, brand, campaign, audience or lead.
  */
 export interface ModelDynastyOutput {
   generationId: string;
   createdAt: string;
-  channel: "email" | "whatsapp";
+  channel: "email" | "whatsapp" | "threads";
   /** The workflow VERSION slug whose run asked for it. */
   workflowSlug: string | null;
   /** The exact template version that wrote it. */
@@ -42,10 +42,25 @@ export interface ModelDynastyOutputsQuery {
 }
 
 export async function readModelDynastyOutputs(q: ModelDynastyOutputsQuery): Promise<{ name: string; modelIds: string[]; outputs: ModelDynastyOutput[] }> {
-  const { name, modelIds } = await resolveModelDynastyVersions(q.slug);
+  const d = templateDynasties;
+  return readOutputsOnTemplateDynasties(q.slug, and(eq(d.featureSlug, q.featureSlug), eq(d.legKey, q.legKey))!, q.limit);
+}
+
+/**
+ * The last messages one LLM dynasty (every version) wrote with a template version of the template dynasties `onDynasties`
+ * keeps (a condition on `template_dynasties`), newest first, every org: email, WhatsApp (sent) and Threads (not a dry
+ * run). Shared by the per-pair read above and the per-Engine read (`engine-model-outputs.ts`).
+ */
+export async function readOutputsOnTemplateDynasties(
+  slug: string,
+  onDynasties: SQL,
+  limit: number,
+): Promise<{ name: string; modelIds: string[]; outputs: ModelDynastyOutput[] }> {
+  const { name, modelIds } = await resolveModelDynastyVersions(slug);
+  const q = { limit };
   const v = templateDynastyVersions;
   const d = templateDynasties;
-  const onPipe = and(eq(d.featureSlug, q.featureSlug), eq(d.legKey, q.legKey));
+  const onPipe = onDynasties;
 
   // One index walk per version (`idx_emailgen_model_created`), newest first, stopping at `limit`:
   // a single `model IN (...)` read scans every row of the dynasty before sorting.
@@ -127,5 +142,41 @@ export async function readModelDynastyOutputs(q: ModelDynastyOutputsQuery): Prom
     subject: null,
     emails: [{ step: 1, bodyText: (Array.isArray(r.bubbles) ? r.bubbles : []).join("\n\n"), daysSinceLastStep: 0 }],
   }));
-  return { name, modelIds, outputs: newestFirst(emails, whatsapp, q.limit) };
+  const t = threadGenerations;
+  const threadRows = await db
+    .select({
+      id: t.id,
+      createdAt: t.createdAt,
+      workflowSlug: t.workflowSlug,
+      promptType: t.promptType,
+      model: t.model,
+      tokensInput: t.tokensInput,
+      tokensOutput: t.tokensOutput,
+      subject: t.subject,
+      post: t.post,
+      replies: t.replies,
+      dynastySlug: d.slug,
+      dynastyName: d.name,
+      position: v.position,
+    })
+    .from(t)
+    .innerJoin(v, eq(v.promptType, t.promptType))
+    .innerJoin(d, eq(d.slug, v.dynastySlug))
+    .where(and(inArray(t.model, modelIds), eq(t.dryRun, false), onPipe))
+    .orderBy(desc(t.createdAt), desc(t.id))
+    .limit(q.limit);
+  const threads: ModelDynastyOutput[] = threadRows.map((r) => ({
+    generationId: r.id,
+    createdAt: new Date(r.createdAt).toISOString(),
+    channel: "threads",
+    workflowSlug: r.workflowSlug,
+    promptType: r.promptType,
+    templateDynasty: { slug: r.dynastySlug, name: r.dynastyName, position: r.position },
+    model: r.model,
+    tokensInput: r.tokensInput,
+    tokensOutput: r.tokensOutput,
+    subject: r.subject,
+    emails: [r.post, ...(Array.isArray(r.replies) ? (r.replies as string[]) : [])].map((bodyText, i) => ({ step: i + 1, bodyText, daysSinceLastStep: 0 })),
+  }));
+  return { name, modelIds, outputs: newestFirst(newestFirst(emails, whatsapp, q.limit), threads, q.limit) };
 }

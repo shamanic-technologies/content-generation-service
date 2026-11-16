@@ -16,6 +16,13 @@ vi.mock("../../src/lib/catalogue-status-query.js", async (importOriginal) => {
   return { ...actual, ...q };
 });
 
+// The pair -> Engine read is features-service's catalogue (src/lib/engine-catalogue.ts, real module in engine-catalogue.test.ts).
+const engineOfPairLive = vi.hoisted(() => vi.fn());
+vi.mock("../../src/lib/engine-catalogue.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/lib/engine-catalogue.js")>();
+  return { ...actual, engineOfPairLive };
+});
+
 const { default: routes } = await import("../../src/routes/catalogue-status.js");
 const { outputEmails } = await import("../../src/lib/catalogue-status-query.js");
 const { servedStatus, NOT_SPECIFIED } = await import("../../src/lib/catalogue-status.js");
@@ -28,7 +35,10 @@ function app() {
 }
 
 describe("staff catalogue status routes", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    engineOfPairLive.mockImplementation(async (p: { legKey: string }) => (p.legKey === "lead_found_to_website_visit" ? "website_visit" : null));
+  });
 
   const VISIT = { featureSlug: "sales-cold-email-outreach", legKey: "lead_found_to_website_visit" };
 
@@ -39,10 +49,12 @@ describe("staff catalogue status routes", () => {
     expect(q.listModelStatuses).toHaveBeenLastCalledWith(null);
   });
 
-  it("GET /internal/models?featureSlug&legKey reads the status on that pipe; half a pipe is 400", async () => {
+  it("GET /internal/models?featureSlug&legKey reads the status on that pair's Engine; half a pair is 400", async () => {
     q.listModelStatuses.mockResolvedValue([]);
     await request(app()).get("/internal/models").query(VISIT).expect(200);
-    expect(q.listModelStatuses).toHaveBeenLastCalledWith(VISIT);
+    expect(q.listModelStatuses).toHaveBeenLastCalledWith("website_visit");
+    await request(app()).get("/internal/models").query({ ...VISIT, legKey: "nowhere" }).expect(200);
+    expect(q.listModelStatuses).toHaveBeenLastCalledWith(null);
     const half = await request(app()).get("/internal/models").query({ legKey: VISIT.legKey }).expect(400);
     expect(half.body.code).toBe("PIPE_INCOMPLETE");
   });
@@ -66,12 +78,15 @@ describe("staff catalogue status routes", () => {
     q.setModelStatus.mockImplementation(async (entry, _pipe, change) => ({ ...entry, ...served(change.status, change.reason) }));
     const dep = await request(app()).put("/internal/models/glm-pro/status").set(WHO)
       .send({ status: "deprecated", reason: "  Writes one block, no line breaks  ", ...VISIT }).expect(200);
-    expect(q.setModelStatus).toHaveBeenLastCalledWith(expect.objectContaining({ model: "glm-pro", provider: "zai" }), VISIT, {
+    expect(q.setModelStatus).toHaveBeenLastCalledWith(expect.objectContaining({ model: "glm-pro", provider: "zai" }), "website_visit", {
       status: "deprecated", reason: "Writes one block, no line breaks", changedBy: "kevin@distribute.you",
     });
     expect(dep.body.statusReason).toBe("Writes one block, no line breaks");
     await request(app()).put("/internal/models/glm-pro/status").send({ status: "active", reason: "x", ...VISIT }).expect(200);
-    expect(q.setModelStatus).toHaveBeenLastCalledWith(expect.objectContaining({ model: "glm-pro", provider: "zai" }), VISIT, { status: "active", reason: null, changedBy: null });
+    expect(q.setModelStatus).toHaveBeenLastCalledWith(expect.objectContaining({ model: "glm-pro", provider: "zai" }), "website_visit", { status: "active", reason: null, changedBy: null });
+    const off = await request(app()).put("/internal/models/glm-pro/status").set(WHO)
+      .send({ status: "deprecated", reason: "x", featureSlug: "nowhere", legKey: "nowhere" }).expect(400);
+    expect(off.body.code).toBe("PAIR_NOT_IN_CATALOGUE");
   });
 
   it("refuses a deprecation without a reason or without who, nothing written", async () => {
