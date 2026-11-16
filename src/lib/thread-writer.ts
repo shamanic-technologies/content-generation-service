@@ -60,15 +60,51 @@ export interface ThreadWriteResult {
   responseRaw: object;
 }
 
+/**
+ * The chat-service `/complete` request this writer sends, minus the LLM (ONE-WRITER-N-MODELS-1116-CG-THREAD-WA):
+ * `responseSchema` = the permissive schema, `strictResponseSchema` = the strict one a provider that enforces JSON
+ * only through a strict schema needs (Anthropic). The completion script that knows its provider picks; here the
+ * provider is known and the pick is made in `writeThread`. Spends nothing.
+ */
+export function buildThreadRequest(params: { type: string; promptTemplate: string; variables: Record<string, unknown>; context: string; brief?: string | null }) {
+  const rules = renderThreadTemplate(params.type, params.promptTemplate, params.variables);
+  // The campaign's brief (campaign-brief.ts) before the output format; absent = byte-identical.
+  const briefDirective = buildCampaignBriefDirective(params.brief);
+  const systemPrompt = `${rules}${briefDirective ? `\n${briefDirective}` : ""}\n${OUTPUT_FORMAT}`;
+  return {
+    message: params.context,
+    systemPrompt,
+    responseFormat: "json" as const,
+    responseSchema: RESPONSE_SCHEMA as object,
+    strictResponseSchema: RESPONSE_SCHEMA_STRICT as object,
+    maxTokens: 16000,
+  };
+}
+
+/** The thread read off chat-service's whole `/complete` answer (ours, or one a script obtained and handed back). */
+export function readThreadAnswer(answer: unknown, systemPrompt: string): ThreadWriteResult {
+  const data = (answer && typeof answer === "object" ? answer : {}) as { json?: Record<string, unknown>; tokensInput?: number; tokensOutput?: number; model?: unknown };
+  const json = data.json ?? {};
+  const post = cleanPart(json.post);
+  if (!post) throw new Error(`the model answered no main post: ${JSON.stringify(json).slice(0, 300)}`);
+  return {
+    subject: cleanPart(json.subject),
+    post,
+    replies: (Array.isArray(json.replies) ? json.replies : []).map(cleanPart).filter((r) => r !== ""),
+    model: data.model as string,
+    tokensInput: data.tokensInput ?? 0,
+    tokensOutput: data.tokensOutput ?? 0,
+    systemPrompt,
+    responseRaw: data,
+  };
+}
+
 export async function writeThread(
   params: { type: string; promptTemplate: string; variables: Record<string, unknown>; context: string; model: string; brief?: string | null },
   identity: Tracking & { runId: string },
 ): Promise<ThreadWriteResult> {
-  const rules = renderThreadTemplate(params.type, params.promptTemplate, params.variables);
+  const request = buildThreadRequest(params);
   const { provider } = await resolveChatModel(params.model);
-  // The campaign's brief (campaign-brief.ts) before the output format; absent = byte-identical.
-  const briefDirective = buildCampaignBriefDirective(params.brief);
-  const systemPrompt = `${rules}${briefDirective ? `\n${briefDirective}` : ""}\n${OUTPUT_FORMAT}`;
 
   const base = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
   const response = await fetchWithRetry(
@@ -81,11 +117,11 @@ export async function writeThread(
         ...buildTrackingHeaders(identity),
       },
       body: JSON.stringify({
-        message: params.context,
-        systemPrompt,
-        responseFormat: "json",
-        responseSchema: provider === "anthropic" ? RESPONSE_SCHEMA_STRICT : RESPONSE_SCHEMA,
-        maxTokens: 16000,
+        message: request.message,
+        systemPrompt: request.systemPrompt,
+        responseFormat: request.responseFormat,
+        responseSchema: provider === "anthropic" ? request.strictResponseSchema : request.responseSchema,
+        maxTokens: request.maxTokens,
         provider,
         model: params.model,
       }),
@@ -100,18 +136,5 @@ export async function writeThread(
     const text = await response.text();
     throw new Error(`chat-service /complete failed for provider '${provider}' model '${params.model}': ${response.status} - ${text.slice(0, 500)}`);
   }
-  const data = (await response.json()) as { json?: Record<string, unknown>; tokensInput?: number; tokensOutput?: number; model: string };
-  const json = data.json ?? {};
-  const post = cleanPart(json.post);
-  if (!post) throw new Error(`the model answered no main post: ${JSON.stringify(json).slice(0, 300)}`);
-  return {
-    subject: cleanPart(json.subject),
-    post,
-    replies: (Array.isArray(json.replies) ? json.replies : []).map(cleanPart).filter((r) => r !== ""),
-    model: data.model,
-    tokensInput: data.tokensInput ?? 0,
-    tokensOutput: data.tokensOutput ?? 0,
-    systemPrompt,
-    responseRaw: data,
-  };
+  return readThreadAnswer(await response.json(), request.systemPrompt);
 }

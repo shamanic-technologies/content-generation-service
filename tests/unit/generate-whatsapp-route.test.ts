@@ -167,4 +167,68 @@ describe("POST /generate-whatsapp", () => {
     const without = JSON.parse(fetchMock.mock.calls[1][1].body).systemPrompt as string;
     expect(without).not.toContain("The campaign's BRIEF");
   });
+
+  describe("a script that asks its model (ONE-WRITER-N-MODELS-1116-CG-THREAD-WA)", () => {
+    const answer = { content: "", json: { decision: "write", bubbles: ["hey — Kevin here", "who buys from you?"], reason: "r", nextFollowUpAt: "2026-11-20T09:00:00Z", nextFollowUpWhy: "w" }, tokensInput: 42, tokensOutput: 7, model: "gemini-3-flash" };
+
+    it("/request answers the exact /complete body the writer sends (our voice included), minus the LLM; spends and stores nothing", async () => {
+      const { model: _m, ...noModel } = body();
+      const res = await request(await app()).post("/generate-whatsapp/request").send(noModel).expect(200);
+      expect(mockValues).not.toHaveBeenCalled();
+      expect(mockCreateRun).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(Object.keys(res.body.request)).toEqual(["message", "systemPrompt", "responseFormat", "responseSchema", "strictResponseSchema", "maxTokens"]);
+      expect(res.body.request.systemPrompt).toContain("TEST VOICE");
+
+      fetchMock.mockResolvedValue(completion({ decision: "later", bubbles: [], reason: "r", nextFollowUpAt: "", nextFollowUpWhy: "w" }));
+      await request(await app()).post("/generate-whatsapp").send(body()).expect(200);
+      const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
+      const { strictResponseSchema, ...rest } = res.body.request;
+      expect(sent).toEqual({ ...rest, responseSchema: strictResponseSchema, provider: "anthropic", model: "claude-opus" });
+    });
+
+    it("a handed-back completion is stored, declared on the run that asked it, and answered as if written here", async () => {
+      const { model: _m, ...noModel } = body();
+      const req = { message: "m", systemPrompt: "SENT SYSTEM PROMPT", provider: "google", model: "gemini-flash" };
+      const res = await request(await app())
+        .post("/generate-whatsapp")
+        .send({ ...noModel, completion: { request: req, answer, runId: "writer-run-1" } })
+        .expect(200);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(mockCreateRun).not.toHaveBeenCalled();
+      expect(res.body).toEqual({
+        id: "gen-1",
+        decision: "write",
+        bubbles: ["hey, Kevin here", "who buys from you?"],
+        message: "hey, Kevin here\n\nwho buys from you?",
+        reason: "r",
+        nextFollowUpAt: "2026-11-20T09:00:00Z",
+        nextFollowUpWhy: "w",
+        model: "gemini-3-flash",
+        promptType: "whatsapp-signup-v2",
+        tokensInput: 42,
+        tokensOutput: 7,
+      });
+      expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({
+        runId: "run-1",
+        model: "gemini-3-flash",
+        tokensInput: 42,
+        tokensOutput: 7,
+        systemPromptRaw: "SENT SYSTEM PROMPT",
+        responseRaw: answer,
+        generationRunId: "writer-run-1",
+        outcomes: {
+          produced: [{ outcomeKey: "message_written", subjectService: "lead-service", subjectId: "lead-1" }],
+          consumed: [{ outcomeKey: "lead_found", subjectService: "lead-service", subjectId: "lead-1" }],
+        },
+      }));
+      expect(declareStoredOutcomes).toHaveBeenCalledWith("whatsapp_generations", "gen-1");
+    });
+
+    it("400 MODEL_WITH_COMPLETION when both are sent", async () => {
+      const res = await request(await app()).post("/generate-whatsapp").send(body({ completion: { request: {}, answer, runId: "w" } })).expect(400);
+      expect(res.body.code).toBe("MODEL_WITH_COMPLETION");
+      expect(mockValues).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -3719,6 +3719,36 @@
             "minLength": 1,
             "description": "LLM to write with. Preferred: an LLM dynasty slug (e.g. `claude-opus`, `gemini-flash`; the list is chat-service GET /internal/model-dynasties), which always runs the dynasty's newest version. Any name chat-service POST /complete accepts is accepted: a dynasty slug, a head's exact model id, or a legacy alias (`opus`, `flash-pro`, `pro`…, each a redirect to its dynasty's head). The list is chat-service's (GET /internal/models there, mirrored with statuses on GET /internal/models here), read live: a name it does not accept → 400 `UNKNOWN_MODEL`. Provider is read from that catalogue, never sent by the caller. The model that actually wrote is recorded per generation (`model`). Omit to use the default `gemini-pro` (the model the old `pro` default ran). Every name stays accepted here whatever its staff status: a NEW workflow must not name one whose status is `deprecated` on GET /internal/models, but a stored workflow that does keeps generating."
           },
+          "completion": {
+            "type": "object",
+            "properties": {
+              "request": {
+                "type": "object",
+                "additionalProperties": {
+                  "nullable": true
+                },
+                "description": "The chat-service /complete request the completion was made with (the `request` this service answered, as sent: provider + model included). Its `systemPrompt` is stored as the writer's system prompt."
+              },
+              "answer": {
+                "type": "object",
+                "additionalProperties": {
+                  "nullable": true
+                },
+                "description": "chat-service's WHOLE /complete answer (`json`, `model`, `tokensInput`, `tokensOutput`, ...): the LLM completion script's `content.answer`. Read exactly as this service reads its own completion; the stored model and tokens are its."
+              },
+              "runId": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The run that asked the completion (the writing script's run; the completion run is its child)."
+              }
+            },
+            "required": [
+              "request",
+              "answer",
+              "runId"
+            ],
+            "description": "A completion the calling script obtained itself (no `model` then: 400 `MODEL_WITH_COMPLETION` when both are sent). This service makes no completion: it reads the answer, stores and answers exactly as when it writes."
+          },
           "brandIds": {
             "type": "array",
             "items": {
@@ -3845,7 +3875,37 @@
           "model": {
             "type": "string",
             "minLength": 1,
-            "description": "LLM to write with (the pipe's LLM picked by features-service): any name chat-service /complete accepts. Required: no default writer."
+            "description": "LLM to write with: any name chat-service /complete accepts. Required unless `completion` is sent (400 `MODEL_REQUIRED`): no default writer."
+          },
+          "completion": {
+            "type": "object",
+            "properties": {
+              "request": {
+                "type": "object",
+                "additionalProperties": {
+                  "nullable": true
+                },
+                "description": "The chat-service /complete request the completion was made with (the `request` this service answered, as sent: provider + model included). Its `systemPrompt` is stored as the writer's system prompt."
+              },
+              "answer": {
+                "type": "object",
+                "additionalProperties": {
+                  "nullable": true
+                },
+                "description": "chat-service's WHOLE /complete answer (`json`, `model`, `tokensInput`, `tokensOutput`, ...): the LLM completion script's `content.answer`. Read exactly as this service reads its own completion; the stored model and tokens are its."
+              },
+              "runId": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The run that asked the completion (the writing script's run; the completion run is its child)."
+              }
+            },
+            "required": [
+              "request",
+              "answer",
+              "runId"
+            ],
+            "description": "A completion the calling script obtained itself (no `model` then: 400 `MODEL_WITH_COMPLETION` when both are sent). This service makes no completion: it reads the answer, stores and answers exactly as when it writes."
           },
           "brandIds": {
             "type": "array",
@@ -3880,8 +3940,7 @@
         "required": [
           "type",
           "variables",
-          "context",
-          "model"
+          "context"
         ]
       },
       "GenerateThreadResponse": {
@@ -3931,6 +3990,57 @@
           "promptType",
           "tokensInput",
           "tokensOutput"
+        ]
+      },
+      "WriterChatRequest": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "systemPrompt": {
+                "type": "string"
+              },
+              "responseFormat": {
+                "type": "string",
+                "enum": [
+                  "json"
+                ]
+              },
+              "responseSchema": {
+                "type": "object",
+                "additionalProperties": {
+                  "nullable": true
+                },
+                "description": "The permissive schema (every provider but Anthropic)."
+              },
+              "strictResponseSchema": {
+                "type": "object",
+                "additionalProperties": {
+                  "nullable": true
+                },
+                "description": "The strict schema (`additionalProperties: false`) a provider enforcing JSON only through a strict schema needs (Anthropic): sent as `responseSchema` by the completion script that knows its provider."
+              },
+              "maxTokens": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "message",
+              "systemPrompt",
+              "responseFormat",
+              "responseSchema",
+              "strictResponseSchema",
+              "maxTokens"
+            ],
+            "description": "The exact chat-service /complete body this writer would send, minus `provider` and `model`. Ask the LLM completion Engine with it, then hand the answer back as `completion`."
+          }
+        },
+        "required": [
+          "request"
         ]
       },
       "OrgId": {
@@ -8142,7 +8252,7 @@
             }
           },
           "400": {
-            "description": "Invalid body, `VARIABLES_MISSING` (with `missing`), or `UNKNOWN_MODEL`",
+            "description": "Invalid body, `VARIABLES_MISSING` (with `missing`), `UNKNOWN_MODEL`, `MODEL_WITH_COMPLETION` or (Threads) `MODEL_REQUIRED`",
             "content": {
               "application/json": {
                 "schema": {
@@ -8271,7 +8381,7 @@
             }
           },
           "400": {
-            "description": "Invalid body, `VARIABLES_MISSING` (with `missing`), or `UNKNOWN_MODEL`",
+            "description": "Invalid body, `VARIABLES_MISSING` (with `missing`), `UNKNOWN_MODEL`, `MODEL_WITH_COMPLETION` or (Threads) `MODEL_REQUIRED`",
             "content": {
               "application/json": {
                 "schema": {
@@ -8302,6 +8412,272 @@
           },
           "502": {
             "description": "`MODEL_CATALOGUE_UNAVAILABLE`, or chat-service failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generate-thread/request": {
+      "post": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "The chat-service request /generate-thread would send, without a model",
+        "description": "Same body as /generate-thread minus `model`, `completion` and `dryRun`. Renders the template and answers the request; spends nothing, stores nothing. Then POST /generate-thread with `completion`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The template to write with: the head of the pipe's Threads dynasty picked by features-service (GET /internal/template-dynasties/{slug}/head → `template.type`)."
+                  },
+                  "variables": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "nullable": true
+                    },
+                    "description": "The template's `{{tokens}}`, each a string. Every token the template declares is required (400 `VARIABLES_MISSING`); extra keys are ignored. The Threads dynasties declare: brandName, getStartedLine."
+                  },
+                  "context": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Everything the writer reads, as one text with these sections: BRAND, PUBLISHED ON, TODAY, SUGGESTED SHAPE, OUR FACTS, NEVER STATE OR OFFER, THE BRAND'S INSTRUCTION FOR THESE THREADS, OUR PUBLISHED FIGURES, THIS WEEK IN THE INDUSTRY, ALREADY POSTED."
+                  },
+                  "brandIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Brand UUIDs. Falls back to x-brand-id."
+                  },
+                  "campaignId": {
+                    "type": "string",
+                    "description": "Falls back to x-campaign-id."
+                  },
+                  "workflowSlug": {
+                    "type": "string",
+                    "description": "Falls back to x-workflow-slug."
+                  },
+                  "featureSlug": {
+                    "type": "string",
+                    "description": "Falls back to x-feature-slug (`threads-post`)."
+                  },
+                  "brief": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 20000,
+                    "description": "The campaign's brief (campaign-service's campaign `brief`, the text the client edits on the dashboard campaign page; workflow-service threads it into every writer call of a campaign run). When set, the writer's system prompt carries it: it outranks the template's angle, pitch and structure, never the output format, our voice, or the thread. Absent, null or blank = the template alone, byte-identical to before."
+                  }
+                },
+                "required": [
+                  "type",
+                  "variables",
+                  "context"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The writer's request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriterChatRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body or `VARIABLES_MISSING` (with `missing`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`TEMPLATE_NOT_FOUND`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/generate-whatsapp/request": {
+      "post": {
+        "tags": [
+          "Content Generation"
+        ],
+        "summary": "The chat-service request /generate-whatsapp would send, without a model",
+        "description": "Same body as /generate-whatsapp minus `model` and `completion`. Renders the template, reads our voice (client-comms) and answers the request; spends nothing, stores nothing. Then POST /generate-whatsapp with `completion`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The template to write with: the head of the pipe's WhatsApp dynasty (GET /internal/template-dynasties/{slug}/head → `template.type`)."
+                  },
+                  "variables": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "nullable": true
+                    },
+                    "description": "The template's `{{tokens}}`, each a string (\"\" when the piece does not apply). Every token the template declares is required (400 `VARIABLES_MISSING`); extra keys are ignored. The WhatsApp dynasties declare: writerRole, ownerName, brandName, conversationStance, relationshipStrategy, automatedLinesRule, timingRules, whyNowRule, voiceRules (descriptions: GET /platform-prompts?type=<type>)."
+                  },
+                  "context": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Everything about this run the writer reads, as one text: today, why we write now, their local time, who we write to, who they are to us, who we are, the client's facts, the thread, the sender's own messages."
+                  },
+                  "brandIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Brand UUIDs. Falls back to x-brand-id."
+                  },
+                  "campaignId": {
+                    "type": "string",
+                    "description": "Falls back to x-campaign-id."
+                  },
+                  "leadId": {
+                    "type": "string",
+                    "description": "lead-service lead id of the person, when they have one."
+                  },
+                  "brief": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 20000,
+                    "description": "The campaign's brief (campaign-service's campaign `brief`, the text the client edits on the dashboard campaign page; workflow-service threads it into every writer call of a campaign run). When set, the writer's system prompt carries it: it outranks the template's angle, pitch and structure, never the output format, our voice, or the thread. Absent, null or blank = the template alone, byte-identical to before."
+                  },
+                  "workflowSlug": {
+                    "type": "string",
+                    "description": "Falls back to x-workflow-slug."
+                  },
+                  "featureSlug": {
+                    "type": "string",
+                    "description": "Falls back to x-feature-slug (cold WhatsApp: `cold-whatsapp-outreach`)."
+                  }
+                },
+                "required": [
+                  "type",
+                  "variables",
+                  "context"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The writer's request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriterChatRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body or `VARIABLES_MISSING` (with `missing`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`TEMPLATE_NOT_FOUND`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`CLIENT_COMMS_UNAVAILABLE`",
             "content": {
               "application/json": {
                 "schema": {
