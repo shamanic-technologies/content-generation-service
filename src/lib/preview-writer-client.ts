@@ -14,10 +14,16 @@ import { resolveDynastyHead } from "./template-dynasty-query.js";
 import { TemplateDynastyError } from "./template-dynasties.js";
 import { buildTrackingHeaders, type Tracking } from "./tracking.js";
 import {
+  PREVIEW_COMPLETION_OUTCOME,
   PREVIEW_ENGINE_OUTCOME,
   PREVIEW_WRITER_MATERIALS,
   PreviewWriterError,
+  SENDER_HANDS_WRITER,
+  askedByOf,
   keptScripts,
+  modelOfCompletion,
+  senderStatesWriter,
+  templateOfWriter,
   writerEngineOnCatalogue,
   writerFromTactics,
   writingScriptsOf,
@@ -114,19 +120,19 @@ interface RatingPickAnswer extends PreviewScript {
  * /internal/engines/{outcome}/pick`, PREVIEW-RATING-PICK-1111): the choice is never made here. Nothing it can run on
  * what the preview hands = 422 NO_SCRIPT_KEPT.
  */
-async function ratingPick(outcome: string, keptDynasties: string[], servable: readonly string[]): Promise<RatingPickAnswer> {
+async function ratingPick(outcome: string, keptDynasties: string[], servable: readonly string[], askedBy?: string): Promise<RatingPickAnswer> {
   let res: Response;
   try {
     res = await fetch(`${WORKFLOW_SERVICE_URL}/internal/engines/${encodeURIComponent(outcome)}/pick`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Api-Key": WORKFLOW_SERVICE_API_KEY },
-      body: JSON.stringify({ keptDynasties, servable: [...servable] }),
+      body: JSON.stringify({ keptDynasties, servable: [...servable], ...(askedBy ? { askedBy } : {}) }),
     });
   } catch (err) {
     throw new PreviewWriterError(502, `workflow-service Rating pick unreachable: ${err instanceof Error ? err.message : String(err)}`);
   }
   if (res.status === 404) {
-    throw new PreviewWriterError(422, `workflow-service's Rating finds no script of the ${outcome} Engine it can run for a preview among ${keptDynasties.join(", ")}: ${await res.text()}`, "NO_SCRIPT_KEPT");
+    throw new PreviewWriterError(422, `workflow-service's Rating finds no script of the ${outcome} Engine it can run for a preview${askedBy ? ` asked by ${askedBy}` : ""} among ${keptDynasties.join(", ")}: ${await res.text()}`, "NO_SCRIPT_KEPT");
   }
   if (!res.ok) {
     throw new PreviewWriterError(502, `workflow-service Rating pick for ${outcome} failed: ${res.status} - ${await res.text()}`);
@@ -143,24 +149,43 @@ async function ratingPick(outcome: string, keptDynasties: string[], servable: re
 }
 
 /** The `message_written` script the strategy keeps, as the Rating picks it on the preview's materials. */
-async function previewScript(strategyId?: string): Promise<PreviewScript> {
-  const strategy = await readScriptStrategy(PREVIEW_ENGINE_OUTCOME, strategyId);
+async function previewScript(strategy: ScriptStrategyAnswer, strategyId?: string): Promise<PreviewScript> {
   const { dynasty, version } = await ratingPick(PREVIEW_ENGINE_OUTCOME, keptScripts(strategy, strategyId).map((s) => s.dynasty), PREVIEW_WRITER_MATERIALS);
   return { dynasty, version };
 }
 
 /**
  * The cold email script the Rating picks (Engine stated by the catalogue on the cold email pipe, kept by the strategy,
- * writing through `message_written`) and the template + LLM its tactics state for its writing call. The preview hands
- * it nothing: it asks its writer itself (tactic `asks`), which is the preview's own run.
+ * writing through `message_written`) and the template + LLM its writing call uses. The preview hands it nothing: it
+ * asks its writer itself (tactic `asks`), which is the preview's own run.
+ *  - A sender still stating its template / LLM: those (`writerFromTactics`, today's reading).
+ *  - A sender naming neither (ONE-WRITER-N-MODELS-1116): the way of writing the Rating picks for THAT sender (a kept
+ *    `message_written` writer reading what a sender hands it, `askedBy` the sender), its tactic `template`; then the
+ *    model the Rating picks for THAT writer (a kept `llm_completion` script, handed nothing, `askedBy` the writer),
+ *    its tactic `llm`. Never a pick made here, never a default.
  */
-async function coldEmailWriter(identity: Tracking, strategyId?: string): Promise<Pick<PreviewWriterPlan, "emailScript" | "templateDynastySlug" | "model">> {
+async function coldEmailWriter(identity: Tracking, writerStrategy: ScriptStrategyAnswer, strategyId?: string): Promise<Omit<PickedWriter, "script">> {
   const engine = await coldEmailEngine();
   const [strategy, rows] = await Promise.all([readScriptStrategy(engine, strategyId), readEngineScripts(engine, identity)]);
   const writing = writingScriptsOf(rows, strategy.keptDynasties, engine, strategyId);
   const picked = await ratingPick(engine, writing, []);
-  const script = { dynasty: picked.dynasty, version: picked.version };
-  return { emailScript: { ...script, engine }, ...writerFromTactics(picked.tactics, script, engine) };
+  const sender = { dynasty: picked.dynasty, version: picked.version };
+  const emailScript = { ...sender, engine };
+  if (senderStatesWriter(picked.tactics)) {
+    return { emailScript, ...writerFromTactics(picked.tactics, sender, engine) };
+  }
+  const way = await ratingPick(PREVIEW_ENGINE_OUTCOME, keptScripts(writerStrategy, strategyId).map((s) => s.dynasty), SENDER_HANDS_WRITER, askedByOf(engine, sender));
+  const writerScript = { dynasty: way.dynasty, version: way.version };
+  const templateDynastySlug = templateOfWriter(way.tactics, writerScript);
+  const completionStrategy = await readScriptStrategy(PREVIEW_COMPLETION_OUTCOME, strategyId);
+  const completion = await ratingPick(
+    PREVIEW_COMPLETION_OUTCOME,
+    keptScripts(completionStrategy, strategyId, PREVIEW_COMPLETION_OUTCOME).map((s) => s.dynasty),
+    [],
+    askedByOf(PREVIEW_ENGINE_OUTCOME, writerScript),
+  );
+  const completionScript = { dynasty: completion.dynasty, version: completion.version };
+  return { emailScript, writerScript, completionScript, templateDynastySlug, model: modelOfCompletion(completion.tactics, completionScript) };
 }
 
 /**
@@ -174,7 +199,8 @@ export async function resolvePreviewWriter(identity: Tracking, strategyId?: stri
   if (hit && Date.now() - hit.at < PREVIEW_WRITER_CACHE_MS) {
     picked = hit.picked;
   } else {
-    const [script, writer] = await Promise.all([previewScript(strategyId), coldEmailWriter(identity, strategyId)]);
+    const writerStrategy = await readScriptStrategy(PREVIEW_ENGINE_OUTCOME, strategyId);
+    const [script, writer] = await Promise.all([previewScript(writerStrategy, strategyId), coldEmailWriter(identity, writerStrategy, strategyId)]);
     picked = { script, ...writer };
     cached.set(cacheKey, { picked, at: Date.now() });
   }
@@ -188,6 +214,6 @@ export async function resolvePreviewWriter(identity: Tracking, strategyId?: stri
     throw err;
   }
   const plan: PreviewWriterPlan = { ...picked, promptType };
-  console.log(`[content-generation-service] preview writer${strategyId ? ` for strategy ${strategyId}` : ""} (run ${identity.runId}): script=${plan.script.dynasty} v${plan.script.version}, cold email script=${plan.emailScript.engine}/${plan.emailScript.dynasty} v${plan.emailScript.version}, template=${plan.templateDynastySlug} (${promptType}), model=${plan.model}`);
+  console.log(`[content-generation-service] preview writer${strategyId ? ` for strategy ${strategyId}` : ""} (run ${identity.runId}): script=${plan.script.dynasty} v${plan.script.version}, cold email script=${plan.emailScript.engine}/${plan.emailScript.dynasty} v${plan.emailScript.version}${plan.writerScript ? `, way of writing=${PREVIEW_ENGINE_OUTCOME}/${plan.writerScript.dynasty} v${plan.writerScript.version}` : ""}${plan.completionScript ? `, completion=${PREVIEW_COMPLETION_OUTCOME}/${plan.completionScript.dynasty} v${plan.completionScript.version}` : ""}, template=${plan.templateDynastySlug} (${promptType}), model=${plan.model}`);
   return plan;
 }
