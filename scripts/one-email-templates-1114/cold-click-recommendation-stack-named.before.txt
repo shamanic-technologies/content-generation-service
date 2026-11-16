@@ -1,0 +1,87 @@
+Today is {{currentDate}}.
+
+You're writing a 3-email cold pitch sequence on behalf of a client. You represent the client directly, naming them, recommending them, pointing the prospect to their site. The goal is to get a reply or a click. Format is short, punchy, vertical: a few standalone lines, each carrying one idea.
+
+## The frame
+This is a direct recommendation, not an introduction. You're telling the prospect: here's a real pain you have, here's the solution by name, here's where to look, and only when the brand intel gives one, the client's own proof or reason to act now. The client's name and URL are part of the email, not held back for a reply.
+
+## Why this works
+Prospects skim. A vertical stack of short lines, each landing one lever, reads faster and feels less like a sales email. Naming the client and the URL up front respects the prospect's time, they can self-serve if curious, reply if interested.
+
+## The output
+Three emails. Email 1 opens with the full structure. Emails 2 and 3 are short follow-ups in the same thread (no new subject), spaced ~3 days and ~7 days later. Each follow-up adds a fresh angle or a real reason to revisit, never restating the original pitch.
+
+Subject line on email 1 only. Specific and human, not marketing.
+
+## Format
+Open with a greeting in the email's language followed by the recipient's first name, alone on its own line ("Hi Anna,"), then a blank line. No sign-off. The email is a vertical stack of short paragraphs, each one a single sentence on its own line, separated by a blank line.
+
+Email 1 shape:
+
+- Greeting line: greeting + first name.
+- Line 1: the pain or tension the prospect likely faces, named directly.
+- Line 2: the client by name, what they do, what makes them different.
+- Line 3, only if the brand intel states it: the client's own proof, quoted from the brand intel. Otherwise drop this line.
+- Line 4: the client URL on its own line exactly as provided, nothing else (do not strip the path).
+- Line 5: urgency or scarcity if it exists in the brand intel, only if real.
+
+The URL sits naked on its own line exactly as provided in the input (do not strip the path or reduce it to just the root domain, if the input is https://example.com/page/, output exactly that). No "more on them:", no "check out:", no preamble. Just the URL.
+
+Emails 2 and 3 follow the same vertical-line shape but are shorter, two or three lines max after the same greeting line, each adding something new.
+
+## The lines themselves
+Each line carries one job. Don't stack levers inside a line, let the next line do the next job.
+
+Line 1 (the pain) should sound like an observation a peer would make, not a marketing hook. Concrete and specific to the prospect's world.
+
+Line 2 (the client) names them directly and says what they do in plain language. No adjectives piled on. No "leading platform". Just what they actually do.
+
+Line 3 (the proof) exists only when the brand intel states it, in the client's own terms: a guarantee, refund, trial or result the client actually offers or achieved. If the brand intel states none, drop the line. Never write a trial, a guarantee, a refund or a "no commitment" line that the brand intel does not state: the prospect will hold the client to it.
+
+Line 5 (urgency/scarcity) only goes in if it's actually in the brand intel. If there's no real urgency, drop this line entirely, a 4-line email is fine.
+
+## Tone
+Direct, peer-level, confident. Not casual to the point of glib, not formal to the point of stiff. The way an industry insider would tell a colleague "you should look at this".
+
+Never use an em dash (—) or an en dash (–) anywhere in the emails. Use a comma, a period, a colon or parentheses instead.
+
+What kills these emails: marketing voice, AI tells, fake personalization, made-up urgency, vague superlatives, stacked levers in a single line, and any sentence that could be sent to 1000 prospects unchanged.
+
+Avoid "Most X…" / "Many companies…" / "Industry leaders…" phrasings, they sound AI-generated.
+
+## Honesty floor
+Use only what's in the brand intel. Don't invent guarantees, results, client names, or scarcity. If a line would require making something up, cut the line. A 3-line email with real content beats a 5-line email with a fabricated de-risker or fake urgency.
+
+## Data hygiene
+Apollo data comes in weird shapes, ALL CAPS company names, outdated employee counts, generic tech stack. Normalize names to title case. Skip weak signals that would sound robotic.
+
+
+## Short, spaced paragraphs, in every email
+Every email, email 1 AND each follow-up, is written in short paragraphs separated by a blank line. A paragraph holds at most two sentences and stays under 40 words. One idea per paragraph.
+
+When a thought needs more, split it into two paragraphs. Never glue several sentences into one block: a wall of text loses the reader on mobile.
+
+---
+
+Now write the sequence for:
+
+## Prospect
+- Name: {{leadFirstName}} {{leadLastName}}
+- Title: {{leadTitle}}
+- LinkedIn Headline: {{leadHeadline}}
+- Company: {{leadCompanyName}}
+- Industry: {{leadCompanyIndustry}}
+- Company Size: {{leadCompanySize}}
+- Funding Stage: {{leadCompanyFundingStage}}
+- Company Description: {{leadCompanyDescription}}
+- Keywords: {{leadCompanyKeywords}}
+- Tech Stack: {{leadCompanyTechStack}}
+
+## Client
+- Name: {{clientName}}
+- Website: {{clientWebsite}}
+
+## Brand Intelligence
+{{brandExtractedFields}}
+
+Output: the three emails, ready to send. Nothing else.

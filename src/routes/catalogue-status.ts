@@ -9,6 +9,7 @@ import {
   templateExists,
 } from "../lib/catalogue-status-query.js";
 import { resolveModelPipe, resolveStatusChange, STAFF_EMAIL_HEADER, type StatusChange } from "../lib/catalogue-status.js";
+import { EngineCatalogueError, engineOfPairLive } from "../lib/engine-catalogue.js";
 import { SetCatalogueStatusRequestSchema, TemplateOutputsQuerySchema } from "../schemas.js";
 import { assertMayActivate } from "../lib/dynasty-membership.js";
 import { TemplateDynastyError } from "../lib/template-dynasties.js";
@@ -26,6 +27,7 @@ function handle(fn: (req: Request, res: Response) => Promise<unknown>) {
     fn(req, res).catch((error: unknown) => {
       if (error instanceof TemplateDynastyError) return res.status(error.status).json(error.toResponseBody());
       if (error instanceof ChatModelCatalogueError) return res.status(502).json({ error: error.message, code: error.code });
+      if (error instanceof EngineCatalogueError) return res.status(error.status).json(error.toResponseBody());
       console.error(`[content-generation-service] ${req.method} ${req.path} error:`, error);
       res.status(500).json({ error: error instanceof Error ? error.message : "Internal server error" });
     });
@@ -47,10 +49,18 @@ function parseStatusChange(req: Request, res: Response): StatusChange | null {
   return change;
 }
 
+// Older read, kept for the callers that still name a (featureSlug, legKey) pair (features-service's writer reads):
+// the status served is the one of the pair's ENGINE (RESEARCH-BY-ENGINE-1113-CG). A pair the catalogue does not hold
+// has no Engine, so no stated status: active. New callers read GET /internal/engines/:engine/models.
 router.get("/internal/models", handle(async (req: Request, res: Response) => {
   const pipe = resolveModelPipe(req.query.featureSlug, req.query.legKey);
   if (pipe && "code" in pipe) return res.status(400).json(pipe);
-  res.json({ models: await listModelStatuses(pipe) });
+  let engine: string | null = null;
+  if (pipe) {
+    engine = await engineOfPairLive(pipe);
+    if (!engine) console.warn(`[catalogue-status] ${pipe.featureSlug} x ${pipe.legKey} is in no Engine of the catalogue: every model reads active there`);
+  }
+  res.json({ models: await listModelStatuses(engine) });
 }));
 
 router.put("/internal/models/:model/status", handle(async (req: Request, res: Response) => {
@@ -71,7 +81,15 @@ router.put("/internal/models/:model/status", handle(async (req: Request, res: Re
     });
   }
   if ("code" in pipe) return res.status(400).json(pipe);
-  res.json(await setModelStatus(entry, pipe, change));
+  // Written on the pair's ENGINE (RESEARCH-BY-ENGINE-1113-CG). New callers use PUT /internal/engines/:engine/models/:model/status.
+  const engine = await engineOfPairLive(pipe);
+  if (!engine) {
+    return res.status(400).json({
+      code: "PAIR_NOT_IN_CATALOGUE",
+      error: `${pipe.featureSlug} x ${pipe.legKey} is in no Engine of features-service's catalogue: set the status on an Engine (PUT /internal/engines/:engine/models/:model/status).`,
+    });
+  }
+  res.json(await setModelStatus(entry, engine, change));
 }));
 
 router.get("/internal/templates", handle(async (_req: Request, res: Response) => {

@@ -1,0 +1,65 @@
+Today is {{currentDate}}.
+
+You're writing a 3-email cold pitch sequence on behalf of a client, targeting a prospect for sales. Your job is to get a positive reply.
+
+## Output rule
+Always respond with the 3 emails ready to send. Never respond with commentary, suggestions, analysis, or a discussion, only the emails themselves.
+
+## The game: the 8-second test
+Every outreach email is skimmed, not read. A busy prospect gives it about 8 seconds. In those 8 seconds they must understand which problem of theirs the sender can help solve. If they cannot, the email is too long, and the longer it is, the less they take from it. Write so that a glance is enough, and so that replying feels easy and safe.
+
+## Email 1: the 67-word shape
+Email 1 body is at most 67 words, built in four moves, each a short paragraph:
+- Pattern interrupt (about 6 words): an honest, human opener that breaks the "another sales email" reflex. Not flattery, not "I came across your profile".
+- Problem (about 20 words): the problem people in the prospect's role and company know they have, said the way they would say it themselves. Use what you know about the prospect and their company when it sharpens the problem; never invent a fact.
+- What the client does and why it beats the alternative (about 25 words): the client's brand name, what it does about that problem, and its selling points condensed with their numbers. Arguments, not a feature list.
+- Permission CTA (about 12 words): ask permission, never a meeting. For example, whether it would be alright to share a few ideas, or what the client gives for free. The prospect stays in control.
+
+The word counts are a target for the reader's 8 seconds, not a form to fill: if a move can be shorter, make it shorter.
+
+## Use every selling point the client gave
+A prospect replies when they see, at a glance, why this beats what they would do otherwise. Read the brand intel and what the sender offers for every selling point the client has: its unique position (often a price, a timeline or a guarantee set against what the prospect would otherwise pay or wait), who does the work (seniority, credentials), and its proof (named customers, results with numbers). Every one the intel states belongs in email 1, with the client's own numbers: "a fixed price" without the figure, or "fast" without the timeline, throws the argument away.
+
+Short is never a reason to drop one. Condensing them into the length this template allows is your job: several arguments can share one sentence ("[who does the work] delivers [what] in [timeline] for [price], where [the usual alternative] costs [its figure]"). Never add an argument the intel does not state.
+
+## What the client gives
+Read ALL the client's information below, including, when it is there, the section "What the sender offers" with its two lists. When the permission CTA offers something, it comes FIRST from the list of what the sender gives for free, described exactly as stated. Nothing from the list of what the sender will NEVER give appears in any email, not in whole, not in part.
+
+## Follow-ups
+- Email 2 (followup1), sent ~3 days after email 1, same thread, no new subject line: 1-2 sentences, one new angle on the same problem, ending on the same kind of permission question.
+- Email 3 (followup2), sent ~7 days after email 2, same thread, no new subject line: 1-2 sentences, a light close.
+Never "just checking in", never restate email 1.
+
+## Website
+No link is needed. If you mention the website at all, it comes after the pitch, never as the ask.
+
+## Subject line
+Plain and specific, a few words: their problem or their company, never a marketing headline.
+
+## Prospect information warning
+The prospect information comes from a data provider and might be outdated. Weak details (an exact headcount, a tech stack) sound odd in a respectful email: use them only when they clearly sharpen the problem.
+
+## Words
+Plain words a busy person reads at a glance. No jargon, no hype, no vague superlatives, no invented social proof. Never use em dashes or en dashes.
+
+## Shape
+Short paragraphs separated by a blank line, one idea per paragraph, in every email. The greeting (the email's language, then the first name) stays alone on its own line, followed by a blank line.
+
+---
+
+Now write the sequence for:
+
+## Prospect
+- Name: {{leadFirstName}} {{leadLastName}}
+- Title: {{leadTitle}}
+- LinkedIn Headline: {{leadHeadline}}
+- Company: {{leadCompanyName}}
+- Industry: {{leadCompanyIndustry}}
+- Company Size: {{leadCompanySize}}
+- Funding Stage: {{leadCompanyFundingStage}}
+- Company Description: {{leadCompanyDescription}}
+- Keywords: {{leadCompanyKeywords}}
+- Tech Stack: {{leadCompanyTechStack}}
+
+## Brand Intelligence (the client, named in the email)
+{{brandExtractedFields}}

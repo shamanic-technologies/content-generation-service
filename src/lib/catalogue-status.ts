@@ -17,12 +17,13 @@
  * clears it. The one code path that deprecates on its own is a dynasty upgrade: the previous head
  * becomes `deprecated` with reason "Upgraded" (template-dynasties.ts, TPL-DYNASTY-1021-CG3).
  *
- * A writer MODEL's status is stated per PIPE (LLM-STATUS-PER-PIPE-1023, owner 2026-10-23:
- * "Il faut que la deprecation manuelle soit par pipe"): a model unfit for one pipe (too
- * expensive for Lead -> Website visit) stays active on every other. A pipe is
- * (featureSlug, legKey), the identity template dynasties use; any pair is accepted (no
- * pipe list here). A template's status stays global: a template belongs to one dynasty,
- * so to one pipe already.
+ * A writer MODEL's status is stated per ENGINE (RESEARCH-BY-ENGINE-1113-CG, owner 2026-11-13:
+ * Research is keyed by Engine and script; was per (featureSlug, legKey) pair since
+ * LLM-STATUS-PER-PIPE-1023, re-keyed in place by drizzle/0054): a model unfit for one Engine
+ * (too expensive for Website visit) stays active on every other. An Engine = the outcome it
+ * makes, features-service's catalogue key (`engine-catalogue.ts`). The older pair-keyed routes
+ * read and write the pair's Engine. A template's status stays global: a template belongs to
+ * one dynasty, so to one Engine already.
  *
  * Standalone leaf (schemas.ts reads the enum at module-eval).
  */

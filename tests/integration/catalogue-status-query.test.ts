@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../../src/db/index.js";
-import { emailGenerations, modelPipeStatuses, prompts } from "../../src/db/schema.js";
+import { emailGenerations, modelEngineStatuses, prompts } from "../../src/db/schema.js";
 import {
   alignModelDynastyStatuses,
   listModelStatuses,
@@ -21,13 +21,13 @@ const ACTIVATE = { status: "active" as const, reason: null, changedBy: "kevin@di
 // The fixture catalogue's names of two dynasties (tests/fixtures/chat-service-models-2026-10-22.json).
 const KIMI_K2 = ["kimi-k2", "kimi-k2.6", "kimi-flash"];
 const KIMI_K3 = ["kimi-k3", "kimi-pro"];
-const VISIT = { featureSlug: "sales-cold-email-outreach", legKey: "lead_found_to_website_visit" };
-const REPLY = { featureSlug: "sales-cold-email-outreach", legKey: "lead_found_to_conversation" };
+const VISIT = "website_visit";
+const REPLY = "email_sent";
 
 const cleanup = async () => {
   await db.delete(emailGenerations).where(inArray(emailGenerations.promptType, [TYPE, OTHER_TYPE]));
   await db.delete(prompts).where(inArray(prompts.type, [TYPE, OTHER_TYPE]));
-  await db.delete(modelPipeStatuses).where(inArray(modelPipeStatuses.model, [...KIMI_K2, ...KIMI_K3]));
+  await db.delete(modelEngineStatuses).where(inArray(modelEngineStatuses.model, [...KIMI_K2, ...KIMI_K3]));
 };
 
 async function insertGen(promptType: string, subject: string, createdAt: Date) {
@@ -89,33 +89,33 @@ describe("catalogue status (templates + models)", () => {
     expect(await setTemplateStatus(`${TYPE}-missing`, DEPRECATE)).toBeNull();
   });
 
-  it("every model reads active on every pipe until staff changes it, both ways", async () => {
+  it("every model reads active on every Engine until staff changes it, both ways", async () => {
     const initial = (await listModelStatuses()).find((m) => m.model === MODEL)!;
     expect(initial).toEqual({
       model: MODEL, provider: "moonshot", dynasty: "kimi-k2", status: "active", statusChangedAt: null, statusReason: null, statusChangedBy: null,
-      pipe: null, pipeStatuses: [],
+      engine: null, engineStatuses: [],
     });
 
     expect((await setModelStatus(ENTRY, VISIT, DEPRECATE)).statusReason).toBe("Writes one block");
     expect((await listModelStatuses(VISIT)).find((m) => m.model === MODEL)).toMatchObject({
-      status: "deprecated", statusReason: "Writes one block", statusChangedBy: "kevin@distribute.you", pipe: VISIT,
+      status: "deprecated", statusReason: "Writes one block", statusChangedBy: "kevin@distribute.you", engine: VISIT,
     });
     expect((await setModelStatus(ENTRY, VISIT, ACTIVATE)).statusReason).toBeNull();
     expect((await listModelStatuses(VISIT)).find((m) => m.model === MODEL)!.status).toBe("active");
   });
 
-  it("deprecating a model on one pipe leaves it active on every other, and without a pipe", async () => {
+  it("deprecating a model on one Engine leaves it active on every other, and without one", async () => {
     await setModelStatus(ENTRY, VISIT, DEPRECATE);
     expect((await listModelStatuses(VISIT)).find((m) => m.model === MODEL)!.status).toBe("deprecated");
-    expect((await listModelStatuses(REPLY)).find((m) => m.model === MODEL)).toMatchObject({ status: "active", statusReason: null, pipe: REPLY });
+    expect((await listModelStatuses(REPLY)).find((m) => m.model === MODEL)).toMatchObject({ status: "active", statusReason: null, engine: REPLY });
     const noPipe = (await listModelStatuses()).find((m) => m.model === MODEL)!;
-    expect(noPipe).toMatchObject({ status: "active", statusReason: null, pipe: null });
-    expect(noPipe.pipeStatuses).toEqual([
-      expect.objectContaining({ ...VISIT, status: "deprecated", statusReason: "Writes one block", statusChangedBy: "kevin@distribute.you" }),
+    expect(noPipe).toMatchObject({ status: "active", statusReason: null, engine: null });
+    expect(noPipe.engineStatuses).toEqual([
+      expect.objectContaining({ engine: VISIT, status: "deprecated", statusReason: "Writes one block", statusChangedBy: "kevin@distribute.you" }),
     ]);
   });
 
-  it("deprecating one name deprecates every name of its dynasty on that pipe, same reason/author/date; other pipes and dynasties unchanged", async () => {
+  it("deprecating one name deprecates every name of its dynasty on that Engine, same reason/author/date; other Engines and dynasties unchanged", async () => {
     await setModelStatus({ model: "kimi-pro", provider: "moonshot", dynasty: "kimi-k3" }, REPLY, { ...DEPRECATE, reason: "Too expensive" });
     const onReply = (await listModelStatuses(REPLY)).filter((m) => KIMI_K3.includes(m.model));
     expect(onReply.map((m) => m.model).sort()).toEqual([...KIMI_K3].sort());
@@ -123,29 +123,29 @@ describe("catalogue status (templates + models)", () => {
       expect(m).toMatchObject({ status: "deprecated", statusReason: "Too expensive", statusChangedBy: "kevin@distribute.you" });
     }
     expect(new Set(onReply.map((m) => m.statusChangedAt)).size).toBe(1);
-    const stored = await db.select().from(modelPipeStatuses).where(inArray(modelPipeStatuses.model, KIMI_K3));
+    const stored = await db.select().from(modelEngineStatuses).where(inArray(modelEngineStatuses.model, KIMI_K3));
     expect(stored.map((r) => r.model).sort()).toEqual([...KIMI_K3].sort());
 
     expect((await listModelStatuses(VISIT)).filter((m) => KIMI_K3.includes(m.model)).every((m) => m.status === "active")).toBe(true);
     expect((await listModelStatuses(REPLY)).filter((m) => KIMI_K2.includes(m.model)).every((m) => m.status === "active")).toBe(true);
   });
 
-  it("re-activating any one name restores the whole dynasty on that pipe", async () => {
+  it("re-activating any one name restores the whole dynasty on that Engine", async () => {
     await setModelStatus({ model: "kimi-pro", provider: "moonshot", dynasty: "kimi-k3" }, REPLY, DEPRECATE);
     await setModelStatus({ model: "kimi-k3", provider: "moonshot", dynasty: "kimi-k3" }, REPLY, ACTIVATE);
     const onReply = (await listModelStatuses(REPLY)).filter((m) => KIMI_K3.includes(m.model));
     expect(onReply.every((m) => m.status === "active" && m.statusReason === null)).toBe(true);
-    const stored = await db.select().from(modelPipeStatuses).where(inArray(modelPipeStatuses.model, KIMI_K3));
+    const stored = await db.select().from(modelEngineStatuses).where(inArray(modelEngineStatuses.model, KIMI_K3));
     expect(stored.every((r) => r.status === "active")).toBe(true);
   });
 
   it("a split dynasty (one name deprecated, a sibling with no row) serves and is aligned to one status", async () => {
     const at = new Date("2026-10-24T10:00:00Z");
-    await db.insert(modelPipeStatuses).values({ model: "kimi-pro", ...REPLY, status: "deprecated", statusReason: "Too expensive", statusChangedBy: "kevin@distribute.you", statusChangedAt: at });
+    await db.insert(modelEngineStatuses).values({ model: "kimi-pro", engine: REPLY, status: "deprecated", statusReason: "Too expensive", statusChangedBy: "kevin@distribute.you", statusChangedAt: at });
     expect((await listModelStatuses(REPLY)).find((m) => m.model === "kimi-k3")!.status).toBe("deprecated");
     expect(await alignModelDynastyStatuses()).toBeGreaterThanOrEqual(1);
-    const [k3] = await db.select().from(modelPipeStatuses).where(eq(modelPipeStatuses.model, "kimi-k3"));
-    expect(k3).toMatchObject({ status: "deprecated", statusReason: "Too expensive", statusChangedBy: "kevin@distribute.you", ...REPLY });
+    const [k3] = await db.select().from(modelEngineStatuses).where(eq(modelEngineStatuses.model, "kimi-k3"));
+    expect(k3).toMatchObject({ status: "deprecated", statusReason: "Too expensive", statusChangedBy: "kevin@distribute.you", engine: REPLY });
     expect(k3.statusChangedAt.toISOString()).toBe(at.toISOString());
   });
 
