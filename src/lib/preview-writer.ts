@@ -58,14 +58,14 @@ export interface PreviewScript {
  * The scripts the preview may run, as features-service kept them. Throws a named refusal when the strategy keeps none:
  * the preview is never written by a script the strategy rules out.
  */
-export function keptScripts(answer: ScriptStrategyAnswer, strategyId?: string): PreviewScript[] {
+export function keptScripts(answer: ScriptStrategyAnswer, strategyId?: string, outcome: string = PREVIEW_ENGINE_OUTCOME): PreviewScript[] {
   const kept = answer.scripts.filter((s) => s.kept && answer.keptDynasties.includes(s.dynasty)).map((s) => ({ dynasty: s.dynasty, version: s.version }));
   if (kept.length === 0) {
     const why = answer.scripts.map((s) => `${s.dynasty}: ${s.reason ?? "not kept"}`).join("; ");
     const scope = strategyId ? `strategy ${strategyId}` : "no strategy";
     throw new PreviewWriterError(
       422,
-      `Under ${scope}, the email Engine (${PREVIEW_ENGINE_OUTCOME}) keeps no script to write with${why ? ` (${why})` : " (it has no runnable script)"}, so no preview can be written`,
+      `Under ${scope}, the ${outcome === PREVIEW_ENGINE_OUTCOME ? "email" : outcome} Engine (${outcome}) keeps no script to write with${why ? ` (${why})` : " (it has no runnable script)"}, so no preview can be written`,
       "NO_SCRIPT_KEPT",
     );
   }
@@ -161,11 +161,58 @@ export function writerFromTactics(tactics: Record<string, unknown> | null, scrip
   return { templateDynastySlug: template, model };
 }
 
+/**
+ * ONE-WRITER-N-MODELS-1116 (owner 2026-11-16: « le choix du model est orthogonal / indépendant du script »): a cold
+ * email SENDER may name no template and no LLM. It then asks a WRITER (Engine `message_written`, one script per way of
+ * writing, tactic `template`) handing it `generation_request`, and the writer asks the LLM completion Engine
+ * (`llm_completion`, one script per model, tactic `llm`) handing it nothing. The Rating picks each for the script that
+ * asks (`askedBy`). A sender still stating its template or LLM keeps today's reading (`writerFromTactics`).
+ */
+export const PREVIEW_COMPLETION_OUTCOME = "llm_completion";
+
+/** What a sender hands the writer it asks (its `ctx.ask` units): the Rating picks among writers reading it. */
+export const SENDER_HANDS_WRITER = ["generation_request"] as const;
+
+/** The `askedBy` the Rating keys its note on: the asking script, `<outcome>/<dynasty>`. */
+export function askedByOf(outcome: string, script: PreviewScript): string {
+  return `${outcome}/${script.dynasty}`;
+}
+
+/** Whether the picked sender still states its template or LLM for its writing call (before the switch). */
+export function senderStatesWriter(tactics: Record<string, unknown> | null): boolean {
+  const template = placedTactic(tactics, "template", "templates", PREVIEW_WRITER_PLACE);
+  const llm = placedTactic(tactics, "llm", "llms", PREVIEW_WRITER_PLACE);
+  return (typeof template === "string" && template.trim() !== "") || (llm !== undefined && llm !== null);
+}
+
+/** The template dynasty a picked WRITER (one way of writing) states: tactic `template`. None = a named refusal. */
+export function templateOfWriter(tactics: Record<string, unknown> | null, script: PreviewScript): string {
+  const template = placedTactic(tactics, "template", "templates", PREVIEW_WRITER_PLACE);
+  if (typeof template !== "string" || !template.trim()) {
+    throw new PreviewWriterError(422, `The Rating picked the writer ${PREVIEW_ENGINE_OUTCOME}/${script.dynasty} v${script.version}, which states no template, so no preview can be written`, "SCRIPT_STATES_NO_TEMPLATE");
+  }
+  return template;
+}
+
+/** The LLM a picked completion script (one model) states: tactic `llm.model`. None = a named refusal, never a default. */
+export function modelOfCompletion(tactics: Record<string, unknown> | null, script: PreviewScript): ChatModel {
+  const llm = tactics?.llm as { model?: unknown } | undefined | null;
+  const model = llm && typeof llm === "object" ? llm.model : undefined;
+  if (typeof model !== "string" || !model.trim()) {
+    throw new PreviewWriterError(422, `The Rating picked the completion script ${PREVIEW_COMPLETION_OUTCOME}/${script.dynasty} v${script.version}, which states no LLM, so no preview can be written`, "SCRIPT_STATES_NO_LLM");
+  }
+  return model;
+}
+
 /** Everything that writes one preview: the Engine's script, the picked template (dynasty head) and LLM. */
 export interface PreviewWriterPlan {
   script: PreviewScript;
-  /** The cold email script the Rating picked, whose tactics name the template + LLM. */
+  /** The cold email script the Rating picked: its tactics name the template + LLM, or it asks a writer that does. */
   emailScript: PreviewScript & { engine: string };
+  /** The way of writing the Rating picked for that sender, when the sender names no template (its tactic `template`). */
+  writerScript?: PreviewScript;
+  /** The completion script (one model) the Rating picked for that writer, when the sender names no LLM. */
+  completionScript?: PreviewScript;
   templateDynastySlug: string;
   promptType: string;
   model: ChatModel;
