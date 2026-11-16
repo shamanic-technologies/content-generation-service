@@ -2481,18 +2481,12 @@
         ],
         "description": "A model's status is set on ONE pipe (featureSlug x legKey); every other pipe is untouched. Missing pipe → 400 `PIPE_REQUIRED`."
       },
-      "ModelPipeStatus": {
+      "ModelEngineStatus": {
         "type": "object",
         "properties": {
-          "featureSlug": {
+          "engine": {
             "type": "string",
-            "minLength": 1,
-            "description": "The pipe's feature slug (channel), e.g. `sales-cold-email-outreach`."
-          },
-          "legKey": {
-            "type": "string",
-            "minLength": 1,
-            "description": "The pipe's leg, e.g. `lead_found_to_website_visit`."
+            "description": "The Engine (the outcome it makes, features-service's catalogue key, e.g. `email_sent`)."
           },
           "status": {
             "type": "string",
@@ -2519,8 +2513,7 @@
           }
         },
         "required": [
-          "featureSlug",
-          "legKey",
+          "engine",
           "status",
           "statusChangedAt",
           "statusReason",
@@ -2549,7 +2542,7 @@
               "active",
               "deprecated"
             ],
-            "description": "Status on `pipe`. Asked without a pipe: always `active` (a model is never retired fleet-wide; read `pipeStatuses` or ask with a pipe)."
+            "description": "Status on `engine`. Asked without one: always `active` (a model is never retired fleet-wide; read `engineStatuses`)."
           },
           "statusChangedAt": {
             "type": "string",
@@ -2566,33 +2559,17 @@
             "nullable": true,
             "description": "Staff email of who last changed the status. Null = unknown (never changed, or changed before this was recorded)."
           },
-          "pipe": {
-            "type": "object",
+          "engine": {
+            "type": "string",
             "nullable": true,
-            "properties": {
-              "featureSlug": {
-                "type": "string",
-                "minLength": 1,
-                "description": "The pipe's feature slug (channel), e.g. `sales-cold-email-outreach`."
-              },
-              "legKey": {
-                "type": "string",
-                "minLength": 1,
-                "description": "The pipe's leg, e.g. `lead_found_to_website_visit`."
-              }
-            },
-            "required": [
-              "featureSlug",
-              "legKey"
-            ],
-            "description": "The pipe the top-level status is for; null when asked without one."
+            "description": "The Engine the top-level status is for (the asked pair's Engine); null when asked without one or the pair is in no Engine."
           },
-          "pipeStatuses": {
+          "engineStatuses": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ModelPipeStatus"
+              "$ref": "#/components/schemas/ModelEngineStatus"
             },
-            "description": "Every pipe where staff stated this model's status (no entry = active on that pipe), oldest change first."
+            "description": "Every Engine where staff stated this model's status (no entry = active there), oldest change first."
           }
         },
         "required": [
@@ -2603,8 +2580,8 @@
           "statusChangedAt",
           "statusReason",
           "statusChangedBy",
-          "pipe",
-          "pipeStatuses"
+          "engine",
+          "engineStatuses"
         ]
       },
       "ModelStatusListResponse": {
@@ -2752,6 +2729,234 @@
         },
         "required": [
           "type",
+          "outputs"
+        ]
+      },
+      "EngineModelStatus": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "A name POST /generate accepts (dynasty slug, exact model id or legacy alias), as chat-service serves it."
+          },
+          "provider": {
+            "type": "string",
+            "description": "Provider the name runs on, read from chat-service's catalogue."
+          },
+          "dynasty": {
+            "type": "string",
+            "nullable": true,
+            "description": "LLM dynasty slug of the model the name runs, from chat-service; null while chat-service serves none."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "deprecated"
+            ],
+            "description": "Status on this Engine: may this LLM write for it. No stated change = `active`. Every name of one LLM dynasty shares it."
+          },
+          "statusChangedAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "When staff last changed the status (ISO 8601). Null = never changed (active since creation)."
+          },
+          "statusReason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why it is deprecated, in plain words, as staff wrote it. `Not specified` = deprecated before a reason was required. Null when active."
+          },
+          "statusChangedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Staff email of who last changed the status. Null = unknown (never changed, or changed before this was recorded)."
+          }
+        },
+        "required": [
+          "model",
+          "provider",
+          "dynasty",
+          "status",
+          "statusChangedAt",
+          "statusReason",
+          "statusChangedBy"
+        ]
+      },
+      "EngineModelListResponse": {
+        "type": "object",
+        "properties": {
+          "engine": {
+            "type": "string",
+            "description": "The Engine asked for (e.g. `email_sent`)."
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EngineModelStatus"
+            },
+            "description": "Every name POST /generate accepts (chat-service's catalogue, read live), each with its status on this Engine."
+          }
+        },
+        "required": [
+          "engine",
+          "models"
+        ]
+      },
+      "SetEngineModelStatusResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/EngineModelStatus"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "engine": {
+                "type": "string",
+                "description": "The Engine the status was set on."
+              }
+            },
+            "required": [
+              "engine"
+            ]
+          }
+        ]
+      },
+      "EngineModelOutputsResponse": {
+        "type": "object",
+        "properties": {
+          "engine": {
+            "type": "string",
+            "description": "The Engine asked for (e.g. `email_sent`)."
+          },
+          "slug": {
+            "type": "string",
+            "description": "The LLM dynasty slug asked for (chat-service's, e.g. `gemini-pro`)."
+          },
+          "name": {
+            "type": "string",
+            "description": "The dynasty's name, as chat-service serves it."
+          },
+          "modelIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every concrete model id of the dynasty, read from chat-service, head first."
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "generationId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "This service's generation id."
+                },
+                "createdAt": {
+                  "type": "string",
+                  "description": "When it was written (ISO 8601)."
+                },
+                "medium": {
+                  "type": "string",
+                  "enum": [
+                    "email",
+                    "whatsapp",
+                    "threads"
+                  ],
+                  "description": "Which kind of message."
+                },
+                "promptType": {
+                  "type": "string",
+                  "description": "The exact template version that wrote it."
+                },
+                "templateDynasty": {
+                  "type": "object",
+                  "properties": {
+                    "slug": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string",
+                      "description": "The dynasty's name, as on the Template pages."
+                    },
+                    "position": {
+                      "type": "integer",
+                      "description": "The version's position in the dynasty (1 = first)."
+                    }
+                  },
+                  "required": [
+                    "slug",
+                    "name",
+                    "position"
+                  ],
+                  "description": "The template dynasty of `promptType`: it writes for the Engine asked for."
+                },
+                "model": {
+                  "type": "string",
+                  "description": "The concrete model id (the dynasty version) that wrote it."
+                },
+                "tokensInput": {
+                  "type": "integer",
+                  "nullable": true,
+                  "description": "Input tokens of the completion(s) that wrote it."
+                },
+                "tokensOutput": {
+                  "type": "integer",
+                  "nullable": true,
+                  "description": "Output tokens of the completion(s) that wrote it."
+                },
+                "subject": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Email subject or Threads topic; null for WhatsApp."
+                },
+                "emails": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "step": {
+                        "type": "integer"
+                      },
+                      "bodyText": {
+                        "type": "string"
+                      },
+                      "daysSinceLastStep": {
+                        "type": "number",
+                        "nullable": true
+                      }
+                    },
+                    "required": [
+                      "step",
+                      "bodyText",
+                      "daysSinceLastStep"
+                    ]
+                  },
+                  "description": "The text: each email of the stored sequence, the WhatsApp bubbles as one entry, or the Threads post then its replies."
+                }
+              },
+              "required": [
+                "generationId",
+                "createdAt",
+                "medium",
+                "promptType",
+                "templateDynasty",
+                "model",
+                "tokensInput",
+                "tokensOutput",
+                "subject",
+                "emails"
+              ]
+            },
+            "description": "Newest first, every client and template of the Engine. Empty when the LLM never wrote for it."
+          }
+        },
+        "required": [
+          "engine",
+          "slug",
+          "name",
+          "modelIds",
           "outputs"
         ]
       },
@@ -3421,7 +3626,8 @@
                   "type": "string",
                   "enum": [
                     "email",
-                    "whatsapp"
+                    "whatsapp",
+                    "threads"
                   ],
                   "description": "Which kind of message."
                 },
@@ -6411,13 +6617,243 @@
         }
       }
     },
+    "/internal/engines/{engine}/models": {
+      "get": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Every writer model with its staff status on ONE Engine",
+        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. RESEARCH-BY-ENGINE-1113-CG. `status` = may this LLM write for this Engine (staff Research > an Engine > LLMs).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The Engine: the outcome it makes, features-service's catalogue key (e.g. `email_sent`)."
+            },
+            "required": true,
+            "description": "The Engine: the outcome it makes, features-service's catalogue key (e.g. `email_sent`).",
+            "name": "engine",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every model on the Engine",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineModelListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such Engine in features-service's catalogue (`UNKNOWN_ENGINE`), or no such model / LLM dynasty",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "features-service's Engine catalogue (`ENGINE_CATALOGUE_UNAVAILABLE`) or chat-service's models (`MODEL_CATALOGUE_UNAVAILABLE`) unreadable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/engines/{engine}/models/{model}/status": {
+      "put": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Set a writer model's staff status on ONE Engine (active or deprecated)",
+        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. RESEARCH-BY-ENGINE-1113-CG. Written for every name of the model's LLM dynasty, on that Engine only; every other Engine untouched. POST /generate keeps accepting the name.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The Engine: the outcome it makes, features-service's catalogue key (e.g. `email_sent`)."
+            },
+            "required": true,
+            "description": "The Engine: the outcome it makes, features-service's catalogue key (e.g. `email_sent`).",
+            "name": "engine",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Model name, e.g. `claude-sonnet`"
+            },
+            "required": true,
+            "description": "Model name, e.g. `claude-sonnet`",
+            "name": "model",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Staff email of who changes the status, set by the staff gateway from the identity it verified. REQUIRED to deprecate (400 `DEPRECATED_BY_REQUIRED`); recorded when present on a re-activation."
+            },
+            "required": false,
+            "description": "Staff email of who changes the status, set by the staff gateway from the identity it verified. REQUIRED to deprecate (400 `DEPRECATED_BY_REQUIRED`); recorded when present on a re-activation.",
+            "name": "x-staff-email",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetCatalogueStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Status set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetEngineModelStatusResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or unknown status, a deprecation without a reason (`DEPRECATION_REASON_REQUIRED`) or without who (`DEPRECATED_BY_REQUIRED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such Engine in features-service's catalogue (`UNKNOWN_ENGINE`), or no such model / LLM dynasty",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "features-service's Engine catalogue (`ENGINE_CATALOGUE_UNAVAILABLE`) or chat-service's models (`MODEL_CATALOGUE_UNAVAILABLE`) unreadable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/engines/{engine}/model-dynasties/{slug}/outputs": {
+      "get": {
+        "tags": [
+          "Model dynasties"
+        ],
+        "summary": "The last messages one LLM dynasty (every version) wrote for ONE Engine, newest first",
+        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. RESEARCH-BY-ENGINE-1113-CG. Every client and template: a message is on the Engine of the template dynasty its template version belongs to (features-service's catalogue places each). Email, WhatsApp (sent) and Threads (not a dry run). Never an org, brand, campaign, audience or lead.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The Engine: the outcome it makes, features-service's catalogue key (e.g. `email_sent`)."
+            },
+            "required": true,
+            "description": "The Engine: the outcome it makes, features-service's catalogue key (e.g. `email_sent`).",
+            "name": "engine",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "LLM dynasty slug, e.g. `gpt-sol`"
+            },
+            "required": true,
+            "description": "LLM dynasty slug, e.g. `gpt-sol`",
+            "name": "slug",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "description": "How many outputs, 1..20. Omitted = 5."
+            },
+            "required": false,
+            "description": "How many outputs, 1..20. Omitted = 5.",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Outputs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EngineModelOutputsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such Engine in features-service's catalogue (`UNKNOWN_ENGINE`), or no such model / LLM dynasty",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "features-service's Engine catalogue (`ENGINE_CATALOGUE_UNAVAILABLE`) or chat-service's models (`MODEL_CATALOGUE_UNAVAILABLE`) unreadable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/models": {
       "get": {
         "tags": [
           "Internal"
         ],
         "summary": "Every writer model alias with its staff status, per pipe",
-        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. A model's status is per pipe (featureSlug x legKey). With `featureSlug` + `legKey`, `status` = the model's status on that pipe (is it usable there?). Without them, `status` is `active` and `pipeStatuses` lists every pipe it was deprecated or re-activated on.",
+        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. Older pair-keyed read: a model's status is per ENGINE (RESEARCH-BY-ENGINE-1113-CG; new callers read GET /internal/engines/{engine}/models). With `featureSlug` + `legKey`, `status` = the model's status on that pair's Engine (a pair in no Engine: `active`). Without them, `status` is `active` and `engineStatuses` lists every Engine it was deprecated or re-activated on.",
         "parameters": [
           {
             "schema": {
@@ -6469,8 +6905,8 @@
         "tags": [
           "Internal"
         ],
-        "summary": "Set a writer model's staff status on ONE pipe (active or deprecated)",
-        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. Changes the status on that pipe only, every other pipe untouched; POST /generate keeps accepting the alias.",
+        "summary": "Set a writer model's staff status on the Engine of one pair (older route)",
+        "description": "Staff/service route: API key only, no identity headers. Cross-org catalogue object. Writes the status on the pair's ENGINE (RESEARCH-BY-ENGINE-1113-CG); new callers use PUT /internal/engines/{engine}/models/{model}/status. A pair in no Engine → 400 `PAIR_NOT_IN_CATALOGUE`.",
         "parameters": [
           {
             "schema": {

@@ -290,21 +290,21 @@ export const prompts = pgTable(
   ]
 );
 
-// Staff catalogue status of a writer model name (as chat-service accepts it, chat-model-catalogue.ts) on ONE pipe
-// (feature_slug x leg_key, LLM-STATUS-PER-PIPE-1023). A row exists only once staff changed it on that pipe: no row =
-// `active` there. Cross-org. There is no global model status.
-export const modelPipeStatuses = pgTable(
-  "model_pipe_statuses",
+// Staff catalogue status of a writer model name (as chat-service accepts it, chat-model-catalogue.ts) on ONE Engine
+// (the outcome it makes, features-service's catalogue key, e.g. `email_sent`; RESEARCH-BY-ENGINE-1113-CG). A row exists
+// only once staff changed it on that Engine: no row = `active` there. Cross-org. There is no global model status.
+// Re-keyed in place from the per-(channel x step) rows by drizzle/0054.
+export const modelEngineStatuses = pgTable(
+  "model_engine_statuses",
   {
     model: text("model").notNull(),
-    featureSlug: text("feature_slug").notNull(),
-    legKey: text("leg_key").notNull(),
+    engine: text("engine").notNull(),
     status: text("status").$type<"active" | "deprecated">().notNull(),
     statusChangedAt: timestamp("status_changed_at", { withTimezone: true }).notNull().defaultNow(),
     statusReason: text("status_reason"),
     statusChangedBy: text("status_changed_by"),
   },
-  (table) => [primaryKey({ name: "model_pipe_statuses_pk", columns: [table.model, table.featureSlug, table.legKey] })]
+  (table) => [primaryKey({ name: "model_engine_statuses_pk", columns: [table.model, table.engine] })]
 );
 
 // Brand/offer neutrality verdicts (src/lib/template-neutrality*.ts). One row per

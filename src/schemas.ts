@@ -2087,16 +2087,16 @@ const SetModelStatusRequestSchema = registry.register(
     .openapi("SetModelStatusRequest")
 );
 
-const ModelPipeStatusSchema = registry.register(
-  "ModelPipeStatus",
+const ModelEngineStatusSchema = registry.register(
+  "ModelEngineStatus",
   z
     .object({
-      ...PipeFields,
+      engine: z.string().describe("The Engine (the outcome it makes, features-service's catalogue key, e.g. `email_sent`)."),
       status: CatalogueStatusField,
       statusChangedAt: StatusChangedAtField,
       ...StatusReasonFields,
     })
-    .openapi("ModelPipeStatus")
+    .openapi("ModelEngineStatus")
 );
 
 const ModelStatusEntrySchema = registry.register(
@@ -2107,14 +2107,14 @@ const ModelStatusEntrySchema = registry.register(
       provider: z.string().describe("Provider the name runs on, read from chat-service's catalogue (never sent by a caller)."),
       dynasty: z.string().nullable().describe("LLM dynasty slug of the model the name runs, from chat-service; null while chat-service serves none."),
       status: CatalogueStatusField.describe(
-        "Status on `pipe`. Asked without a pipe: always `active` (a model is never retired fleet-wide; read `pipeStatuses` or ask with a pipe)."
+        "Status on `engine`. Asked without one: always `active` (a model is never retired fleet-wide; read `engineStatuses`)."
       ),
       statusChangedAt: StatusChangedAtField,
       ...StatusReasonFields,
-      pipe: z.object(PipeFields).nullable().describe("The pipe the top-level status is for; null when asked without one."),
-      pipeStatuses: z
-        .array(ModelPipeStatusSchema)
-        .describe("Every pipe where staff stated this model's status (no entry = active on that pipe), oldest change first."),
+      engine: z.string().nullable().describe("The Engine the top-level status is for (the asked pair's Engine); null when asked without one or the pair is in no Engine."),
+      engineStatuses: z
+        .array(ModelEngineStatusSchema)
+        .describe("Every Engine where staff stated this model's status (no entry = active there), oldest change first."),
     })
     .openapi("ModelStatusEntry")
 );
@@ -2193,14 +2193,142 @@ const staffEmailHeader = z.object({
     ),
 });
 
+export const EngineModelOutputsQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(20).optional().describe("How many outputs, 1..20. Omitted = 5."),
+  })
+  .openapi("EngineModelOutputsQuery");
+
+const EngineModelStatusSchema = registry.register(
+  "EngineModelStatus",
+  z
+    .object({
+      model: z.string().describe("A name POST /generate accepts (dynasty slug, exact model id or legacy alias), as chat-service serves it."),
+      provider: z.string().describe("Provider the name runs on, read from chat-service's catalogue."),
+      dynasty: z.string().nullable().describe("LLM dynasty slug of the model the name runs, from chat-service; null while chat-service serves none."),
+      status: CatalogueStatusField.describe("Status on this Engine: may this LLM write for it. No stated change = `active`. Every name of one LLM dynasty shares it."),
+      statusChangedAt: StatusChangedAtField,
+      ...StatusReasonFields,
+    })
+    .openapi("EngineModelStatus")
+);
+
+const EngineModelListResponseSchema = registry.register(
+  "EngineModelListResponse",
+  z
+    .object({
+      engine: z.string().describe("The Engine asked for (e.g. `email_sent`)."),
+      models: z.array(EngineModelStatusSchema).describe("Every name POST /generate accepts (chat-service's catalogue, read live), each with its status on this Engine."),
+    })
+    .openapi("EngineModelListResponse")
+);
+
+const SetEngineModelStatusResponseSchema = registry.register(
+  "SetEngineModelStatusResponse",
+  EngineModelStatusSchema.extend({ engine: z.string().describe("The Engine the status was set on.") }).openapi("SetEngineModelStatusResponse")
+);
+
+const EngineModelOutputsResponseSchema = registry.register(
+  "EngineModelOutputsResponse",
+  z
+    .object({
+      engine: z.string().describe("The Engine asked for (e.g. `email_sent`)."),
+      slug: z.string().describe("The LLM dynasty slug asked for (chat-service's, e.g. `gemini-pro`)."),
+      name: z.string().describe("The dynasty's name, as chat-service serves it."),
+      modelIds: z.array(z.string()).describe("Every concrete model id of the dynasty, read from chat-service, head first."),
+      outputs: z
+        .array(
+          z.object({
+            generationId: z.string().uuid().describe("This service's generation id."),
+            createdAt: z.string().describe("When it was written (ISO 8601)."),
+            medium: z.enum(["email", "whatsapp", "threads"]).describe("Which kind of message."),
+            promptType: z.string().describe("The exact template version that wrote it."),
+            templateDynasty: z
+              .object({
+                slug: z.string(),
+                name: z.string().describe("The dynasty's name, as on the Template pages."),
+                position: z.number().int().describe("The version's position in the dynasty (1 = first)."),
+              })
+              .describe("The template dynasty of `promptType`: it writes for the Engine asked for."),
+            model: z.string().describe("The concrete model id (the dynasty version) that wrote it."),
+            tokensInput: z.number().int().nullable().describe("Input tokens of the completion(s) that wrote it."),
+            tokensOutput: z.number().int().nullable().describe("Output tokens of the completion(s) that wrote it."),
+            subject: z.string().nullable().describe("Email subject or Threads topic; null for WhatsApp."),
+            emails: z
+              .array(z.object({ step: z.number().int(), bodyText: z.string(), daysSinceLastStep: z.number().nullable() }))
+              .describe("The text: each email of the stored sequence, the WhatsApp bubbles as one entry, or the Threads post then its replies."),
+          })
+        )
+        .describe("Newest first, every client and template of the Engine. Empty when the LLM never wrote for it."),
+    })
+    .openapi("EngineModelOutputsResponse")
+);
+
+const EngineParam = z.string().describe("The Engine: the outcome it makes, features-service's catalogue key (e.g. `email_sent`).");
+const engineErrors = {
+  404: { description: "No such Engine in features-service's catalogue (`UNKNOWN_ENGINE`), or no such model / LLM dynasty", content: { "application/json": { schema: ErrorResponseSchema } } },
+  502: { description: "features-service's Engine catalogue (`ENGINE_CATALOGUE_UNAVAILABLE`) or chat-service's models (`MODEL_CATALOGUE_UNAVAILABLE`) unreadable", content: { "application/json": { schema: ErrorResponseSchema } } },
+};
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/engines/{engine}/models",
+  tags: ["Internal"],
+  summary: "Every writer model with its staff status on ONE Engine",
+  description: `${staffNote} RESEARCH-BY-ENGINE-1113-CG. \`status\` = may this LLM write for this Engine (staff Research > an Engine > LLMs).`,
+  request: { params: z.object({ engine: EngineParam }) },
+  responses: {
+    200: { description: "Every model on the Engine", content: { "application/json": { schema: EngineModelListResponseSchema } } },
+    ...engineErrors,
+  },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/internal/engines/{engine}/models/{model}/status",
+  tags: ["Internal"],
+  summary: "Set a writer model's staff status on ONE Engine (active or deprecated)",
+  description:
+    `${staffNote} RESEARCH-BY-ENGINE-1113-CG. Written for every name of the model's LLM dynasty, on that Engine only; every other Engine untouched. ` +
+    "POST /generate keeps accepting the name.",
+  request: {
+    params: z.object({ engine: EngineParam, model: z.string().describe("Model name, e.g. `claude-sonnet`") }),
+    headers: staffEmailHeader,
+    body: { content: { "application/json": { schema: SetCatalogueStatusRequestSchema } } },
+  },
+  responses: {
+    200: { description: "Status set", content: { "application/json": { schema: SetEngineModelStatusResponseSchema } } },
+    400: { description: "Missing or unknown status, a deprecation without a reason (`DEPRECATION_REASON_REQUIRED`) or without who (`DEPRECATED_BY_REQUIRED`)", content: { "application/json": { schema: ErrorResponseSchema } } },
+    ...engineErrors,
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/internal/engines/{engine}/model-dynasties/{slug}/outputs",
+  tags: ["Model dynasties"],
+  summary: "The last messages one LLM dynasty (every version) wrote for ONE Engine, newest first",
+  description:
+    `${staffNote} RESEARCH-BY-ENGINE-1113-CG. Every client and template: a message is on the Engine of the template dynasty its template ` +
+    "version belongs to (features-service's catalogue places each). Email, WhatsApp (sent) and Threads (not a dry run). " +
+    "Never an org, brand, campaign, audience or lead.",
+  request: { params: z.object({ engine: EngineParam, slug: z.string().describe("LLM dynasty slug, e.g. `gpt-sol`") }), query: EngineModelOutputsQuerySchema },
+  responses: {
+    200: { description: "Outputs", content: { "application/json": { schema: EngineModelOutputsResponseSchema } } },
+    400: { description: "Bad limit", content: { "application/json": { schema: ErrorResponseSchema } } },
+    ...engineErrors,
+  },
+});
+
 registry.registerPath({
   method: "get",
   path: "/internal/models",
   tags: ["Internal"],
   summary: "Every writer model alias with its staff status, per pipe",
   description:
-    `${staffNote} A model's status is per pipe (featureSlug x legKey). With \`featureSlug\` + \`legKey\`, \`status\` = the model's status on that pipe ` +
-    "(is it usable there?). Without them, `status` is `active` and `pipeStatuses` lists every pipe it was deprecated or re-activated on.",
+    `${staffNote} Older pair-keyed read: a model's status is per ENGINE (RESEARCH-BY-ENGINE-1113-CG; new callers read ` +
+    "GET /internal/engines/{engine}/models). With `featureSlug` + `legKey`, `status` = the model's status on that pair's Engine " +
+    "(a pair in no Engine: `active`). Without them, `status` is `active` and `engineStatuses` lists every Engine it was deprecated or re-activated on.",
   request: {
     query: z.object({
       featureSlug: z.string().optional().describe("With `legKey`: the pipe to read the status on."),
@@ -2217,8 +2345,8 @@ registry.registerPath({
   method: "put",
   path: "/internal/models/{model}/status",
   tags: ["Internal"],
-  summary: "Set a writer model's staff status on ONE pipe (active or deprecated)",
-  description: `${staffNote} Changes the status on that pipe only, every other pipe untouched; POST /generate keeps accepting the alias.`,
+  summary: "Set a writer model's staff status on the Engine of one pair (older route)",
+  description: `${staffNote} Writes the status on the pair's ENGINE (RESEARCH-BY-ENGINE-1113-CG); new callers use PUT /internal/engines/{engine}/models/{model}/status. A pair in no Engine → 400 \`PAIR_NOT_IN_CATALOGUE\`.`,
   request: {
     params: z.object({ model: z.string().describe("Model alias, e.g. `glm-pro`") }),
     headers: staffEmailHeader,
@@ -2536,7 +2664,7 @@ const ModelDynastyOutputsResponseSchema = registry.register(
       outputs: z
         .array(
           TemplateOutputSchema.extend({
-            channel: z.enum(["email", "whatsapp"]).describe("Which kind of message."),
+            channel: z.enum(["email", "whatsapp", "threads"]).describe("Which kind of message."),
             promptType: z.string().describe("The exact template version that wrote it."),
             templateDynasty: z
               .object({
