@@ -144,4 +144,72 @@ describe("POST /generate-thread", () => {
     await request(await app()).post("/generate-thread").send(body()).expect(200);
     expect(JSON.parse(fetchMock.mock.calls[1][1].body).systemPrompt).not.toContain("The campaign's BRIEF");
   });
+
+  describe("a script that asks its model (ONE-WRITER-N-MODELS-1116-CG-THREAD-WA)", () => {
+    const answer = { content: "", json: { subject: "s", post: "A post — short.", replies: ["r1", ""] }, tokensInput: 42, tokensOutput: 7, model: "gemini-3-flash" };
+
+    it("/request answers the exact /complete body the writer sends, minus the LLM; spends and stores nothing", async () => {
+      const { model: _m, ...noModel } = body();
+      const res = await request(await app()).post("/generate-thread/request").send(noModel).expect(200);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(mockValues).not.toHaveBeenCalled();
+      expect(Object.keys(res.body.request)).toEqual(["message", "systemPrompt", "responseFormat", "responseSchema", "strictResponseSchema", "maxTokens"]);
+      expect(res.body.request.responseSchema.additionalProperties).toBeUndefined();
+      expect(res.body.request.strictResponseSchema.additionalProperties).toBe(false);
+
+      // Byte-equal to what the model path sends (Anthropic gets the strict schema).
+      fetchMock.mockResolvedValue(completion({ subject: "s", post: "p", replies: [] }));
+      await request(await app()).post("/generate-thread").send(body()).expect(200);
+      const sent = JSON.parse(fetchMock.mock.calls[0][1].body);
+      const { strictResponseSchema, ...rest } = res.body.request;
+      expect(sent).toEqual({ ...rest, responseSchema: strictResponseSchema, provider: "anthropic", model: "claude-opus" });
+    });
+
+    it("/request 400 VARIABLES_MISSING, 404 TEMPLATE_NOT_FOUND", async () => {
+      await request(await app()).post("/generate-thread/request").send(body({ variables: { brandName: "Acme" } })).expect(400);
+      mockFindFirst.mockResolvedValue(undefined);
+      await request(await app()).post("/generate-thread/request").send(body()).expect(404);
+    });
+
+    it("a handed-back completion is stored and answered as if written here: its model, its tokens, its answer; no completion made", async () => {
+      const { model: _m, ...noModel } = body();
+      const req = { message: "m", systemPrompt: "SENT SYSTEM PROMPT", provider: "google", model: "gemini-flash" };
+      const res = await request(await app())
+        .post("/generate-thread")
+        .send({ ...noModel, dryRun: true, completion: { request: req, answer, runId: "writer-run-1" } })
+        .expect(200);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(res.body).toEqual({
+        id: "thread-gen-1",
+        subject: "s",
+        post: "A post, short.",
+        replies: ["r1"],
+        model: "gemini-3-flash",
+        promptType: "threads-data-finding-v1",
+        tokensInput: 42,
+        tokensOutput: 7,
+      });
+      expect(mockValues).toHaveBeenCalledWith(expect.objectContaining({
+        runId: "workflow-run-1",
+        model: "gemini-3-flash",
+        tokensInput: 42,
+        tokensOutput: 7,
+        systemPromptRaw: "SENT SYSTEM PROMPT",
+        responseRaw: answer,
+        dryRun: true,
+      }));
+    });
+
+    it("400 MODEL_WITH_COMPLETION when both are sent; 400 VARIABLES_MISSING still checked", async () => {
+      const r1 = await request(await app()).post("/generate-thread").send(body({ completion: { request: {}, answer, runId: "w" } })).expect(400);
+      expect(r1.body.code).toBe("MODEL_WITH_COMPLETION");
+      const { model: _m, ...noModel } = body();
+      const r2 = await request(await app())
+        .post("/generate-thread")
+        .send({ ...noModel, variables: { brandName: "Acme" }, completion: { request: {}, answer, runId: "w" } })
+        .expect(400);
+      expect(r2.body.code).toBe("VARIABLES_MISSING");
+      expect(mockValues).not.toHaveBeenCalled();
+    });
+  });
 });

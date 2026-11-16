@@ -2829,6 +2829,24 @@ registry.registerPath({
 // POST /generate-whatsapp — ONE WhatsApp message (its bubbles) with a stored template (WA-TEMPLATES-1023)
 // ---------------------------------------------------------------------------
 
+// ONE-WRITER-N-MODELS-1116-CG-THREAD-WA: a script that asks its model (workflow-service's LLM completion Engine)
+// gets the writer's request from POST /generate-thread/request or /generate-whatsapp/request, then hands back the
+// completion it obtained here instead of `model`.
+const HandedBackCompletionField = z
+  .object({
+    request: z
+      .record(z.string(), z.unknown())
+      .describe("The chat-service /complete request the completion was made with (the `request` this service answered, as sent: provider + model included). Its `systemPrompt` is stored as the writer's system prompt."),
+    answer: z
+      .record(z.string(), z.unknown())
+      .describe("chat-service's WHOLE /complete answer (`json`, `model`, `tokensInput`, `tokensOutput`, ...): the LLM completion script's `content.answer`. Read exactly as this service reads its own completion; the stored model and tokens are its."),
+    runId: z.string().min(1).describe("The run that asked the completion (the writing script's run; the completion run is its child)."),
+  })
+  .optional()
+  .describe(
+    "A completion the calling script obtained itself (no `model` then: 400 `MODEL_WITH_COMPLETION` when both are sent). This service makes no completion: it reads the answer, stores and answers exactly as when it writes."
+  );
+
 export const GenerateWhatsAppRequestSchema = registry.register(
   "GenerateWhatsAppRequest",
   z
@@ -2856,6 +2874,7 @@ export const GenerateWhatsAppRequestSchema = registry.register(
             "who we write to, who they are to us, who we are, the client's facts, the thread, the sender's own messages."
         ),
       model: ModelField,
+      completion: HandedBackCompletionField,
       brandIds: z.array(z.string()).optional().describe("Brand UUIDs. Falls back to x-brand-id."),
       campaignId: z.string().optional().describe("Falls back to x-campaign-id."),
       leadId: z.string().optional().describe("lead-service lead id of the person, when they have one."),
@@ -2905,7 +2924,7 @@ registry.registerPath({
   },
   responses: {
     200: { description: "Written (or later / stop)", content: { "application/json": { schema: GenerateWhatsAppResponseSchema } } },
-    400: { description: "Invalid body, `VARIABLES_MISSING` (with `missing`), or `UNKNOWN_MODEL`", content: { "application/json": { schema: ErrorResponseSchema } } },
+    400: { description: "Invalid body, `VARIABLES_MISSING` (with `missing`), `UNKNOWN_MODEL`, `MODEL_WITH_COMPLETION` or (Threads) `MODEL_REQUIRED`", content: { "application/json": { schema: ErrorResponseSchema } } },
     402: { description: "Insufficient credits", content: { "application/json": { schema: InsufficientCreditsResponseSchema } } },
     404: { description: "`TEMPLATE_NOT_FOUND`", content: { "application/json": { schema: ErrorResponseSchema } } },
     502: { description: "`CLIENT_COMMS_UNAVAILABLE`, `MODEL_CATALOGUE_UNAVAILABLE`, or chat-service failed", content: { "application/json": { schema: ErrorResponseSchema } } },
@@ -2937,7 +2956,8 @@ export const GenerateThreadRequestSchema = registry.register(
           "Everything the writer reads, as one text with these sections: BRAND, PUBLISHED ON, TODAY, SUGGESTED SHAPE, OUR FACTS, NEVER STATE OR OFFER, " +
             "THE BRAND'S INSTRUCTION FOR THESE THREADS, OUR PUBLISHED FIGURES, THIS WEEK IN THE INDUSTRY, ALREADY POSTED."
         ),
-      model: z.string().min(1).describe("LLM to write with (the pipe's LLM picked by features-service): any name chat-service /complete accepts. Required: no default writer."),
+      model: z.string().min(1).optional().describe("LLM to write with: any name chat-service /complete accepts. Required unless `completion` is sent (400 `MODEL_REQUIRED`): no default writer."),
+      completion: HandedBackCompletionField,
       brandIds: z.array(z.string()).optional().describe("Brand UUIDs. Falls back to x-brand-id."),
       campaignId: z.string().optional().describe("Falls back to x-campaign-id."),
       workflowSlug: z.string().optional().describe("Falls back to x-workflow-slug."),
@@ -2980,10 +3000,66 @@ registry.registerPath({
   },
   responses: {
     200: { description: "Written", content: { "application/json": { schema: GenerateThreadResponseSchema } } },
-    400: { description: "Invalid body, `VARIABLES_MISSING` (with `missing`), or `UNKNOWN_MODEL`", content: { "application/json": { schema: ErrorResponseSchema } } },
+    400: { description: "Invalid body, `VARIABLES_MISSING` (with `missing`), `UNKNOWN_MODEL`, `MODEL_WITH_COMPLETION` or (Threads) `MODEL_REQUIRED`", content: { "application/json": { schema: ErrorResponseSchema } } },
     402: { description: "Insufficient credits", content: { "application/json": { schema: InsufficientCreditsResponseSchema } } },
     404: { description: "`TEMPLATE_NOT_FOUND`", content: { "application/json": { schema: ErrorResponseSchema } } },
     502: { description: "`MODEL_CATALOGUE_UNAVAILABLE`, or chat-service failed", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// POST /generate-thread/request + /generate-whatsapp/request (ONE-WRITER-N-MODELS-1116-CG-THREAD-WA)
+// ---------------------------------------------------------------------------
+
+export const ThreadWriterRequestBodySchema = GenerateThreadRequestSchema.omit({ model: true, completion: true, dryRun: true });
+export const WhatsAppWriterRequestBodySchema = GenerateWhatsAppRequestSchema.omit({ model: true, completion: true });
+
+const WriterChatRequestResponseSchema = registry.register(
+  "WriterChatRequest",
+  z
+    .object({
+      request: z
+        .object({
+          message: z.string(),
+          systemPrompt: z.string(),
+          responseFormat: z.literal("json"),
+          responseSchema: z.record(z.string(), z.unknown()).describe("The permissive schema (every provider but Anthropic)."),
+          strictResponseSchema: z.record(z.string(), z.unknown()).describe("The strict schema (`additionalProperties: false`) a provider enforcing JSON only through a strict schema needs (Anthropic): sent as `responseSchema` by the completion script that knows its provider."),
+          maxTokens: z.number(),
+        })
+        .describe("The exact chat-service /complete body this writer would send, minus `provider` and `model`. Ask the LLM completion Engine with it, then hand the answer back as `completion`."),
+    })
+    .openapi("WriterChatRequest")
+);
+
+const writerRequestHeaders = z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string() });
+
+registry.registerPath({
+  method: "post",
+  path: "/generate-thread/request",
+  tags: ["Content Generation"],
+  summary: "The chat-service request /generate-thread would send, without a model",
+  description: "Same body as /generate-thread minus `model`, `completion` and `dryRun`. Renders the template and answers the request; spends nothing, stores nothing. Then POST /generate-thread with `completion`.",
+  request: { headers: writerRequestHeaders, body: { required: true, content: { "application/json": { schema: ThreadWriterRequestBodySchema } } } },
+  responses: {
+    200: { description: "The writer's request", content: { "application/json": { schema: WriterChatRequestResponseSchema } } },
+    400: { description: "Invalid body or `VARIABLES_MISSING` (with `missing`)", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "`TEMPLATE_NOT_FOUND`", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/generate-whatsapp/request",
+  tags: ["Content Generation"],
+  summary: "The chat-service request /generate-whatsapp would send, without a model",
+  description: "Same body as /generate-whatsapp minus `model` and `completion`. Renders the template, reads our voice (client-comms) and answers the request; spends nothing, stores nothing. Then POST /generate-whatsapp with `completion`.",
+  request: { headers: writerRequestHeaders, body: { required: true, content: { "application/json": { schema: WhatsAppWriterRequestBodySchema } } } },
+  responses: {
+    200: { description: "The writer's request", content: { "application/json": { schema: WriterChatRequestResponseSchema } } },
+    400: { description: "Invalid body or `VARIABLES_MISSING` (with `missing`)", content: { "application/json": { schema: ErrorResponseSchema } } },
+    404: { description: "`TEMPLATE_NOT_FOUND`", content: { "application/json": { schema: ErrorResponseSchema } } },
+    502: { description: "`CLIENT_COMMS_UNAVAILABLE`", content: { "application/json": { schema: ErrorResponseSchema } } },
   },
 });
 

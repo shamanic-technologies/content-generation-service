@@ -104,16 +104,59 @@ export interface WhatsAppWriteResult {
   responseRaw: object;
 }
 
-export async function writeWhatsApp(
-  params: { type: string; promptTemplate: string; variables: Record<string, unknown>; context: string; model: string; brief?: string | null },
-  identity: Tracking & { runId: string },
-): Promise<WhatsAppWriteResult> {
+/**
+ * The chat-service `/complete` request this writer sends, minus the LLM (ONE-WRITER-N-MODELS-1116-CG-THREAD-WA):
+ * `responseSchema` = the permissive schema, `strictResponseSchema` = the strict one Anthropic needs (the
+ * completion script that knows its provider picks). Reads our voice (client-comms) like `writeWhatsApp`; spends nothing.
+ */
+export async function buildWhatsAppRequest(params: { type: string; promptTemplate: string; variables: Record<string, unknown>; context: string; brief?: string | null }) {
   const rules = renderWhatsAppTemplate(params.type, params.promptTemplate, params.variables);
-  const { provider } = await resolveChatModel(params.model);
   const voice = await readClientCommsVoice();
   // The campaign's brief (campaign-brief.ts) after our voice, before the output format; absent = byte-identical.
   const briefDirective = buildCampaignBriefDirective(params.brief);
   const systemPrompt = `${rules}\n${buildClientCommsVoiceDirective(voice)}${briefDirective ? `\n${briefDirective}` : ""}\n${OUTPUT_FORMAT}`;
+  return {
+    message: params.context,
+    systemPrompt,
+    responseFormat: "json" as const,
+    responseSchema: RESPONSE_SCHEMA as object,
+    strictResponseSchema: RESPONSE_SCHEMA_STRICT as object,
+    maxTokens: 16000,
+  };
+}
+
+/** The message read off chat-service's whole `/complete` answer (ours, or one a script obtained and handed back). */
+export function readWhatsAppAnswer(answer: unknown, systemPrompt: string): WhatsAppWriteResult {
+  const data = (answer && typeof answer === "object" ? answer : {}) as { json?: Record<string, unknown>; tokensInput?: number; tokensOutput?: number; model?: unknown };
+  const json = data.json ?? {};
+  const decision = json.decision;
+  if (decision !== "write" && decision !== "later" && decision !== "stop") {
+    throw new Error(`the model answered no decision: ${JSON.stringify(decision)}`);
+  }
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  return {
+    decision,
+    // Nothing is sent on later/stop: no bubbles, whatever the model put there.
+    bubbles: decision === "write" ? cleanBubbles(json.bubbles) : [],
+    reason: str(json.reason),
+    nextFollowUpAt: str(json.nextFollowUpAt),
+    nextFollowUpWhy: str(json.nextFollowUpWhy),
+    model: data.model as string,
+    tokensInput: data.tokensInput ?? 0,
+    tokensOutput: data.tokensOutput ?? 0,
+    systemPrompt,
+    responseRaw: data,
+  };
+}
+
+export async function writeWhatsApp(
+  params: { type: string; promptTemplate: string; variables: Record<string, unknown>; context: string; model: string; brief?: string | null },
+  identity: Tracking & { runId: string },
+): Promise<WhatsAppWriteResult> {
+  // Template rendered (VARIABLES_MISSING) before the model is resolved, then the voice: today's order.
+  renderWhatsAppTemplate(params.type, params.promptTemplate, params.variables);
+  const { provider } = await resolveChatModel(params.model);
+  const request = await buildWhatsAppRequest(params);
 
   const base = process.env.CHAT_SERVICE_URL || "http://localhost:3030";
   const response = await fetchWithRetry(
@@ -126,11 +169,11 @@ export async function writeWhatsApp(
         ...buildTrackingHeaders(identity),
       },
       body: JSON.stringify({
-        message: params.context,
-        systemPrompt,
-        responseFormat: "json",
-        responseSchema: provider === "anthropic" ? RESPONSE_SCHEMA_STRICT : RESPONSE_SCHEMA,
-        maxTokens: 16000,
+        message: request.message,
+        systemPrompt: request.systemPrompt,
+        responseFormat: request.responseFormat,
+        responseSchema: provider === "anthropic" ? request.strictResponseSchema : request.responseSchema,
+        maxTokens: request.maxTokens,
         provider,
         model: params.model,
       }),
@@ -145,29 +188,5 @@ export async function writeWhatsApp(
     const text = await response.text();
     throw new Error(`chat-service /complete failed for provider '${provider}' model '${params.model}': ${response.status} - ${text.slice(0, 500)}`);
   }
-  const data = (await response.json()) as {
-    json?: Record<string, unknown>;
-    tokensInput?: number;
-    tokensOutput?: number;
-    model: string;
-  };
-  const json = data.json ?? {};
-  const decision = json.decision;
-  if (decision !== "write" && decision !== "later" && decision !== "stop") {
-    throw new Error(`the model answered no decision: ${JSON.stringify(decision)}`);
-  }
-  const str = (v: unknown) => (typeof v === "string" ? v : "");
-  return {
-    decision,
-    // Nothing is sent on later/stop: no bubbles, whatever the model put there.
-    bubbles: decision === "write" ? cleanBubbles(json.bubbles) : [],
-    reason: str(json.reason),
-    nextFollowUpAt: str(json.nextFollowUpAt),
-    nextFollowUpWhy: str(json.nextFollowUpWhy),
-    model: data.model,
-    tokensInput: data.tokensInput ?? 0,
-    tokensOutput: data.tokensOutput ?? 0,
-    systemPrompt,
-    responseRaw: data,
-  };
+  return readWhatsAppAnswer(await response.json(), request.systemPrompt);
 }
