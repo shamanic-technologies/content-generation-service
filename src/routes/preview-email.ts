@@ -1,11 +1,9 @@
 import { Router } from "express";
-import { ChatModelCatalogueError, UnknownModelError, resolveChatModel } from "../lib/chat-model-catalogue.js";
 import { and, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
 import { emailPreviews, prompts } from "../db/schema.js";
 import { serviceAuth, AuthenticatedRequest } from "../middleware/auth.js";
-import { clientIdentityTerms, maskClientIdentity } from "../lib/client-identity-mask.js";
-import { dynastyIdentityOf } from "../lib/dynasty-membership.js";
+import { ClientIdentityError } from "../lib/client-identity-mask.js";
 import { extractBrandFields, fetchBrandIntel, BrandIntelError } from "../lib/brand-client.js";
 import { unfilledBrandFieldRequests } from "../lib/unfilled-brand-fields.js";
 import { fetchOfferGiveLists, OfferGiveListsError } from "../lib/offer-give-lists-client.js";
@@ -13,9 +11,9 @@ import { extractTemplateVariableNames } from "../lib/template-vars.js";
 import { textToHtml } from "../lib/text-to-html.js";
 import { traceEvent } from "../lib/trace-event.js";
 import { resolvePreviewWriter } from "../lib/preview-writer-client.js";
-import { PREVIEW_ENGINE_OUTCOME, PreviewWriterError, previewVariables, scriptSlugOf } from "../lib/preview-writer.js";
+import { GENERATION_REQUEST, PREVIEW_ENGINE_OUTCOME, PreviewWriterError, previewVariables, scriptSlugOf } from "../lib/preview-writer.js";
 import { runScript, ScriptRunError } from "../lib/script-run-client.js";
-import { readWrittenByScript, writerUnits, WrittenByScriptError } from "../lib/script-writer.js";
+import { readWrittenByScript, WrittenByScriptError } from "../lib/script-writer.js";
 import { awaitPreviewWarmup, startPreviewWarmup } from "../lib/preview-warmup.js";
 import {
   BRAND_INTEL_FIELDS,
@@ -49,7 +47,7 @@ function toPreviewResponse(row: PreviewRow, cached: boolean) {
     bodyText: row.bodyText,
     bodyHtml: row.bodyHtml,
     model: row.model,
-    // What wrote it: the email Engine's script, the template (dynasty + version) and the LLM asked. A row
+    // What wrote it: the writer script, the template (dynasty + version) and the model that answered. A row
     // written before PREVIEW-EMAIL-503-1111 names its workflow instead and no script.
     promptType: row.promptType,
     modelAlias: row.modelAlias ?? null,
@@ -95,17 +93,18 @@ function isPreviewDuplicateError(err: unknown): boolean {
 
 /**
  * POST /preview-email — ONE cold email for a brand of the calling org and a sample recipient, written before any
- * campaign or lead exists (the onboarding's and the Copilot's "show me the first email"). It is written the way a
- * campaign writes it (PREVIEW-EMAIL-503-1111): by the email Engine's script (workflow-service, the script the strategy
- * keeps, features-service), with the template + LLM the cold email script the Rating picks states for its writing call, from the materials this
- * service builds for every script writer. No fallback script, template or model: none = a named refusal.
+ * campaign or lead exists (the onboarding's and the Copilot's "show me the first email"). It is written by the SAME
+ * writer a campaign uses (ONE-WRITER-N-MODELS-1116-CG-PREVIEW): the way of writing the Rating picks for the cold email
+ * sender the Rating picks (`preview-writer-client.ts`), run through workflow-service with a `generation_request` whose
+ * body carries `preview` (our `/generate/materials` answers it with no lead); that writer asks the LLM completion
+ * Engine, so the Rating picks the model for it inside the run. No script, template or model chosen here, no fallback.
  *
- * Billing: the only paid call is the script's completion, which chat-service provisions, authorizes and declares
+ * Billing: the only paid call is the writer's asked completion, which chat-service provisions, authorizes and declares
  * against the calling org (x-org-id), exactly like a campaign email. An org that cannot afford it is answered 402.
  *
- * Nothing sendable: no campaign, no lead, and no email_generations row (the script run is started `recordedBy`
- * content-generation and declares nothing). The result is stored in email_previews, which only this route reads, so a
- * repeat call for the same brand + recipient returns it without a second completion.
+ * Nothing sendable: no campaign, no lead, and no email_generations row (the writer run is started `recordedBy`
+ * content-generation). The result is stored in email_previews, which only this route reads, so a repeat call for the
+ * same brand + recipient returns it without a second completion.
  */
 router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res) => {
   const runId = req.runId!;
@@ -115,7 +114,7 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
       return res.status(400).json({ error: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join(", ") });
     }
     if (req.body && typeof req.body === "object" && "model" in req.body) {
-      return res.status(400).json({ error: "model: not accepted; the preview writes with the LLM the cold email script the Rating picks states" });
+      return res.status(400).json({ error: "model: not accepted; the writer's completion is picked by the Rating in the run" });
     }
     const { brandId, recipient, audience, offerId, qualification, strategyId } = parsed.data;
     const orgId = req.orgId!;
@@ -126,13 +125,12 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     // A plain read, nothing billed; a refusal fails the preview like its brand intel does.
     const giveLists = await fetchOfferGiveLists(identity);
 
-    // The email Engine's script the strategy keeps, and the template + LLM the cold email script the Rating picks
-    // states for its writing call (both picks cached a few minutes). Part of the stored preview's identity, so a new script version, template
-    // or LLM writes a new preview.
+    // The writer the Rating picks for the cold email sender it picks, and its template (both picks cached a few
+    // minutes). Part of the stored preview's identity, so a new writer version or template writes a new preview.
     const plan = await resolvePreviewWriter(identity, strategyId);
-    const scriptSlug = scriptSlugOf(plan.script);
+    const scriptSlug = scriptSlugOf(plan.writerScript);
 
-    const recipientKey = previewRecipientKey({ recipient, audience, offerId, promptType: plan.promptType, model: plan.model, writerSlug: scriptSlug, annotationVersion: PREVIEW_ANNOTATION_VERSION, giveLists, qualification });
+    const recipientKey = previewRecipientKey({ recipient, audience, offerId, promptType: plan.promptType, writerSlug: scriptSlug, annotationVersion: PREVIEW_ANNOTATION_VERSION, giveLists, qualification });
     const findStored = () =>
       db.query.emailPreviews.findFirst({
         where: and(
@@ -188,41 +186,36 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     // completion, after the email is written, reports which of these each sentence uses.
     const sources = buildHighlightSources({ recipient, audience, brandName, brandFields: intel.fields ?? {}, giveForFree: giveLists?.giveForFree, qualification: leadQualification });
 
-    // A blind dynasty's writer never sees who the client is (BLIND-NAME-LEAK-1105), exactly as on /generate.
-    const blind = (await dynastyIdentityOf(plan.promptType)) === "blind";
-    const terms = blind ? clientIdentityTerms(intel.brands) : null;
-    const writerVariables = terms ? maskClientIdentity(variables, terms) : variables;
-    const writerGiveLists = terms && giveLists ? maskClientIdentity(giveLists, terms) : giveLists;
-    const campaignContext = buildPreviewContext(audience);
+    // The writer reads what a sender hands it (`generation_request`: our /generate request minus template and model),
+    // marked `preview`: our /generate/materials answers it with no lead, the preview's audience context and give lists,
+    // and masks the client for a blind dynasty (BLIND-NAME-LEAK-1105) exactly as for a campaign.
+    const body = {
+      brandIds: [brandId],
+      ...(offerId ? { offerId } : {}),
+      variables,
+      preview: { key: recipientKey, campaignContext: buildPreviewContext(audience), giveLists },
+    };
 
-    // The materials every script writer is handed (/generate/materials), and the picked LLM with its provider.
-    const { provider } = await resolveChatModel(plan.model);
-    const units = writerUnits({
-      promptTemplate: storedPrompt.prompt,
-      variables: writerVariables,
-      campaignContext: terms && campaignContext ? maskClientIdentity(campaignContext, terms) : campaignContext,
-      language: null,
-      giveLists: writerGiveLists,
-      brief: null,
-    });
-
-    traceEvent(runId, { service: "content-generation-service", event: "preview-email-start", detail: `brandId=${brandId}, script=${scriptSlug}, template=${plan.templateDynastySlug} (${plan.promptType}), model=${plan.model}, checks=${leadQualification ? (leadQualification.checks as unknown[]).length : 0}` }, req.headers).catch(() => {});
-    // The email Engine's script writes it, under the caller's run and org. `recordedBy` = this service records the
-    // Unit: the script's run declares nothing (a preview is no message to anyone).
+    traceEvent(runId, { service: "content-generation-service", event: "preview-email-start", detail: `brandId=${brandId}, sender=${plan.emailScript.engine}/${plan.emailScript.dynasty} v${plan.emailScript.version}, writer=${scriptSlug}, template=${plan.templateDynastySlug} (${plan.promptType}), checks=${leadQualification ? (leadQualification.checks as unknown[]).length : 0}` }, req.headers).catch(() => {});
+    // The writer writes it, under the caller's run and org, and asks its completion (the Rating picks the model).
+    // `recordedBy` = this service records the Unit: a preview is no message to anyone.
     const answer = await runScript(
       {
         outcome: PREVIEW_ENGINE_OUTCOME,
-        dynasty: plan.script.dynasty,
-        version: plan.script.version,
+        dynasty: plan.writerScript.dynasty,
+        version: plan.writerScript.version,
         subject: { service: "content-generation-service", id: `preview:${recipientKey}` },
-        units,
-        tactics: { llm: { provider, model: plan.model } },
+        units: { [GENERATION_REQUEST]: { content: { body } } },
         recordedBy: "content-generation",
         trace: true,
       },
       identity
     );
-    const written = readWrittenByScript(answer, units);
+    // The materials the writer was handed by our /generate/materials ride its Unit (`generation.units`).
+    const writtenUnits = (((answer.unit as { content?: { generation?: { units?: unknown } } } | undefined)?.content?.generation) ?? {}).units;
+    const written = readWrittenByScript(answer, writtenUnits);
+    if (!written.model) throw new WrittenByScriptError(`The writer ${scriptSlug}'s traced completion names no model that answered (brandId=${brandId})`);
+    const answeredModel = written.model;
 
     const first = written.sequence[0] as { bodyText?: string; bodyHtml?: string } | undefined;
     if (!first || !first.bodyText) {
@@ -244,14 +237,14 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
           recipientKey,
           recipient,
           promptType: plan.promptType,
-          modelAlias: plan.model,
+          modelAlias: null,
           scriptSlug,
           templateDynastySlug: plan.templateDynastySlug,
           subject: written.subject,
           bodyText: first.bodyText,
           bodyHtml,
           sequence: written.sequence,
-          model: written.model ?? plan.model,
+          model: answeredModel,
           tokensInput: written.tokensInput,
           tokensOutput: written.tokensOutput,
           promptRaw: written.promptRaw,
@@ -283,10 +276,10 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
       console.error("[content-generation-service] /preview-email script answer unreadable:", error.message);
       return res.status(502).json({ error: error.message, code: "SCRIPT_WROTE_NOTHING" });
     }
-    if (error instanceof UnknownModelError || error instanceof ChatModelCatalogueError) {
-      // features-service picked a model chat-service does not accept, or its catalogue is unreadable: ours, never the caller's.
-      console.error("[content-generation-service] /preview-email model error:", error.message);
-      return res.status(502).json({ error: error.message, code: error.code });
+    if (error instanceof ClientIdentityError) {
+      // A blind preview is never written with the client's identity unmasked.
+      console.error("[content-generation-service] /preview-email client identity error:", error.message);
+      return res.status(error.status).json({ error: error.message, code: "CLIENT_IDENTITY_UNREADABLE" });
     }
     if (error instanceof BrandIntelError || error instanceof OfferGiveListsError) {
       // brand-service's own verdict on the brand (not found, several offers, bad

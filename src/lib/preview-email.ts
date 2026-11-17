@@ -98,8 +98,10 @@ export function previewRecipientKey(input: {
   audience?: string;
   offerId?: string;
   promptType: string;
-  model: string;
-  /** The email Engine's script (`message_written/<dynasty>/v<n>`), so a new script version re-writes. */
+  /**
+   * The writer the preview runs (`message_written/<dynasty>/v<n>`), so a new writer version re-writes. No model: the
+   * writer's asked completion picks it in the run (ONE-WRITER-N-MODELS-1116-CG-PREVIEW).
+   */
   writerSlug: string;
   /** Part of the identity so a stored preview written under an older contract is rewritten. */
   annotationVersion: string;
@@ -128,7 +130,6 @@ export function previewRecipientKey(input: {
     norm(input.audience),
     norm(input.offerId),
     input.promptType,
-    input.model,
     input.writerSlug,
     input.annotationVersion,
   ]);

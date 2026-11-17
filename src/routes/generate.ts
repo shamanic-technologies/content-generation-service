@@ -174,8 +174,9 @@ async function writingMaterials(req: AuthenticatedRequest, data: GenerateBody, s
   traceEvent(req.runId!, { service: "content-generation-service", event: "prompt-resolved", detail: `Loaded stored prompt type=${type}, promptId=${storedPrompt.id ?? "unknown"}` }, req.headers).catch(() => {});
 
   // Convention 2: fetch campaign featureInputs for LLM context enrichment
-  let campaignContext: Record<string, unknown> | null = null;
-  if (campaignId) {
+  // A signed-out preview has no campaign: its sample audience context is the one it hands (data.preview).
+  let campaignContext: Record<string, unknown> | null = data.preview ? (data.preview.campaignContext ?? null) : null;
+  if (campaignId && !data.preview) {
     campaignContext = await getCampaignFeatureInputs(campaignId, serviceIdentity);
   }
 
@@ -217,8 +218,9 @@ async function writingMaterials(req: AuthenticatedRequest, data: GenerateBody, s
   // names its offer — workflow-service injects `offerId` into every /generate body,
   // and every live campaign has one. A brand-service failure degrades loudly to no
   // lists, i.e. the email is written exactly as it was before this existed.
-  let giveLists: OfferGiveLists | null = null;
-  if (offerId && brandIds.length === 1) {
+  // A preview already read them (loud, they key its stored email): the ones it hands are used as they are.
+  let giveLists: OfferGiveLists | null = data.preview ? (data.preview.giveLists ?? null) : null;
+  if (!data.preview && offerId && brandIds.length === 1) {
     try {
       giveLists = await fetchOfferGiveLists(serviceIdentity);
     } catch (err) {
@@ -335,6 +337,7 @@ router.post("/generate/materials", serviceAuth, async (req: AuthenticatedRequest
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
     const data = parsed.data;
+    if (data.preview) return await previewMaterials(req, res, data);
     const model = data.model ?? DEFAULT_MODEL;
     // The model name is checked against chat-service's catalogue before anything is read or billed (400 UNKNOWN_MODEL).
     const { provider } = await resolveChatModel(model);
@@ -367,6 +370,37 @@ router.post("/generate/materials", serviceAuth, async (req: AuthenticatedRequest
     generateErrorResponse(req, res, error);
   }
 });
+
+/**
+ * ONE-WRITER-N-MODELS-1116-CG-PREVIEW: the materials of a signed-out preview (`/preview-email` runs the cold email
+ * writer the Rating picks, which asks these with its template's head type). No lead: no leadId required, no
+ * idempotency or one-email-per-lead hit (nothing is ever stored for a preview here), no language. The model is the
+ * writer's asked completion's, so no model is named or resolved here (`tactics: null`). Same template, Convention 1,
+ * blind masking and units as a campaign's materials.
+ */
+async function previewMaterials(req: AuthenticatedRequest, res: Response, data: GenerateBody) {
+  const preview = data.preview!;
+  if (data.leadId || data.campaignId || data.idempotencyKey) {
+    return res.status(400).json({ error: "preview: a preview names no lead, campaign or idempotency key", code: "PREVIEW_WITH_LEAD" });
+  }
+  const scope = scopeOf(req, data);
+  traceEvent(req.runId!, { service: "content-generation-service", event: "generate-materials-preview", detail: `type=${data.type}, brandIds=${scope.brandIds.join(",")}, preview=${preview.key}` }, req.headers).catch(() => {});
+  const m = await writingMaterials(req, data, scope);
+  if (!m) return res.status(404).json(noPrompt(data.type));
+  return res.json({
+    existing: null,
+    subject: { service: "content-generation-service", id: `preview:${preview.key}` },
+    units: writerUnits({
+      promptTemplate: m.storedPrompt.prompt,
+      variables: m.variables,
+      campaignContext: m.campaignContext,
+      language: m.language,
+      giveLists: m.giveLists,
+      brief: m.brief,
+    }),
+    tactics: null,
+  });
+}
 
 /**
  * Stores the email the script writer wrote (`/generate` with `written`): the same row, the same
@@ -445,6 +479,9 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       return res.status(400).json({ error: parsed.error.issues.map((i) => i.message).join(", ") });
     }
     const data = parsed.data;
+    if (data.preview) {
+      return res.status(400).json({ error: "preview: a signed-out preview is never stored as a generation (read its materials on /generate/materials)", code: "PREVIEW_NOT_STORABLE" });
+    }
     const { type, model, leadId, apolloEnrichmentId } = data;
 
     // The model name is checked against chat-service's catalogue before anything is read or

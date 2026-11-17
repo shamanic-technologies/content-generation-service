@@ -214,6 +214,58 @@ describe("POST /generate/materials + /generate with written (script writer)", ()
     expect(mockValues).not.toHaveBeenCalled();
   });
 
+  describe("a signed-out preview (ONE-WRITER-N-MODELS-1116-CG-PREVIEW)", () => {
+    // What /preview-email hands the writer it runs: our request minus template + model, no lead, marked `preview`.
+    const { campaignId: _c, leadId: _l, model: _m, brief: _b, ...previewBase } = body;
+    const preview = { key: "pk-1", campaignContext: { audience: "Heads of sales" }, giveLists: { giveForFree: ["A free teardown"], neverGive: ["Discounts"] } };
+
+    it("materials answer a preview with no lead: no lookup, no language, the given context and lists, nothing stored or spent", async () => {
+      const { getCampaignFeatureInputs } = await import("../../src/lib/campaign-client.js");
+      const { getLeadBusinessLanguages } = await import("../../src/lib/lead-client.js");
+      const { fetchOfferGiveLists } = await import("../../src/lib/offer-give-lists-client.js");
+      const m = (await request(app).post("/generate/materials").send({ ...previewBase, preview }).expect(200)).body;
+      expect(m).toEqual({
+        existing: null,
+        subject: { service: "content-generation-service", id: "preview:pk-1" },
+        units: {
+          lead_identified: { content: { variables: { leadFirstName: "Marie" } } },
+          brand_context: { content: { variables: { clientCompanyName: "Acme" }, campaignContext: preview.campaignContext, giveLists: preview.giveLists } },
+          template_written: { content: { text: "Write to {{leadFirstName}} for {{clientCompanyName}}." } },
+        },
+        tactics: null,
+      });
+      expect(mockGenFindFirst).not.toHaveBeenCalled();
+      expect(getCampaignFeatureInputs).not.toHaveBeenCalled();
+      expect(getLeadBusinessLanguages).not.toHaveBeenCalled();
+      expect(fetchOfferGiveLists).not.toHaveBeenCalled();
+      expect(mockValues).not.toHaveBeenCalled();
+      expect(completeCalls()).toHaveLength(0);
+    });
+
+    it("a preview naming a lead, a campaign or an idempotency key is refused (400), nothing read", async () => {
+      for (const extra of [{ leadId: "lead-1" }, { campaignId: "camp-1" }, { idempotencyKey: "k" }]) {
+        const res = await request(app).post("/generate/materials").send({ ...previewBase, ...extra, preview }).expect(400);
+        expect(res.body.code).toBe("PREVIEW_WITH_LEAD");
+      }
+      expect(mockPromptFindFirst).not.toHaveBeenCalled();
+    });
+
+    it("/generate never stores a preview (400 PREVIEW_NOT_STORABLE)", async () => {
+      const res = await request(app).post("/generate").send({ ...previewBase, preview }).expect(400);
+      expect(res.body.code).toBe("PREVIEW_NOT_STORABLE");
+      expect(mockValues).not.toHaveBeenCalled();
+      expect(completeCalls()).toHaveLength(0);
+    });
+
+    it("a campaign's materials (with a lead) answer exactly as before a preview existed", async () => {
+      const m1 = (await request(app).post("/generate/materials").send(body).expect(200)).body;
+      const m2 = (await request(app).post("/generate/materials").send({ ...body, preview: undefined }).expect(200)).body;
+      expect(m2).toEqual(m1);
+      expect(m1.subject).toEqual({ service: "lead-service", id: "lead-1" });
+      expect(m1.tactics).toEqual({ llm: { provider: expect.any(String), model: "claude-sonnet" } });
+    });
+  });
+
   it("materials refuses a request with no lead (the script declares on the person's lead)", async () => {
     const { leadId: _l, ...noLead } = body;
     await request(app).post("/generate/materials").send(noLead).expect(400);
