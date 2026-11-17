@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { PreviewWriterError, keptScripts, writerEngineOnCatalogue, previewVariables, scriptSlugOf, writerFromTactics, writingScriptsOf, type ScriptStrategyAnswer } from "../../src/lib/preview-writer.js";
+import { PreviewWriterError, keptScripts, writerEngineOnCatalogue, previewVariables, scriptSlugOf, templateOfWriter, writingScriptsOf, type ScriptStrategyAnswer } from "../../src/lib/preview-writer.js";
 
-// PREVIEW-EMAIL-503-1111: the preview is written by the email Engine's script the strategy keeps, with the template +
-// LLM the cold email script the Rating picks states for its writing call (SCRIPT-VALUE-RATING-1113). These pin the rules: never a script the strategy rules out, never an invented fact.
+// ONE-WRITER-N-MODELS-1116-CG-PREVIEW: the preview is written by the writer the Rating picks for the cold email sender
+// it picks, with that writer's template; the model is the writer's asked completion. These pin the rules: never a script the strategy rules out, never an invented fact.
 
 const answer = (scripts: ScriptStrategyAnswer["scripts"]): ScriptStrategyAnswer => ({
   strategyId: null,
@@ -70,26 +70,17 @@ describe("writingScriptsOf", () => {
   });
 });
 
-describe("writerFromTactics", () => {
-  const script = { dynasty: "dy_cold_email", version: 10 };
+describe("templateOfWriter", () => {
+  const script = { dynasty: "dy_free_offer", version: 1 };
 
-  it("the script-wide template + LLM the script states", () => {
-    expect(writerFromTactics({ template: "cold-reply-three-line-reply-named", llm: { name: "Gemini Flash-Lite", provider: "google", model: "gemini-flash-lite" } }, script, "email_sent")).toEqual({ templateDynastySlug: "cold-reply-three-line-reply-named", model: "gemini-flash-lite" });
+  it("the template the writer states (its writer call's own tactic first)", () => {
+    expect(templateOfWriter({ template: "cold-reply-free-offer-named", asks: ["llm_completion"] }, script)).toBe("cold-reply-free-offer-named");
+    expect(templateOfWriter({ template: "wide", templates: { writer: "placed" } }, script)).toBe("placed");
   });
 
-  it("the writer call's own tactic wins over the script-wide one", () => {
-    const tactics = { template: "wide", templates: { writer: "placed", angles: "x" }, llm: { model: "wide-llm" }, llms: { writer: { model: "placed-llm", provider: "zai" } } };
-    expect(writerFromTactics(tactics, script, "email_sent")).toEqual({ templateDynastySlug: "placed", model: "placed-llm" });
-  });
-
-  it("a per-place map naming other calls only falls back to the script-wide tactic", () => {
-    expect(writerFromTactics({ template: "wide", templates: { angles: "x" }, llm: { model: "m" }, llms: { judge: { model: "j" } } }, script, "email_sent")).toEqual({ templateDynastySlug: "wide", model: "m" });
-  });
-
-  it("no template or no LLM stated = a named refusal, never a default", () => {
-    expect(() => writerFromTactics({ llm: { model: "m" } }, script, "email_sent")).toThrow(expect.objectContaining({ status: 422, code: "SCRIPT_STATES_NO_TEMPLATE" }));
-    expect(() => writerFromTactics({ template: "t" }, script, "email_sent")).toThrow(expect.objectContaining({ status: 422, code: "SCRIPT_STATES_NO_LLM" }));
-    expect(() => writerFromTactics(null, script, "email_sent")).toThrow(expect.objectContaining({ code: "SCRIPT_STATES_NO_TEMPLATE" }));
+  it("no template stated = a named refusal, never a default", () => {
+    expect(() => templateOfWriter({ asks: ["llm_completion"] }, script)).toThrow(expect.objectContaining({ status: 422, code: "SCRIPT_STATES_NO_TEMPLATE" }));
+    expect(() => templateOfWriter(null, script)).toThrow(expect.objectContaining({ code: "SCRIPT_STATES_NO_TEMPLATE" }));
   });
 });
 

@@ -133,6 +133,15 @@ describe("POST /generate — a blind dynasty's writer never sees who the client 
     expect(res.body.units.lead_identified.content.variables.leadFirstName).toBe("Ann");
   });
 
+  it("masks a signed-out preview's materials the same way (the writer the preview runs reads them)", async () => {
+    const { campaignId: _c, leadId: _l, ...b } = body("blind-discovery-email-v21-no-url-spaced-v2");
+    const preview = { key: "k1", campaignContext: { audience: "Shockwave Centers of America buyers" }, giveLists: { giveForFree: ["A Shockwave Centers of America demo"], neverGive: [] } };
+    const res = await request(app).post("/generate/materials").send({ ...b, preview }).expect(200);
+    expect(JSON.stringify(res.body.units)).not.toMatch(/shockwave ?centers/i);
+    expect(res.body.units.brand_context.content.variables.clientName).toBe("the client");
+    expect(res.body.units.lead_identified.content.variables.leadFirstName).toBe("Ann");
+  });
+
   it("refuses to write a blind email when brand-service cannot say who the client is: nothing written", async () => {
     const { ClientIdentityError } = await import("../../src/lib/client-identity-mask.js");
     mockFetchClientIdentities.mockRejectedValue(new ClientIdentityError(502, "brand-service GET /internal/brands failed: 503"));

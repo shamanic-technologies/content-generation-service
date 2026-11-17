@@ -1,31 +1,27 @@
 /**
- * Reads, at request time, who writes the signed-out preview (PREVIEW-EMAIL-503-1111, SCRIPT-VALUE-RATING-1113): the
- * `message_written` scripts the strategy keeps (features-service, no campaign) and workflow-service's Rating pick among
- * them; the cold email script the Rating picks in the Engine the catalogue states on the cold email pipe, among the
- * kept ones that write through `message_written`, and the template + LLM its tactics state for its writing call; then
- * the stated template dynasty's head. The I/O half of `preview-writer.ts` (which holds the rules and is never mocked).
+ * Reads, at request time, who writes the signed-out preview (ONE-WRITER-N-MODELS-1116-CG-PREVIEW): the cold email
+ * sender the Rating picks in the Engine the catalogue states on the cold email pipe (kept by the strategy, no
+ * campaign, asking `message_written`), then the way of writing the Rating picks for THAT sender (a kept
+ * `message_written` writer, `askedBy` the sender), its tactic `template` and that dynasty's head. The model is not
+ * read here: the writer the preview runs asks its completion, and the Rating picks it inside that run. The I/O half of
+ * `preview-writer.ts` (which holds the rules and is never mocked).
  *
  * Both picks are cached a few minutes per strategy (a visitor asking for three emails does not re-read the strategy
  * three times); the dynasty head is read per preview. Any failure is LOUD (`PreviewWriterError`): there is no
- * fallback script, template or model.
+ * fallback script or template.
  */
 import { fetchChannelCatalogue } from "./pipe-from-step.js";
 import { resolveDynastyHead } from "./template-dynasty-query.js";
 import { TemplateDynastyError } from "./template-dynasties.js";
 import { buildTrackingHeaders, type Tracking } from "./tracking.js";
 import {
-  PREVIEW_COMPLETION_OUTCOME,
   PREVIEW_ENGINE_OUTCOME,
-  PREVIEW_WRITER_MATERIALS,
   PreviewWriterError,
   SENDER_HANDS_WRITER,
   askedByOf,
   keptScripts,
-  modelOfCompletion,
-  senderStatesWriter,
   templateOfWriter,
   writerEngineOnCatalogue,
-  writerFromTactics,
   writingScriptsOf,
   type EngineScriptRow,
   type PreviewScript,
@@ -40,7 +36,7 @@ const WORKFLOW_SERVICE_API_KEY = process.env.WORKFLOW_SERVICE_API_KEY || "";
 
 export const PREVIEW_WRITER_CACHE_MS = 5 * 60_000;
 
-/** What the Rating picked (both scripts, the cold email one's writer), keyed by strategy id ("" = no strategy). */
+/** What the Rating picked (the sender, its writer, the writer's template), keyed by strategy id ("" = no strategy). */
 type PickedWriter = Omit<PreviewWriterPlan, "promptType">;
 const cached = new Map<string, { picked: PickedWriter; at: number }>();
 
@@ -148,49 +144,30 @@ async function ratingPick(outcome: string, keptDynasties: string[], servable: re
   return { dynasty: body.dynasty, version: body.version, tactics };
 }
 
-/** The `message_written` script the strategy keeps, as the Rating picks it on the preview's materials. */
-async function previewScript(strategy: ScriptStrategyAnswer, strategyId?: string): Promise<PreviewScript> {
-  const { dynasty, version } = await ratingPick(PREVIEW_ENGINE_OUTCOME, keptScripts(strategy, strategyId).map((s) => s.dynasty), PREVIEW_WRITER_MATERIALS);
-  return { dynasty, version };
-}
-
 /**
- * The cold email script the Rating picks (Engine stated by the catalogue on the cold email pipe, kept by the strategy,
- * writing through `message_written`) and the template + LLM its writing call uses. The preview hands it nothing: it
- * asks its writer itself (tactic `asks`), which is the preview's own run.
- *  - A sender still stating its template / LLM: those (`writerFromTactics`, today's reading).
- *  - A sender naming neither (ONE-WRITER-N-MODELS-1116): the way of writing the Rating picks for THAT sender (a kept
- *    `message_written` writer reading what a sender hands it, `askedBy` the sender), its tactic `template`; then the
- *    model the Rating picks for THAT writer (a kept `llm_completion` script, handed nothing, `askedBy` the writer),
- *    its tactic `llm`. Never a pick made here, never a default.
+ * The cold email sender the Rating picks (Engine stated by the catalogue on the cold email pipe, kept by the strategy,
+ * asking `message_written`), then the way of writing the Rating picks for THAT sender (a kept `message_written`
+ * writer reading what a sender hands it, `askedBy` the sender) and its tactic `template`. Never a pick made here,
+ * never a default; the model is the run's own pick.
  */
-async function coldEmailWriter(identity: Tracking, writerStrategy: ScriptStrategyAnswer, strategyId?: string): Promise<Omit<PickedWriter, "script">> {
+async function pickWriter(identity: Tracking, strategyId?: string): Promise<PickedWriter> {
   const engine = await coldEmailEngine();
-  const [strategy, rows] = await Promise.all([readScriptStrategy(engine, strategyId), readEngineScripts(engine, identity)]);
-  const writing = writingScriptsOf(rows, strategy.keptDynasties, engine, strategyId);
+  const [senderStrategy, rows, writerStrategy] = await Promise.all([
+    readScriptStrategy(engine, strategyId),
+    readEngineScripts(engine, identity),
+    readScriptStrategy(PREVIEW_ENGINE_OUTCOME, strategyId),
+  ]);
+  const writing = writingScriptsOf(rows, senderStrategy.keptDynasties, engine, strategyId);
   const picked = await ratingPick(engine, writing, []);
   const sender = { dynasty: picked.dynasty, version: picked.version };
-  const emailScript = { ...sender, engine };
-  if (senderStatesWriter(picked.tactics)) {
-    return { emailScript, ...writerFromTactics(picked.tactics, sender, engine) };
-  }
   const way = await ratingPick(PREVIEW_ENGINE_OUTCOME, keptScripts(writerStrategy, strategyId).map((s) => s.dynasty), SENDER_HANDS_WRITER, askedByOf(engine, sender));
   const writerScript = { dynasty: way.dynasty, version: way.version };
-  const templateDynastySlug = templateOfWriter(way.tactics, writerScript);
-  const completionStrategy = await readScriptStrategy(PREVIEW_COMPLETION_OUTCOME, strategyId);
-  const completion = await ratingPick(
-    PREVIEW_COMPLETION_OUTCOME,
-    keptScripts(completionStrategy, strategyId, PREVIEW_COMPLETION_OUTCOME).map((s) => s.dynasty),
-    [],
-    askedByOf(PREVIEW_ENGINE_OUTCOME, writerScript),
-  );
-  const completionScript = { dynasty: completion.dynasty, version: completion.version };
-  return { emailScript, writerScript, completionScript, templateDynastySlug, model: modelOfCompletion(completion.tactics, completionScript) };
+  return { emailScript: { ...sender, engine }, writerScript, templateDynastySlug: templateOfWriter(way.tactics, writerScript) };
 }
 
 /**
- * The `message_written` script and the cold email script the Rating picks (cached a few minutes per strategy; none =
- * no condition), with the template (stated dynasty's head) + LLM that cold email script states for its writing call.
+ * The sender and the writer the Rating picks (cached a few minutes per strategy; none = no condition), with the
+ * writer's template (its stated dynasty's head).
  */
 export async function resolvePreviewWriter(identity: Tracking, strategyId?: string): Promise<PreviewWriterPlan> {
   const cacheKey = strategyId ?? "";
@@ -199,9 +176,7 @@ export async function resolvePreviewWriter(identity: Tracking, strategyId?: stri
   if (hit && Date.now() - hit.at < PREVIEW_WRITER_CACHE_MS) {
     picked = hit.picked;
   } else {
-    const writerStrategy = await readScriptStrategy(PREVIEW_ENGINE_OUTCOME, strategyId);
-    const [script, writer] = await Promise.all([previewScript(writerStrategy, strategyId), coldEmailWriter(identity, writerStrategy, strategyId)]);
-    picked = { script, ...writer };
+    picked = await pickWriter(identity, strategyId);
     cached.set(cacheKey, { picked, at: Date.now() });
   }
   let promptType: string;
@@ -209,11 +184,11 @@ export async function resolvePreviewWriter(identity: Tracking, strategyId?: stri
     promptType = (await resolveDynastyHead(picked.templateDynastySlug)).template.type;
   } catch (err) {
     if (err instanceof TemplateDynastyError) {
-      throw new PreviewWriterError(503, `The cold email script ${picked.emailScript.engine}/${picked.emailScript.dynasty} v${picked.emailScript.version} states template dynasty ${picked.templateDynastySlug}, which has no template to write with here: ${err.message}`, "WRITER_PICK_UNAVAILABLE");
+      throw new PreviewWriterError(503, `The writer ${PREVIEW_ENGINE_OUTCOME}/${picked.writerScript.dynasty} v${picked.writerScript.version} states template dynasty ${picked.templateDynastySlug}, which has no template to write with here: ${err.message}`, "WRITER_PICK_UNAVAILABLE");
     }
     throw err;
   }
   const plan: PreviewWriterPlan = { ...picked, promptType };
-  console.log(`[content-generation-service] preview writer${strategyId ? ` for strategy ${strategyId}` : ""} (run ${identity.runId}): script=${plan.script.dynasty} v${plan.script.version}, cold email script=${plan.emailScript.engine}/${plan.emailScript.dynasty} v${plan.emailScript.version}${plan.writerScript ? `, way of writing=${PREVIEW_ENGINE_OUTCOME}/${plan.writerScript.dynasty} v${plan.writerScript.version}` : ""}${plan.completionScript ? `, completion=${PREVIEW_COMPLETION_OUTCOME}/${plan.completionScript.dynasty} v${plan.completionScript.version}` : ""}, template=${plan.templateDynastySlug} (${promptType}), model=${plan.model}`);
+  console.log(`[content-generation-service] preview writer${strategyId ? ` for strategy ${strategyId}` : ""} (run ${identity.runId}): sender=${plan.emailScript.engine}/${plan.emailScript.dynasty} v${plan.emailScript.version}, writer=${PREVIEW_ENGINE_OUTCOME}/${plan.writerScript.dynasty} v${plan.writerScript.version}, template=${plan.templateDynastySlug} (${promptType}), model = the writer's asked completion`);
   return plan;
 }

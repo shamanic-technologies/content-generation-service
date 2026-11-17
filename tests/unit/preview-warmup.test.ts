@@ -83,10 +83,10 @@ app.use(previewRoutes);
 const ORG = "22222222-2222-2222-2222-222222222222";
 const BRAND_ID = "5f0c7a2e-8b1d-4c3e-9a4f-6d2b1e0c9a77";
 const PLAN = {
-  script: { dynasty: "dy_template_writer_full", version: 4 },
-  templateDynastySlug: "cold-reply-three-line-reply-named",
+  emailScript: { engine: "email_sent", dynasty: "dy_cold_email", version: 13 },
+  writerScript: { dynasty: "dy_free_offer", version: 1 },
+  templateDynastySlug: "cold-reply-free-offer-named",
   promptType: "blind-discovery-email-v33",
-  model: "glm-pro",
 };
 const INTEL = {
   brands: [{ brandId: BRAND_ID, domain: "brand.io", name: "Brand Co" }],

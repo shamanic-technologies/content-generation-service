@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// The preview's writer is read live (PREVIEW-EMAIL-503-1111, SCRIPT-VALUE-RATING-1113): the message_written script the
-// strategy keeps (features-service, NO campaign) as workflow-service's Rating picks it; the cold email script the Rating
-// picks in the Engine the catalogue states on the cold email pipe (among the kept ones that write through
-// message_written), whose tactics name the template + LLM; the stated dynasty's head. No side template / LLM pick.
+// The preview's writer is read live (ONE-WRITER-N-MODELS-1116-CG-PREVIEW): the cold email sender the Rating picks in
+// the Engine the catalogue states on the cold email pipe (kept, writing through message_written), then the way of
+// writing the Rating picks for THAT sender (its tactic template, that dynasty's head). No model is read: the writer's
+// run asks its completion.
 
 const mockResolveDynastyHead = vi.fn();
 vi.mock("../../src/lib/template-dynasty-query.js", () => ({
@@ -17,17 +17,15 @@ vi.stubGlobal("fetch", mockFetch);
 
 const json = (body: unknown, status = 200) => ({ ok: status < 400, status, json: async () => body, text: async () => JSON.stringify(body) });
 
-const WRITER = { dynasty: "dy_template_writer_full", scriptId: "s1", version: 4, kept: true, reason: null };
-const COLD = { dynasty: "dy_cold_email", scriptId: "c1", version: 10, kept: true, reason: null };
 const WAY = { dynasty: "dy_free_offer", scriptId: "w1", version: 1, kept: true, reason: null };
-const CLAUDE = { dynasty: "dy_claude_opus", scriptId: "m1", version: 1, kept: true, reason: null };
-const GEMINI = { dynasty: "dy_gemini_flash", scriptId: "m2", version: 1, kept: true, reason: null };
+const OLD = { dynasty: "dy_template_writer_full", scriptId: "s1", version: 4, kept: true, reason: null };
+const COLD = { dynasty: "dy_cold_email", scriptId: "c1", version: 13, kept: true, reason: null };
 const PUSHED = { dynasty: "dy_pushed_email", scriptId: "p1", version: 2, kept: true, reason: null };
-const strategyAnswer = (scripts: Array<typeof WRITER>) => ({ campaignId: null, strategyId: null, keptDynasties: scripts.filter((s) => s.kept).map((s) => s.dynasty), scripts });
-const COLD_TACTICS = { llm: { name: "Gemini Flash-Lite", model: "gemini-flash-lite", provider: "google" }, asks: ["message_written"], template: "cold-reply-three-line-reply-named" };
+const strategyAnswer = (scripts: Array<typeof WAY>) => ({ campaignId: null, strategyId: null, keptDynasties: scripts.filter((s) => s.kept).map((s) => s.dynasty), scripts });
+const COLD_TACTICS = { asks: ["message_written", "llm_completion"] };
 const engineScripts = () => ({
   scripts: [
-    { dynasty: "dy_cold_email", version: 10, tactics: COLD_TACTICS },
+    { dynasty: "dy_cold_email", version: 13, tactics: COLD_TACTICS },
     { dynasty: "dy_pushed_email", version: 2, tactics: { recorded_by: "email-gateway" } },
   ],
 });
@@ -47,11 +45,8 @@ type Over = {
   writerStrategy?: unknown; writerStrategyStatus?: number;
   coldStrategy?: unknown; coldStrategyStatus?: number;
   scripts?: unknown; scriptsStatus?: number;
-  writerPick?: unknown; writerPickStatus?: number;
   coldPick?: unknown; coldPickStatus?: number;
   wayPick?: unknown; wayPickStatus?: number;
-  completionStrategy?: unknown; completionStrategyStatus?: number;
-  completionPick?: unknown; completionPickStatus?: number;
 };
 
 function route(over: Over = {}) {
@@ -59,22 +54,18 @@ function route(over: Over = {}) {
     if (url.includes("/public/channels")) return json(over.catalogue ?? catalogue(), over.catalogueStatus ?? 200);
     if (url.includes("/internal/script-strategy")) {
       const outcome = new URL(url).searchParams.get("outcome");
-      if (outcome === "message_written") return json(over.writerStrategy ?? strategyAnswer([WRITER]), over.writerStrategyStatus ?? 200);
-      if (outcome === "llm_completion") return json(over.completionStrategy ?? strategyAnswer([CLAUDE, GEMINI]), over.completionStrategyStatus ?? 200);
+      if (outcome === "message_written") return json(over.writerStrategy ?? strategyAnswer([WAY]), over.writerStrategyStatus ?? 200);
+      if (outcome === "llm_completion") throw new Error("the preview never reads the completion strategy: the run picks the model");
       return json(over.coldStrategy ?? strategyAnswer([COLD, PUSHED]), over.coldStrategyStatus ?? 200);
     }
     if (url.includes("/scripts?outcome=")) return json(over.scripts ?? engineScripts(), over.scriptsStatus ?? 200);
-    if (url.includes("/internal/engines/llm_completion/pick")) {
-      return json(over.completionPick ?? { outcome: "llm_completion", dynasty: "dy_gemini_flash", version: 1, scriptId: "m2", draws: [], tactics: { llm: { provider: "google", model: "gemini-flash", name: "Gemini Flash" } } }, over.completionPickStatus ?? 200);
-    }
+    if (url.includes("/internal/engines/llm_completion/pick")) throw new Error("the preview never picks a model: the writer's run does");
     if (url.includes("/internal/engines/message_written/pick")) {
-      const asked = JSON.parse(init?.body ?? "{}");
-      if (asked.askedBy) return json(over.wayPick ?? { outcome: "message_written", dynasty: "dy_free_offer", version: 1, scriptId: "w1", draws: [], tactics: { template: "cold-reply-free-offer-named", asks: ["llm_completion"] } }, over.wayPickStatus ?? 200);
-      return json(over.writerPick ?? { outcome: "message_written", dynasty: asked.keptDynasties[0], version: 4, scriptId: "s1", draws: [], tactics: {} }, over.writerPickStatus ?? 200);
+      return json(over.wayPick ?? { outcome: "message_written", dynasty: "dy_free_offer", version: 1, scriptId: "w1", draws: [], tactics: { template: "cold-reply-free-offer-named", asks: ["llm_completion"] } }, over.wayPickStatus ?? 200);
     }
     if (/\/internal\/engines\/[^/]+\/pick/.test(url)) {
       const asked = JSON.parse(init?.body ?? "{}");
-      return json(over.coldPick ?? { outcome: "email_sent", dynasty: asked.keptDynasties[0], version: 10, scriptId: "c1", draws: [], tactics: COLD_TACTICS }, over.coldPickStatus ?? 200);
+      return json(over.coldPick ?? { outcome: "email_sent", dynasty: asked.keptDynasties[0], version: 13, scriptId: "c1", draws: [], tactics: COLD_TACTICS }, over.coldPickStatus ?? 200);
     }
     throw new Error(`unexpected fetch ${url}`);
   });
@@ -90,39 +81,41 @@ beforeEach(() => {
 });
 
 describe("resolvePreviewWriter", () => {
-  it("a brand with no campaign and no strategy: the writer script, and the template + LLM the picked cold email script states", async () => {
+  it("a brand with no campaign and no strategy: the writer the Rating picks for the picked sender, and its template", async () => {
     route();
     const plan = await resolvePreviewWriter(IDENTITY);
     expect(plan).toEqual({
-      script: { dynasty: "dy_template_writer_full", version: 4 },
-      emailScript: { engine: "email_sent", dynasty: "dy_cold_email", version: 10 },
-      templateDynastySlug: "cold-reply-three-line-reply-named",
+      emailScript: { engine: "email_sent", dynasty: "dy_cold_email", version: 13 },
+      writerScript: { dynasty: "dy_free_offer", version: 1 },
+      templateDynastySlug: "cold-reply-free-offer-named",
       promptType: "yc-cold-email-v3",
-      model: "gemini-flash-lite",
     });
     for (const c of calls(/\/internal\/script-strategy/)) {
       expect(String(c[0])).not.toContain("campaignId");
       expect(String(c[0])).not.toContain("strategyId");
     }
-    expect(mockResolveDynastyHead).toHaveBeenCalledWith("cold-reply-three-line-reply-named");
+    expect(mockResolveDynastyHead).toHaveBeenCalledWith("cold-reply-free-offer-named");
   });
 
-  it("never asks a side template or LLM pick, nor a workflow / play / writer ranking", async () => {
-    route();
-    await resolvePreviewWriter(IDENTITY);
+  it("never picks a model or runs dy_template_writer_full: no completion pick, no side template / LLM / workflow pick", async () => {
+    route({ writerStrategy: strategyAnswer([WAY, OLD]) });
+    const plan = await resolvePreviewWriter(IDENTITY);
+    expect(plan.writerScript.dynasty).toBe("dy_free_offer");
+    expect(plan).not.toHaveProperty("model");
     const urls = mockFetch.mock.calls.map((c) => String(c[0]));
-    expect(urls.some((u) => /-pick\?|leg-workflow-ranking|leg-writer-ranking|writer-pick|catalogue\/plays|\/workflows/.test(u))).toBe(false);
+    expect(urls.some((u) => /llm_completion|-pick\?|leg-workflow-ranking|leg-writer-ranking|writer-pick|catalogue\/plays|\/workflows/.test(u))).toBe(false);
+    // The only message_written pick is the way of writing asked by the sender (never a pick on the old writer's materials).
+    const picks = calls(/\/internal\/engines\/message_written\/pick/).map((c) => JSON.parse(c[1].body));
+    expect(picks).toEqual([{ keptDynasties: ["dy_free_offer", "dy_template_writer_full"], servable: ["generation_request"], askedBy: "email_sent/dy_cold_email" }]);
   });
 
-  it("the cold email pick runs among the kept scripts that write through message_written, handing nothing", async () => {
+  it("the sender pick runs among the kept scripts that write through message_written, handing nothing", async () => {
     route();
     await resolvePreviewWriter(IDENTITY);
     const [pick] = calls(/\/internal\/engines\/email_sent\/pick/);
     expect(JSON.parse(pick[1].body)).toEqual({ keptDynasties: ["dy_cold_email"], servable: [] });
     const [list] = calls(/\/scripts\?outcome=email_sent/);
     expect(list[1].headers).toMatchObject({ "x-org-id": "org-1", "x-user-id": "user-1", "x-run-id": IDENTITY.runId });
-    const [writerPick] = calls(/\/internal\/engines\/message_written\/pick/);
-    expect(JSON.parse(writerPick[1].body)).toEqual({ keptDynasties: ["dy_template_writer_full"], servable: ["lead_identified", "brand_context", "template_written"] });
   });
 
   it("the cold email Engine is the one the catalogue states (its `to` step when it states no outcome)", async () => {
@@ -154,34 +147,34 @@ describe("resolvePreviewWriter", () => {
     await expect(resolvePreviewWriter(IDENTITY, "nope")).rejects.toMatchObject({ status: 400, code: "UNKNOWN_STRATEGY" });
   });
 
-  it("a strategy keeping no writer script = 422 NO_SCRIPT_KEPT, never another strategy's script", async () => {
-    route({ writerStrategy: strategyAnswer([{ ...WRITER, kept: false, reason: "excluded by Blind angle" }]) });
+  it("a strategy keeping no writer = 422 NO_SCRIPT_KEPT, never another strategy's script", async () => {
+    route({ writerStrategy: strategyAnswer([{ ...WAY, kept: false, reason: "excluded by Blind angle" }]) });
     await expect(resolvePreviewWriter(IDENTITY, "blind-emails-only")).rejects.toMatchObject({ status: 422, code: "NO_SCRIPT_KEPT" });
     expect(mockResolveDynastyHead).not.toHaveBeenCalled();
   });
 
-  it("no kept cold email script writes through message_written = 422 NO_SCRIPT_KEPT, no pick asked", async () => {
+  it("no kept sender writes through message_written = 422 NO_SCRIPT_KEPT, no pick asked", async () => {
     route({ coldStrategy: strategyAnswer([PUSHED]) });
     await expect(resolvePreviewWriter(IDENTITY)).rejects.toMatchObject({ status: 422, code: "NO_SCRIPT_KEPT" });
     expect(calls(/\/internal\/engines\/email_sent\/pick/)).toHaveLength(0);
   });
 
-  it("the Rating finding nothing it can run = 422 NO_SCRIPT_KEPT", async () => {
+  it("the Rating finding no sender or no writer it can run = 422 NO_SCRIPT_KEPT", async () => {
     route({ coldPick: { code: "no_runnable_script" }, coldPickStatus: 404 });
+    await expect(resolvePreviewWriter(IDENTITY)).rejects.toMatchObject({ status: 422, code: "NO_SCRIPT_KEPT" });
+    __resetPreviewWriterCache();
+    route({ wayPick: { code: "no_runnable_script" }, wayPickStatus: 404 });
     await expect(resolvePreviewWriter(IDENTITY)).rejects.toMatchObject({ status: 422, code: "NO_SCRIPT_KEPT" });
   });
 
-  it("the picked cold email script stating no template or LLM = a named refusal, nothing written", async () => {
-    route({ coldPick: { dynasty: "dy_cold_email", version: 10, tactics: { asks: ["message_written"], llm: { model: "glm" } } } });
+  it("the picked writer stating no template = a named refusal, never a default", async () => {
+    route({ wayPick: { dynasty: "dy_free_offer", version: 1, tactics: { asks: ["llm_completion"] } } });
     await expect(resolvePreviewWriter(IDENTITY)).rejects.toMatchObject({ status: 422, code: "SCRIPT_STATES_NO_TEMPLATE" });
-    __resetPreviewWriterCache();
-    route({ coldPick: { dynasty: "dy_cold_email", version: 10, tactics: { asks: ["message_written"], template: "t" } } });
-    await expect(resolvePreviewWriter(IDENTITY)).rejects.toMatchObject({ status: 422, code: "SCRIPT_STATES_NO_LLM" });
     expect(mockResolveDynastyHead).not.toHaveBeenCalled();
   });
 
   it("a pick answering without the script's tactics = 502, never a default", async () => {
-    route({ coldPick: { dynasty: "dy_cold_email", version: 10 } });
+    route({ wayPick: { dynasty: "dy_free_offer", version: 1 } });
     await expect(resolvePreviewWriter(IDENTITY)).rejects.toMatchObject({ status: 502 });
   });
 
@@ -207,63 +200,5 @@ describe("resolvePreviewWriter", () => {
     expect(mockResolveDynastyHead).toHaveBeenCalledTimes(2);
     await resolvePreviewWriter(IDENTITY, "named-emails-only");
     expect(calls(/script-strategy/)).toHaveLength(4);
-  });
-
-  describe("a sender naming no template and no LLM (ONE-WRITER-N-MODELS-1116)", () => {
-    const SWITCHED = { outcome: "email_sent", dynasty: "dy_cold_email", version: 11, scriptId: "c2", draws: [], tactics: { asks: ["message_written"] } };
-    const switched = (over: Over = {}) => route({ coldPick: SWITCHED, writerStrategy: strategyAnswer([WRITER, WAY]), ...over });
-
-    it("writes with the template of the writer the Rating picks for that sender and the LLM of the completion script it picks for that writer", async () => {
-      switched();
-      const plan = await resolvePreviewWriter(IDENTITY);
-      expect(plan).toEqual({
-        script: { dynasty: "dy_template_writer_full", version: 4 },
-        emailScript: { engine: "email_sent", dynasty: "dy_cold_email", version: 11 },
-        writerScript: { dynasty: "dy_free_offer", version: 1 },
-        completionScript: { dynasty: "dy_gemini_flash", version: 1 },
-        templateDynastySlug: "cold-reply-free-offer-named",
-        promptType: "yc-cold-email-v3",
-        model: "gemini-flash",
-      });
-      expect(mockResolveDynastyHead).toHaveBeenCalledWith("cold-reply-free-offer-named");
-      const way = calls(/\/internal\/engines\/message_written\/pick/).map((c) => JSON.parse(c[1].body)).find((b) => b.askedBy);
-      expect(way).toEqual({ keptDynasties: ["dy_template_writer_full", "dy_free_offer"], servable: ["generation_request"], askedBy: "email_sent/dy_cold_email" });
-      const [completion] = calls(/\/internal\/engines\/llm_completion\/pick/);
-      expect(JSON.parse(completion[1].body)).toEqual({ keptDynasties: ["dy_claude_opus", "dy_gemini_flash"], servable: [], askedBy: "message_written/dy_free_offer" });
-    });
-
-    it("the completion scripts are the ones the strategy keeps", async () => {
-      switched();
-      await resolvePreviewWriter(IDENTITY, "named-emails-only");
-      expect(calls(/script-strategy\?outcome=llm_completion&strategyId=named-emails-only/)).toHaveLength(1);
-    });
-
-    it("the picked writer stating no template, or the picked completion script no LLM = a named refusal, never a default", async () => {
-      switched({ wayPick: { dynasty: "dy_free_offer", version: 1, tactics: { asks: ["llm_completion"] } } });
-      await expect(resolvePreviewWriter(IDENTITY)).rejects.toMatchObject({ status: 422, code: "SCRIPT_STATES_NO_TEMPLATE" });
-      __resetPreviewWriterCache();
-      switched({ completionPick: { dynasty: "dy_gemini_flash", version: 1, tactics: {} } });
-      await expect(resolvePreviewWriter(IDENTITY)).rejects.toMatchObject({ status: 422, code: "SCRIPT_STATES_NO_LLM" });
-      expect(mockResolveDynastyHead).not.toHaveBeenCalled();
-    });
-
-    it("no writer or no completion script the Rating can run, or none kept = 422 NO_SCRIPT_KEPT", async () => {
-      switched({ wayPick: { code: "no_runnable_script" }, wayPickStatus: 404 });
-      await expect(resolvePreviewWriter(IDENTITY)).rejects.toMatchObject({ status: 422, code: "NO_SCRIPT_KEPT" });
-      __resetPreviewWriterCache();
-      switched({ completionPick: { code: "no_runnable_script" }, completionPickStatus: 404 });
-      await expect(resolvePreviewWriter(IDENTITY)).rejects.toMatchObject({ status: 422, code: "NO_SCRIPT_KEPT" });
-      __resetPreviewWriterCache();
-      switched({ completionStrategy: strategyAnswer([{ ...CLAUDE, kept: false, reason: "excluded" }]) });
-      await expect(resolvePreviewWriter(IDENTITY)).rejects.toMatchObject({ status: 422, code: "NO_SCRIPT_KEPT" });
-    });
-
-    it("a sender still stating them asks no writer or completion pick (today's behaviour)", async () => {
-      route();
-      await resolvePreviewWriter(IDENTITY);
-      expect(calls(/\/internal\/engines\/llm_completion\/pick/)).toHaveLength(0);
-      expect(calls(/script-strategy\?outcome=llm_completion/)).toHaveLength(0);
-      expect(calls(/\/internal\/engines\/message_written\/pick/).every((c) => !JSON.parse(c[1].body).askedBy)).toBe(true);
-    });
   });
 });

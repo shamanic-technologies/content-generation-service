@@ -585,6 +585,14 @@ export const GenerateRequestSchema = registry.register(
       offerId: z.string().optional().describe("The campaign's offer id. Forwarded to brand-service on the extract-fields request, which refuses brand-scoped reads for a brand selling several offers until one is named. Body only — there is no header fallback. Sent only when a single brand is named; ignored for a multi-brand request, which brand-service rejects with an offer."),
       written: z.record(z.string(), z.unknown()).nullish().describe("FACTORY-P3 script writer: workflow-service's `POST /orgs/scripts/run` answer (run with `trace: true`, `recordedBy: \"content-generation\"`) for the script `message_written/dy_template_writer_full`. When present, /generate does NOT call the LLM: it stores the email the script wrote (same row, prompt_raw, response_raw, chat_request + inputs, generation_run_id = the script's run) and declares its ONE `message_written` on that run. Requires `units`. `null` = absent (a skipped script step answers null). A request already answered (idempotency key, the lead's email for this campaign) returns the stored email, as always."),
       units: z.record(z.string(), z.unknown()).nullish().describe("The materials the script writer was handed: `POST /generate/materials`'s `units`, verbatim. Read with `written`."),
+      preview: z
+        .object({
+          key: z.string().min(1).describe("The stored preview's recipient key: the materials' subject is `content-generation-service`/`preview:<key>`."),
+          campaignContext: z.record(z.string(), z.unknown()).nullable().optional().describe("The preview's sample audience context (no campaign to read it from)."),
+          giveLists: z.object({ giveForFree: z.array(z.string()), neverGive: z.array(z.string()) }).nullable().optional().describe("The offer's confirmed give lists, as the preview already read them."),
+        })
+        .optional()
+        .describe("ONE-WRITER-N-MODELS-1116-CG-PREVIEW: `POST /generate/materials` only. A signed-out preview (content-generation's own `/preview-email`, through the cold email writer it runs): no lead, so no leadId required, no idempotency or one-email-per-lead hit, no language; the campaign context and give lists are the ones given here. `/generate` refuses it (400 PREVIEW_NOT_STORABLE): a preview is never an email_generations row."),
     })
     .openapi("GenerateRequest")
 );

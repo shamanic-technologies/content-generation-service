@@ -3,10 +3,11 @@ import express from "express";
 import request from "supertest";
 
 // POST /preview-email writes ONE cold email for a brand + a sample recipient, before any campaign exists
-// (PREVIEW-EMAIL-503-1111). These tests pin: the email Engine's script the strategy keeps writes it (run through
-// workflow-service under the caller's identity, recorded by us, declaring nothing), with the template + LLM
-// features-service picks and the materials every script writer gets; a brand with zero history and no campaign gets
-// an email with or without a strategy; no fallback script/template/model; a refusal to pay is a clean 402; a repeat is
+// (ONE-WRITER-N-MODELS-1116-CG-PREVIEW). These tests pin: the SAME writer a campaign uses writes it (the way of writing
+// the Rating picks for the picked sender, run through workflow-service under the caller's identity, recorded by us),
+// handed a `generation_request` marked `preview` (our /generate/materials answers it with no lead); the model is the
+// writer's asked completion, never named here; dy_template_writer_full is never run; a brand with zero history and no
+// campaign gets an email with or without a strategy; no fallback; a refusal to pay is a clean 402; a repeat is
 // answered from storage with no downstream call; nothing is written to email_generations.
 
 vi.mock("../../src/middleware/auth.js", () => ({
@@ -43,11 +44,6 @@ vi.mock("../../src/db/index.js", () => ({
       prompts: { findFirst: (...a: unknown[]) => mockPromptFindFirst(...a) },
     },
   },
-}));
-
-const mockDynastyIdentityOf = vi.fn();
-vi.mock("../../src/lib/dynasty-membership.js", () => ({
-  dynastyIdentityOf: (...a: unknown[]) => mockDynastyIdentityOf(...a),
 }));
 
 const mockFetchBrandIntel = vi.fn();
@@ -128,21 +124,27 @@ const INTEL = {
 
 const TEMPLATE = "Today {{currentDate}}. Prospect {{leadFirstName}} {{leadLastName}}, {{leadTitle}} at {{leadCompanyName}} ({{leadCompanyIndustry}}, {{leadCompanySize}}). Client {{clientName}}. Intel {{brandExtractedFields}}. Site {{brandWebsiteUrl}}";
 
-// The writer features-service + workflow-service name today. Deliberately not a real head: the route uses whatever the plan says.
+// The sender + writer the Rating picks today. Deliberately not a real head: the route uses whatever the plan says.
 const PLAN: PreviewWriterPlan = {
-  script: { dynasty: "dy_template_writer_full", version: 4 },
-  emailScript: { engine: "email_sent", dynasty: "dy_cold_email", version: 10 },
-  templateDynastySlug: "cold-reply-three-line-reply-named",
+  emailScript: { engine: "email_sent", dynasty: "dy_cold_email", version: 13 },
+  writerScript: { dynasty: "dy_free_offer", version: 1 },
+  templateDynastySlug: "cold-reply-free-offer-named",
   promptType: "blind-discovery-email-v33",
-  model: "glm-pro",
 };
 
-/** What workflow-service answers for a made script run with `trace: true`. */
+/** The materials our /generate/materials answered the writer (they ride its Unit as `generation.units`). */
+const MATERIALS_UNITS = {
+  lead_identified: { content: { variables: { leadFirstName: "Jane" } } },
+  brand_context: { content: { variables: { clientName: "Brand Co" }, campaignContext: { audience: "Heads of sales at US B2B SaaS companies" } } },
+  template_written: { content: { text: "the template" } },
+};
+
+/** What workflow-service answers for a made writer run with `trace: true` (its asked completion's calls in the trace). */
 function scriptAnswer(over: Record<string, unknown> = {}) {
   return {
     scriptId: "1fd82c22-b7bc-42ee-a8ed-26081d0d921c",
-    scriptSlug: "message_written/dy_template_writer_full/v4",
-    version: 4,
+    scriptSlug: "message_written/dy_free_offer/v1",
+    version: 1,
     runId: "script-run-1",
     status: "made",
     unit: {
@@ -154,12 +156,15 @@ function scriptAnswer(over: Record<string, unknown> = {}) {
           { step: 1, bodyText: "Hi Jane,\n\nHello.", bodyHtml: "<p>Hi Jane,</p><p>Hello.</p>", daysSinceLastStep: 0 },
           { step: 2, bodyText: "Following up.", bodyHtml: "<p>Following up.</p>", daysSinceLastStep: 3 },
         ],
+        generation: { body: {}, units: MATERIALS_UNITS },
       },
     },
     error: null,
     vendorCalls: [],
     declared: { produced: [], consumed: [] },
     trace: [
+      { name: "content.template_head", args: {}, answer: { template: { type: "blind-discovery-email-v33" } } },
+      { name: "content.materials", args: {}, answer: {} },
       { name: "voice.read", args: {}, answer: { data: { content: "Our voice." } } },
       { name: "llm.complete", args: {}, answer: {}, sent: { message: "the message", systemPrompt: "the system", responseSchema: {}, provider: "zai", model: "glm-pro" }, raw: { model: "glm-5.1", tokensInput: 100, tokensOutput: 50 } },
     ],
@@ -187,10 +192,14 @@ function storedRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** The variables the script was handed (the lead and brand halves of its materials, merged). */
+/** The generation request the writer was handed (our /generate request minus template and model). */
+function sentBody(call = 0): Record<string, any> {
+  return mockRunScript.mock.calls[call][0].units.generation_request.content.body;
+}
+
+/** The variables the writer was handed (it asks our /generate/materials with them). */
 function sentVariables(call = 0): Record<string, unknown> {
-  const units = mockRunScript.mock.calls[call][0].units;
-  return { ...units.lead_identified.content.variables, ...units.brand_context.content.variables };
+  return sentBody(call).variables;
 }
 
 beforeEach(() => {
@@ -198,7 +207,6 @@ beforeEach(() => {
   mockPreviewFindFirst.mockResolvedValue(undefined);
   mockPromptFindFirst.mockResolvedValue({ type: PLAN.promptType, prompt: TEMPLATE });
   mockResolvePreviewWriter.mockResolvedValue(PLAN);
-  mockDynastyIdentityOf.mockResolvedValue("named");
   mockExtractBrandFields.mockResolvedValue(new Map());
   mockFetchBrandIntel.mockResolvedValue(INTEL);
   mockFetchGiveLists.mockResolvedValue({ giveForFree: [], neverGive: [] });
@@ -216,38 +224,39 @@ beforeEach(() => {
 });
 
 describe("POST /preview-email", () => {
-  it("a brand with zero history and no campaign gets an email written by the email Engine's script", async () => {
+  it("a brand with zero history and no campaign gets an email written by the writer a campaign uses", async () => {
     const res = await request(app).post("/preview-email").send(BODY);
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ brandId: BRAND_ID, brandName: "Brand Co", subject: "Quick question", bodyText: "Hi Jane,\n\nHello.", cached: false });
 
-    // The writer is read with no strategy (every runnable script, the Rating's template + LLM), the picks recorded on
-    // the preview's own run.
+    // The writer is read with no strategy (the Rating's sender, then its way of writing), on the preview's own run.
     expect(mockResolvePreviewWriter).toHaveBeenCalledWith(expect.objectContaining({ runId: "run-1" }), undefined);
 
-    // The script run: the kept script, under the caller's identity, recorded by us (it declares nothing), traced.
+    // ONE run: the writer the Rating picked, under the caller's identity, recorded by us, traced. No model, no
+    // template, no tactics: the writer reads its own template and asks its completion (the Rating picks the model).
+    expect(mockRunScript).toHaveBeenCalledTimes(1);
     const [body, identity] = mockRunScript.mock.calls[0];
-    expect(body).toMatchObject({
-      outcome: "message_written",
-      dynasty: "dy_template_writer_full",
-      version: 4,
-      recordedBy: "content-generation",
-      trace: true,
-      tactics: { llm: { provider: "zai", model: "glm-pro" } },
-    });
+    expect(body).toMatchObject({ outcome: "message_written", dynasty: "dy_free_offer", version: 1, recordedBy: "content-generation", trace: true });
+    expect(body).not.toHaveProperty("tactics");
+    expect(JSON.stringify(mockRunScript.mock.calls)).not.toContain("dy_template_writer_full");
     expect(body.subject.service).toBe("content-generation-service");
     expect(identity).toMatchObject({ orgId: "11111111-1111-1111-1111-111111111111", userId: "user-1", runId: "run-1", brandId: BRAND_ID });
 
-    // The materials every script writer gets: the picked head's text, the lead half, the brand half.
-    expect(body.units.template_written.content.text).toBe(TEMPLATE);
-    expect(body.units.lead_identified.content.variables).toMatchObject({ leadFirstName: "Jane", leadTitle: "VP Sales", leadCompanyName: "Acme", leadCompanyWebsiteUrl: "acme.com", leadCompanySize: "" });
-    expect(body.units.brand_context.content).toMatchObject({ variables: { clientName: "Brand Co", brandExtractedFields: INTEL.fields }, campaignContext: { audience: BODY.audience } });
-    expect("language" in body.units.lead_identified.content).toBe(false);
-    expect("instruction" in body.units.brand_context.content).toBe(false);
+    // What a sender hands a writer: our /generate request minus template and model, marked `preview` (no lead).
+    expect(Object.keys(body.units)).toEqual(["generation_request"]);
+    const gen = sentBody();
+    expect(gen).not.toHaveProperty("type");
+    expect(gen).not.toHaveProperty("model");
+    expect(gen).not.toHaveProperty("leadId");
+    expect(gen).not.toHaveProperty("campaignId");
+    expect(gen.brandIds).toEqual([BRAND_ID]);
+    expect(gen.variables).toMatchObject({ leadFirstName: "Jane", leadTitle: "VP Sales", leadCompanyName: "Acme", leadCompanyWebsiteUrl: "acme.com", leadCompanySize: "", clientName: "Brand Co", brandExtractedFields: INTEL.fields });
+    expect(gen.preview).toEqual({ key: mockValues.mock.calls[0][0].recipientKey, campaignContext: { audience: BODY.audience }, giveLists: { giveForFree: [], neverGive: [] } });
+    expect(body.subject.id).toBe(`preview:${gen.preview.key}`);
   });
 
-  it("with a strategyId: the script, template and LLM that strategy keeps", async () => {
+  it("with a strategyId: the sender and writer that strategy keeps", async () => {
     await request(app).post("/preview-email").send({ ...BODY, strategyId: "named-emails-only" });
     expect(mockResolvePreviewWriter).toHaveBeenCalledWith(expect.objectContaining({ runId: "run-1" }), "named-emails-only");
     expect(mockRunScript).toHaveBeenCalledTimes(1);
@@ -305,20 +314,14 @@ describe("POST /preview-email", () => {
     expect(identity).toMatchObject({ orgId: "11111111-1111-1111-1111-111111111111", userId: "user-1", runId: "run-1", brandId: BRAND_ID });
   });
 
-  it("a blind template's writer never sees who the client is", async () => {
-    mockDynastyIdentityOf.mockResolvedValue("blind");
-    await request(app).post("/preview-email").send(BODY);
-    expect(JSON.stringify(mockRunScript.mock.calls[0][0].units.brand_context)).not.toContain("Brand Co");
-  });
-
-  it("records the script, template and model that wrote the stored preview", async () => {
+  it("records the writer, template and the model that answered on the stored preview", async () => {
     mockReturning.mockImplementation(async () => [storedRow({ runId: "run-1", ...mockValues.mock.calls[0][0] })]);
     const res = await request(app).post("/preview-email").send(BODY);
     expect(mockValues.mock.calls[0][0]).toMatchObject({
       promptType: "blind-discovery-email-v33",
-      modelAlias: "glm-pro",
-      scriptSlug: "message_written/dy_template_writer_full/v4",
-      templateDynastySlug: "cold-reply-three-line-reply-named",
+      modelAlias: null,
+      scriptSlug: "message_written/dy_free_offer/v1",
+      templateDynastySlug: "cold-reply-free-offer-named",
       model: "glm-5.1",
       tokensInput: 100,
       tokensOutput: 50,
@@ -327,15 +330,24 @@ describe("POST /preview-email", () => {
     });
     // One email per generation (FOLLOWUP-JIT-1107): the follow-up the script wrote is not kept.
     expect(mockValues.mock.calls[0][0].sequence).toHaveLength(1);
-    expect(res.body).toMatchObject({ scriptSlug: "message_written/dy_template_writer_full/v4", templateDynastySlug: "cold-reply-three-line-reply-named", workflowSlug: null });
+    expect(res.body).toMatchObject({ scriptSlug: "message_written/dy_free_offer/v1", templateDynastySlug: "cold-reply-free-offer-named", workflowSlug: null, model: "glm-5.1" });
   });
 
-  it("writes a new preview when the script version, template or LLM changes", async () => {
+  it("a writer run whose completion names no answering model is a named 502, nothing stored", async () => {
+    const a = scriptAnswer();
+    a.trace[3] = { ...a.trace[3], raw: { tokensInput: 1, tokensOutput: 1 } } as (typeof a.trace)[number];
+    mockRunScript.mockResolvedValue(a);
+    const res = await request(app).post("/preview-email").send(BODY);
+    expect(res.status).toBe(502);
+    expect(res.body.code).toBe("SCRIPT_WROTE_NOTHING");
+    expect(mockInsert).not.toHaveBeenCalled();
+  });
+
+  it("writes a new preview when the writer version or its template changes", async () => {
     await request(app).post("/preview-email").send(BODY);
-    const first = mockValues.mock.calls[0][0].recipientKey;
-    mockResolvePreviewWriter.mockResolvedValue({ ...PLAN, script: { ...PLAN.script, version: 5 } });
+    mockResolvePreviewWriter.mockResolvedValue({ ...PLAN, writerScript: { ...PLAN.writerScript, version: 2 } });
     await request(app).post("/preview-email").send(BODY);
-    mockResolvePreviewWriter.mockResolvedValue({ ...PLAN, model: "deepseek-flash" });
+    mockResolvePreviewWriter.mockResolvedValue({ ...PLAN, promptType: "cold-reply-free-offer-named-v2" });
     await request(app).post("/preview-email").send(BODY);
     const keys = mockValues.mock.calls.map((c) => c[0].recipientKey);
     expect(new Set(keys).size).toBe(3);
@@ -357,7 +369,7 @@ describe("POST /preview-email", () => {
   });
 
   it("refuses an org that cannot afford the completion with a clean 402", async () => {
-    mockRunScript.mockRejectedValue(new ScriptRunError(402, "workflow-service script message_written/dy_template_writer_full failed: 502 - llm.complete 402"));
+    mockRunScript.mockRejectedValue(new ScriptRunError(402, "workflow-service script message_written/dy_free_offer failed: 502 - llm.complete 402"));
     const res = await request(app).post("/preview-email").send(BODY);
     expect(res.status).toBe(402);
     expect(res.body.error).toBe("Insufficient credits");
@@ -399,7 +411,7 @@ describe("POST /preview-email", () => {
     expect(mockRunScript).not.toHaveBeenCalled();
   });
 
-  it("writes with the offer's give lists: passed to the completion, and the free-give list is a highlight source", async () => {
+  it("writes with the offer's give lists: handed to the writer's materials, and the free-give list is a highlight source", async () => {
     const lists = { giveForFree: ["A free pipeline audit"], neverGive: ["Discounts"] };
     mockFetchGiveLists.mockResolvedValue(lists);
     const res = await request(app).post("/preview-email").send({ ...BODY, offerId: "9a1b2c3d-0000-4000-8000-000000000001" });
@@ -408,7 +420,8 @@ describe("POST /preview-email", () => {
     const [identity] = mockFetchGiveLists.mock.calls[0];
     expect(identity).toMatchObject({ brandId: BRAND_ID, offerId: "9a1b2c3d-0000-4000-8000-000000000001" });
 
-    expect(mockRunScript.mock.calls[0][0].units.brand_context.content.giveLists).toEqual(lists);
+    expect(sentBody().preview.giveLists).toEqual(lists);
+    expect(sentBody().offerId).toBe("9a1b2c3d-0000-4000-8000-000000000001");
     const [annotateInput] = mockAnnotate.mock.calls[0];
     const source = annotateInput.sources.find((s: { id: string }) => s.id === "offer.giveForFree");
     expect(source).toBeDefined();
@@ -418,7 +431,7 @@ describe("POST /preview-email", () => {
 
   it("offers no free-give highlight source when the lists are empty", async () => {
     await request(app).post("/preview-email").send(BODY);
-    expect(mockRunScript.mock.calls[0][0].units.brand_context.content.giveLists).toEqual({ giveForFree: [], neverGive: [] });
+    expect(sentBody().preview.giveLists).toEqual({ giveForFree: [], neverGive: [] });
     expect(mockAnnotate.mock.calls[0][0].sources.map((s: { id: string }) => s.id)).not.toContain("offer.giveForFree");
   });
 
