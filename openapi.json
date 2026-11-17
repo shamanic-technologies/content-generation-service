@@ -449,6 +449,51 @@
               "nullable": true
             },
             "description": "The materials the script writer was handed: `POST /generate/materials`'s `units`, verbatim. Read with `written`."
+          },
+          "preview": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The stored preview's recipient key: the materials' subject is `content-generation-service`/`preview:<key>`."
+              },
+              "campaignContext": {
+                "type": "object",
+                "nullable": true,
+                "additionalProperties": {
+                  "nullable": true
+                },
+                "description": "The preview's sample audience context (no campaign to read it from)."
+              },
+              "giveLists": {
+                "type": "object",
+                "nullable": true,
+                "properties": {
+                  "giveForFree": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "neverGive": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "giveForFree",
+                  "neverGive"
+                ],
+                "description": "The offer's confirmed give lists, as the preview already read them."
+              }
+            },
+            "required": [
+              "key"
+            ],
+            "description": "ONE-WRITER-N-MODELS-1116-CG-PREVIEW: `POST /generate/materials` only. A signed-out preview (content-generation's own `/preview-email`, through the cold email writer it runs): no lead, so no leadId required, no idempotency or one-email-per-lead hit, no language; the campaign context and give lists are the ones given here. `/generate` refuses it (400 PREVIEW_NOT_STORABLE): a preview is never an email_generations row."
           }
         },
         "required": [

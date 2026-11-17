@@ -18,9 +18,6 @@
 import type { OfferGiveLists } from "./offer-give-lists.js";
 import { firstEmailOnly } from "./first-email-only.js";
 
-/** The stored script that writes the fleet's cold emails. */
-export const SCRIPT_WRITER = { outcome: "message_written", dynasty: "dy_template_writer_full" } as const;
-
 export interface WriterMaterialsInput {
   promptTemplate: string;
   /** The request's variables after unfilled brand fields were resolved. */
