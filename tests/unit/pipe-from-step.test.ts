@@ -59,6 +59,12 @@ describe("fromStepOnCatalogue", () => {
     expect(from("nudge", "start_to_signup")).toEqual({ known: true, fromStep: null }); // a trigger the catalogue does not serve
     expect(from("nudge", "conversation_to_signup")).toEqual({ known: true, fromStep: "conversation" }); // a stated from step wins
     expect(from("sourcing", "start_to_lead_found")).toEqual({ known: true, fromStep: null }); // proactive from Start
+    // The campaign's OWN trigger wins over the leg's: a campaign on « any fact about a person » (it names no outcome)
+    // running on the leg whose catalogue trigger starts from a signup consumes nothing.
+    const any = { ...withTriggers, triggers: [...withTriggers.triggers, { id: "any_fact", outcomeKey: null, params: null }] };
+    expect(fromStepOnCatalogue(any, { featureSlug: "nudge", legKey: "start_to_paid_client", runsOnTriggerId: "any_fact" })).toEqual({ known: true, fromStep: null });
+    expect(fromStepOnCatalogue(any, { featureSlug: "nudge", legKey: "start_to_paid_client", runsOnTriggerId: null })).toEqual({ known: true, fromStep: "signup" });
+    expect(fromStepOnCatalogue(any, { featureSlug: "nudge", legKey: "start_to_conversation", runsOnTriggerId: "number_given" })).toEqual({ known: true, fromStep: "number_given" });
     // An outcome key the catalogue does not list is never consumed.
     expect(triggerSourceOutcome({ ...withTriggers, outcomes: [] }, "number_given")).toBeNull();
     expect(triggerSourceOutcome(withTriggers, null)).toBeNull();
