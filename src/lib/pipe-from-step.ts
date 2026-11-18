@@ -12,8 +12,14 @@
  * campaign is one pipe). Its `from` step is features-service's catalogue (`GET /public/channels`:
  * `channels[].stepTransitions[]` `{legKey, from}`; a legacy outbound spelling `start_to_*` resolves
  * through `legKeyCorrespondence`). The leg key is OPAQUE: never split, never a slug list.
- * A pipe from nothing (Start: sourcing, a reactive pipe on a reported condition) consumes no lead
- * occurrence.
+ * A pipe from nothing (Start: sourcing) consumes no lead occurrence.
+ *
+ * TRIGGER-OUTCOME-1118 (owner 2026-11-18): a REACTIVE pipe from Start is started by a TRIGGER, and the fact that fired
+ * it is a Unit declared by whoever reports it (crm-service declares « WhatsApp number given » on the lead). The message
+ * consumes that outcome, read off the catalogue the same way for every trigger (`triggerSourceOutcome`): the outcome
+ * the trigger reports (`outcomeKey`), else the outcome a computed trigger starts from (`params.afterStep`: « signed up
+ * and not paid after 30 minutes » is made from the signup), else the outcome listed under the trigger's own id. A
+ * trigger naming none of these (a follow-up someone planned) consumes nothing: never an invented occurrence.
  */
 
 import { getCampaignPipe, type CampaignPipe, type ServiceIdentity } from "./campaign-client.js";
@@ -27,6 +33,8 @@ export interface CataloguePipe {
 export interface CatalogueTransition {
   legKey: string;
   from: { key: string } | null;
+  /** The trigger a reactive pipe runs on (null / absent on a proactive one). */
+  triggerId?: string | null;
   to?: { key: string } | null;
   outcome?: string | null;
 }
@@ -39,6 +47,10 @@ export interface ChannelCatalogue {
     stepTransitions: CatalogueTransition[];
   }>;
   legKeyCorrespondence?: Array<{ channelType: string; legacyLegKey: string; legKey: string }>;
+  /** Every trigger: the outcome it reports (an outcome trigger), its params (a computed one). */
+  triggers?: Array<{ id: string; outcomeKey?: string | null; params?: Record<string, unknown> | null }>;
+  /** Every outcome of the catalogue (the keys a Unit can be declared under). */
+  outcomes?: Array<{ key: string }>;
 }
 
 export type PipeFromStep =
@@ -57,11 +69,25 @@ export function transitionOnCatalogue(catalogue: ChannelCatalogue, pipe: Catalog
   return (renamed ? channel.stepTransitions.find((t) => t.legKey === renamed.legKey) : undefined) ?? null;
 }
 
-/** Pure: the `from` step of (featureSlug, legKey) on the catalogue. */
+/**
+ * Pure: the outcome whose Unit a trigger's firing IS, as the catalogue states it; null = the trigger names none. One
+ * rule for every trigger, read off catalogue data: never a trigger or a channel named here.
+ */
+export function triggerSourceOutcome(catalogue: ChannelCatalogue, triggerId: string | null | undefined): string | null {
+  if (!triggerId) return null;
+  const trigger = (catalogue.triggers ?? []).find((t) => t.id === triggerId);
+  if (!trigger) return null;
+  const outcomes = new Set((catalogue.outcomes ?? []).map((o) => o.key));
+  const after = trigger.params?.afterStep;
+  for (const key of [trigger.outcomeKey, typeof after === "string" ? after : null, trigger.id]) if (key && outcomes.has(key)) return key;
+  return null;
+}
+
+/** Pure: what a message of (featureSlug, legKey) is made from: the pipe's `from` step, else the outcome of the trigger that starts it. */
 export function fromStepOnCatalogue(catalogue: ChannelCatalogue, pipe: CataloguePipe): PipeFromStep {
   const transition = transitionOnCatalogue(catalogue, pipe);
   if (!transition) return { known: false, reason: "pipe_not_in_catalogue" };
-  return { known: true, fromStep: transition.from?.key ?? null };
+  return { known: true, fromStep: transition.from?.key ?? triggerSourceOutcome(catalogue, transition.triggerId) };
 }
 
 const FEATURES_SERVICE_URL = () => process.env.FEATURES_SERVICE_URL || "http://localhost:3050";
