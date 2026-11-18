@@ -16,6 +16,8 @@ export interface CampaignData {
   featureInputs: Record<string, unknown> | null;
   /** The single leg this campaign is bought for (features-service leg key, opaque). Null on pre-funnel rows. */
   legKey?: string | null;
+  /** The trigger THIS campaign runs on, when it states one (it may differ from the trigger the catalogue's leg names). */
+  runsOnTriggerId?: string | null;
 }
 
 // In-memory cache — featureInputs, featureSlug and legKey never change during a campaign's lifetime
@@ -64,7 +66,7 @@ export async function getCampaignFeatureInputs(
 }
 
 export type CampaignPipe =
-  | { featureSlug: string; legKey: string }
+  | { featureSlug: string; legKey: string; runsOnTriggerId?: string | null }
   | { error: "campaign_states_no_leg" | "campaign_unreadable" }
   | null;
 
@@ -83,7 +85,7 @@ export async function getCampaignPipe(campaignId: string | null | undefined, ide
   }
   if (!campaign) return { error: "campaign_unreadable" };
   if (!campaign.featureSlug || !campaign.legKey) return { error: "campaign_states_no_leg" };
-  return { featureSlug: campaign.featureSlug, legKey: campaign.legKey };
+  return { featureSlug: campaign.featureSlug, legKey: campaign.legKey, runsOnTriggerId: campaign.runsOnTriggerId ?? null };
 }
 
 /** Exposed for testing — clear the in-memory cache. */

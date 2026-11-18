@@ -19,7 +19,8 @@
  * consumes that outcome, read off the catalogue the same way for every trigger (`triggerSourceOutcome`): the outcome
  * the trigger reports (`outcomeKey`), else the outcome a computed trigger starts from (`params.afterStep`: « signed up
  * and not paid after 30 minutes » is made from the signup), else the outcome listed under the trigger's own id. A
- * trigger naming none of these (a follow-up someone planned) consumes nothing: never an invented occurrence.
+ * trigger naming none of these (a follow-up someone planned, « Lead event ») consumes nothing: never an invented
+ * occurrence. The trigger read is the one the CAMPAIGN states it runs on (`runsOnTriggerId`), the leg's only without.
  */
 
 import { getCampaignPipe, type CampaignPipe, type ServiceIdentity } from "./campaign-client.js";
@@ -27,6 +28,8 @@ import { getCampaignPipe, type CampaignPipe, type ServiceIdentity } from "./camp
 export interface CataloguePipe {
   featureSlug: string;
   legKey: string;
+  /** The trigger the CAMPAIGN states it runs on; it wins over the trigger the catalogue's leg names. */
+  runsOnTriggerId?: string | null;
 }
 
 /** One pipe of the catalogue: its leg, the step it starts from, the step it reaches, the Engine (outcome) it states. */
@@ -87,7 +90,10 @@ export function triggerSourceOutcome(catalogue: ChannelCatalogue, triggerId: str
 export function fromStepOnCatalogue(catalogue: ChannelCatalogue, pipe: CataloguePipe): PipeFromStep {
   const transition = transitionOnCatalogue(catalogue, pipe);
   if (!transition) return { known: false, reason: "pipe_not_in_catalogue" };
-  return { known: true, fromStep: transition.from?.key ?? triggerSourceOutcome(catalogue, transition.triggerId) };
+  // The trigger that fires THIS campaign is the one it states (prod 2026-11-18: 15 follow-up campaigns run on « Lead
+  // event », any fact about a person, on a leg whose catalogue trigger is « signed up, not paid »: read off the leg, every
+  // message they write would have consumed a signup that did not fire it). The leg's trigger only when it states none.
+  return { known: true, fromStep: transition.from?.key ?? triggerSourceOutcome(catalogue, pipe.runsOnTriggerId ?? transition.triggerId) };
 }
 
 const FEATURES_SERVICE_URL = () => process.env.FEATURES_SERVICE_URL || "http://localhost:3050";
