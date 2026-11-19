@@ -283,8 +283,9 @@ router.post("/preview-email", serviceAuth, async (req: AuthenticatedRequest, res
     }
     if (error instanceof BrandIntelError || error instanceof OfferGiveListsError) {
       // brand-service's own verdict on the brand (not found, several offers, bad
-      // input, unscrapable site) is the caller's to act on; anything else is ours.
-      const status = [400, 404, 409].includes(error.status) ? error.status
+      // input, unscrapable site = 422, e.g. a website that redirects to another
+      // company's, PREVIEW-EMAIL-WRONG-BRAND-1119) is the caller's to act on; anything else is ours.
+      const status = [400, 404, 409, 422].includes(error.status) ? error.status
         : error.status === 402 ? 402
         : 502;
       console.error("[content-generation-service] /preview-email brand intel error:", error.message);

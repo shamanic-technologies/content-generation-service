@@ -406,6 +406,11 @@ describe("POST /preview-email", () => {
     expect((await request(app).post("/preview-email").send(BODY)).status).toBe(404);
     mockFetchBrandIntel.mockRejectedValueOnce(new BrandIntelError(409, "SEVERAL_OFFERS"));
     expect((await request(app).post("/preview-email").send(BODY)).status).toBe(409);
+    // A site that redirects to another company's (pressbeat.io → distribute.you) is the caller's to fix: 422, never a 502 to retry.
+    mockFetchBrandIntel.mockRejectedValueOnce(new BrandIntelError(422, "The brand's website https://pressbeat.com/ redirects to another site"));
+    const offSite = await request(app).post("/preview-email").send(BODY);
+    expect(offSite.status).toBe(422);
+    expect(offSite.body.error).toContain("redirects to another site");
     mockFetchBrandIntel.mockRejectedValueOnce(new BrandIntelError(500, "boom"));
     expect((await request(app).post("/preview-email").send(BODY)).status).toBe(502);
     expect(mockRunScript).not.toHaveBeenCalled();
