@@ -97,6 +97,17 @@ const count = (v: unknown): number | null => {
   return null;
 };
 
+/**
+ * The dataset's `text_hook` is what a vision model READ on the video. Two of its outputs are not
+ * on-screen hooks at all: its own sentence about the picture ("There is no text or emojis on top
+ * of the image.", "The text in the image is: ...") and a phone lock screen it transcribed (clock
+ * readings like "75:04"). Both are the reader's artefacts, never a line a creator wrote (prod
+ * 2026-11-24: 14 of the 300 kept lines).
+ */
+export function isOcrNoise(text: string): boolean {
+  return /\b(in|on|of) (the|this) image\b|\bimage (does not|doesn't) contain\b|^there is no text\b/i.test(text) || /\b\d{1,2}:\d{2}\b.*\b\d{1,2}:\d{2}\b|\b[a-z]+day, [a-z]{3} \d{1,2} \d{1,2}:\d{2}\b/i.test(text);
+}
+
 /** One rows-API page → the hooks passing the keep rule. Reads text_hook, text_hook_lang, views, likes, shares, outlier_multiplier, main_category only. */
 export function parseTikTokPage(body: string): ParsedHook[] {
   const page = JSON.parse(body) as { rows?: Array<{ row?: Record<string, unknown> }> };
@@ -107,6 +118,7 @@ export function parseTikTokPage(body: string): ParsedHook[] {
     const outlier = count(row.outlier_multiplier);
     if (outlier === null || outlier < TIKTOK_MIN_OUTLIER) continue;
     const template = unquote(row.text_hook);
+    if (isOcrNoise(template)) continue;
     const words = template.split(" ").filter(Boolean).length;
     if (words < TIKTOK_MIN_WORDS || words > TIKTOK_MAX_WORDS) continue;
     hooks.push({
