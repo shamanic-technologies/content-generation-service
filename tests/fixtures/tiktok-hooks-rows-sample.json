@@ -1,0 +1,466 @@
+{
+ "features": [
+  {
+   "name": "username"
+  },
+  {
+   "name": "main_category"
+  },
+  {
+   "name": "subcategory"
+  },
+  {
+   "name": "text_hook"
+  },
+  {
+   "name": "length"
+  },
+  {
+   "name": "views"
+  },
+  {
+   "name": "likes"
+  },
+  {
+   "name": "comments"
+  },
+  {
+   "name": "shares"
+  },
+  {
+   "name": "outlier_multiplier"
+  },
+  {
+   "name": "uploaded_at"
+  },
+  {
+   "name": "ad_link"
+  },
+  {
+   "name": "caption"
+  },
+  {
+   "name": "platform"
+  },
+  {
+   "name": "text_hook_lang"
+  },
+  {
+   "name": "caption_lang"
+  },
+  {
+   "name": "conversations"
+  },
+  {
+   "name": "conversations_caption"
+  },
+  {
+   "name": "conversations_text_hook"
+  }
+ ],
+ "rows": [
+  {
+   "row_idx": 0,
+   "row": {
+    "username": "redacted",
+    "main_category": "Business",
+    "subcategory": "HR & Payroll",
+    "text_hook": "\"When the interviewer asks if you have a background in finance\"",
+    "length": 7.0,
+    "views": 3608,
+    "likes": 30,
+    "comments": 0,
+    "shares": 4,
+    "outlier_multiplier": 1.682835821,
+    "uploaded_at": "2025-01-26",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 1,
+   "row": {
+    "username": "redacted",
+    "main_category": "Travel",
+    "subcategory": "Itinerary Planning",
+    "text_hook": "Los mejores destinos de Grecia en 2025 \ud83c\uddec\ud83c\uddf7  Parejas: Milos, Paxos, Parga, Lefkas, Santorini Fiesta: Mykonos, Tinos, los Con amigxs: Corf\u00fa, Mykonos, Skiathos Familia: Zante, Corf\u00fa, Kos, Creta, Rodas Slow-travel: Ithaca, Simy, Koufonisia Lujo a buen precio: Paros, Cefalonia, K\u00e1rpatos Sin turismo masivo: Esciros, Samos, Siros",
+    "length": 7.0,
+    "views": 52400,
+    "likes": 277,
+    "comments": 5,
+    "shares": 138,
+    "outlier_multiplier": 5.24,
+    "uploaded_at": "2025-01-26",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "es"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 2,
+   "row": {
+    "username": "redacted",
+    "main_category": "Entertainment",
+    "subcategory": "Movie Recommendation Tools",
+    "text_hook": "Portrait of a Lady on Fire has now joined the One Million Watched Club",
+    "length": 11.0,
+    "views": 168300,
+    "likes": 37700,
+    "comments": 153,
+    "shares": 716,
+    "outlier_multiplier": 3.352589641,
+    "uploaded_at": "2025-01-25",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 3,
+   "row": {
+    "username": "redacted",
+    "main_category": "Entertainment",
+    "subcategory": "Movie Recommendation Tools",
+    "text_hook": "Oh, wow.",
+    "length": 88.0,
+    "views": 163100,
+    "likes": 16900,
+    "comments": 115,
+    "shares": 217,
+    "outlier_multiplier": 3.249003984,
+    "uploaded_at": "2025-01-25",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 4,
+   "row": {
+    "username": "redacted",
+    "main_category": "Entertainment",
+    "subcategory": "Audio Apps",
+    "text_hook": "Listening to smut in Target just to feel something",
+    "length": 15.0,
+    "views": 104700,
+    "likes": 7584,
+    "comments": 70,
+    "shares": 498,
+    "outlier_multiplier": 5.183168317,
+    "uploaded_at": "2025-01-25",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 5,
+   "row": {
+    "username": "redacted",
+    "main_category": "Entertainment",
+    "subcategory": "Celebrity News & Gossip",
+    "text_hook": "HE'S GONNA BE THINKING",
+    "length": 61.0,
+    "views": 4144,
+    "likes": 200,
+    "comments": 2,
+    "shares": 2,
+    "outlier_multiplier": 4.609566185,
+    "uploaded_at": "2025-01-25",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 6,
+   "row": {
+    "username": "redacted",
+    "main_category": "Health & Fitness",
+    "subcategory": "Workout Trackers",
+    "text_hook": "\"Upper/Lower is better\"",
+    "length": 0.0,
+    "views": 18900,
+    "likes": 586,
+    "comments": 5,
+    "shares": 5,
+    "outlier_multiplier": 2.115513768,
+    "uploaded_at": "2025-01-25",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 7,
+   "row": {
+    "username": "redacted",
+    "main_category": "Health & Fitness",
+    "subcategory": "Diet & Nutrition",
+    "text_hook": "240 cal 2g protein 80 cal 10g protein I\u2019m not giving up donuts Me too",
+    "length": 10.0,
+    "views": 8351,
+    "likes": 115,
+    "comments": 0,
+    "shares": 3,
+    "outlier_multiplier": 16.05961538,
+    "uploaded_at": "2025-01-25",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 8,
+   "row": {
+    "username": "redacted",
+    "main_category": "Health & Fitness",
+    "subcategory": "Diet & Nutrition",
+    "text_hook": "POV: you can't get abs  \"I eat healthy lunch\"  \"Me too\"",
+    "length": 15.0,
+    "views": 8125,
+    "likes": 84,
+    "comments": 0,
+    "shares": 1,
+    "outlier_multiplier": 15.625,
+    "uploaded_at": "2025-01-25",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 9,
+   "row": {
+    "username": "redacted",
+    "main_category": "Health & Fitness",
+    "subcategory": "Diet & Nutrition",
+    "text_hook": "Let's check its nutritional value Sure, whatever",
+    "length": 35.0,
+    "views": 1208,
+    "likes": 32,
+    "comments": 0,
+    "shares": 0,
+    "outlier_multiplier": 2.323076923,
+    "uploaded_at": "2025-01-25",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 10,
+   "row": {
+    "username": "redacted",
+    "main_category": "Books",
+    "subcategory": "Interactive Storytelling",
+    "text_hook": "IF YOU LIKE... THEN READ  Let's Go!",
+    "length": 0.0,
+    "views": 1270,
+    "likes": 35,
+    "comments": 0,
+    "shares": 0,
+    "outlier_multiplier": 2.0,
+    "uploaded_at": "2025-01-24",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 11,
+   "row": {
+    "username": "redacted",
+    "main_category": "Business",
+    "subcategory": "HR & Payroll",
+    "text_hook": "Can't believe shes using AI for a job interview \ud83d\ude2d",
+    "length": 19.0,
+    "views": 10100,
+    "likes": 74,
+    "comments": 1,
+    "shares": 10,
+    "outlier_multiplier": 4.710820896,
+    "uploaded_at": "2025-01-24",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 12,
+   "row": {
+    "username": "redacted",
+    "main_category": "Education",
+    "subcategory": "Exam Preparation",
+    "text_hook": "\u049a\u0430\u0437\u0430\u049b\u0442\u0430\u0440 \u043d\u0435 \u0433\u04e9\u0440\u04d9\u0442: \u043c\u044b\u043d\u0434\u0430 \u0442\u04e9\u0433\u04d9\u043d \u043f\u0440\u043e\u0431\u043d\u044b\u0439 \u0436\u04d9\u043d\u0435 \u0441\u0430\u0431\u0430\u049b\u0442\u0430\u0440 \u0431\u0430\u0440 \u0435\u043a\u0435\u043d, \u043f\u0430\u0439\u0434\u0430\u043b\u044b \u043d\u04d9\u0440\u0441\u0435 \u0493\u043e\u0439 \u049b\u043e\u043b\u0434\u0430\u043d\u0430\u0439\u044b\u049b  \u049a\u0430\u0437\u0430\u049b\u0442\u0430\u0440 \u0433\u04e9\u0440\u04d9\u0442: \u043c\u0435\u043d \u0431\u0438\u0440 \u0434\u04e9\u043b \u0423\u0411\u0422 \u043d\u0443\u0441\u043a\u0430\u0441\u044b\u043c\u0435\u043d \u0442\u0435\u0441\u0442 \u0442\u0430\u043f\u0441\u044b\u0440\u0430\u0442\u044b\u043d \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435 \u0431\u0456\u043b\u0435\u043c\u0456\u043d, \u043c\u0430\u0493\u0430\u043d 5\u043a \u0441\u0430\u043b \u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435\u043d\u0456 \u0430\u0439\u0442\u0430\u04a3\u044b\u0437))  \u041f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435: Baimly",
+    "length": 10.0,
+    "views": 2946,
+    "likes": 98,
+    "comments": 4,
+    "shares": 1,
+    "outlier_multiplier": 4.374164811,
+    "uploaded_at": "2025-01-24",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "kk"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 13,
+   "row": {
+    "username": "redacted",
+    "main_category": "Entertainment",
+    "subcategory": "Movie Recommendation Tools",
+    "text_hook": "Last Four Watched Season 3 Episode 2  So all I did over the holiday was watch movies.",
+    "length": 88.0,
+    "views": 155300,
+    "likes": 14000,
+    "comments": 59,
+    "shares": 123,
+    "outlier_multiplier": 3.093625498,
+    "uploaded_at": "2025-01-24",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 14,
+   "row": {
+    "username": "redacted",
+    "main_category": "Entertainment",
+    "subcategory": "Movie Recommendation Tools",
+    "text_hook": "that film with a 3.8 star rating on letterboxd will save you",
+    "length": 0.0,
+    "views": 154400,
+    "likes": 31400,
+    "comments": 382,
+    "shares": 311,
+    "outlier_multiplier": 3.075697211,
+    "uploaded_at": "2025-01-24",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 15,
+   "row": {
+    "username": "redacted",
+    "main_category": "Entertainment",
+    "subcategory": "Movie Recommendation Tools",
+    "text_hook": "Top 10 Most Popular Films on Letterboxd This Week  10. Mulholland Drive",
+    "length": 13.0,
+    "views": 144700,
+    "likes": 19800,
+    "comments": 68,
+    "shares": 157,
+    "outlier_multiplier": 2.88247012,
+    "uploaded_at": "2025-01-24",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 24,
+   "row": {
+    "username": "redacted",
+    "main_category": "Photo & Video",
+    "subcategory": "Video Editing",
+    "text_hook": "What if videos just made themselves while you chilled?",
+    "length": 26.0,
+    "views": 7128,
+    "likes": 3,
+    "comments": 1,
+    "shares": 0,
+    "outlier_multiplier": 11.46902655,
+    "uploaded_at": "2025-01-24",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 33,
+   "row": {
+    "username": "redacted",
+    "main_category": "Entertainment",
+    "subcategory": "Movie Recommendation Tools",
+    "text_hook": "Me when I listen to the Challengers soundtrack",
+    "length": 8.0,
+    "views": 2800000,
+    "likes": 596100,
+    "comments": 725,
+    "shares": 21100,
+    "outlier_multiplier": 55.77689243,
+    "uploaded_at": "2025-01-23",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 34,
+   "row": {
+    "username": "redacted",
+    "main_category": "Entertainment",
+    "subcategory": "Movie Recommendation Tools",
+    "text_hook": "2025 BEST PICTURE OSCAR NOMINEES  BY LETTERBOXD RATING  Dune: Part Two 2024 I'm Still Here 2024 Nickel Boys 2024 The Brutalist 2024 Anora 2024 Wicked 2024 Conclave 2024 The Substance 2024 A Complete Unknown 2024 Emilia P\u00e9rez 2024",
+    "length": 0.0,
+    "views": 1400000,
+    "likes": 203300,
+    "comments": 2701,
+    "shares": 4350,
+    "outlier_multiplier": 27.88844622,
+    "uploaded_at": "2025-01-23",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  },
+  {
+   "row_idx": 44,
+   "row": {
+    "username": "redacted",
+    "main_category": "Entertainment",
+    "subcategory": "Celebrity News & Gossip",
+    "text_hook": "Happy Birthday! Happy Birthday!! Happy Birthday!!! Happy Birthday!  TO RIPPLE",
+    "length": 32.0,
+    "views": 10200,
+    "likes": 135,
+    "comments": 3,
+    "shares": 10,
+    "outlier_multiplier": 11.34593993,
+    "uploaded_at": "2025-01-23",
+    "ad_link": "https://www.tiktok.com/@redacted/video/0",
+    "platform": "tiktok",
+    "text_hook_lang": "en"
+   },
+   "truncated_cells": []
+  }
+ ],
+ "num_rows_total": 46605,
+ "num_rows_per_page": 100,
+ "partial": false
+}

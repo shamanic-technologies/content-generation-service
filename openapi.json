@@ -4088,6 +4088,934 @@
           "request"
         ]
       },
+      "ReelsError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "What went wrong, written for the caller to act on."
+          },
+          "code": {
+            "type": "string",
+            "description": "A named failure when there is one: SOURCE_URL_INVALID, SOURCE_URL_FORBIDDEN, SOURCE_TOO_LARGE, SOURCE_UNREACHABLE, SOURCE_NOT_A_VIDEO, DISK_FULL, SOURCE_EXPIRED, VIDEO_NOT_READY, TRANSCRIPT_NOT_READY, TRANSCRIPTION_FAILED, CLIP_RANGE_INVALID, CLIP_NOT_READY, CLIP_EXPIRED, MODEL_WITH_COMPLETION, MODEL_REQUIRED, NO_MOMENTS, HOOK_UNREADABLE, HOOK_LIBRARY_EMPTY, RENDER_FAILED, OUTPUT_INVALID, INTERRUPTED, PUBLIC_MEDIA_BASE_URL_MISSING (plus UNKNOWN_MODEL, MODEL_CATALOGUE_UNAVAILABLE from the model catalogue)."
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "CreateVideoRequest": {
+        "type": "object",
+        "properties": {
+          "sourceUrl": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "https download link of the recording (up to 6 GiB). Google Drive share links (`/file/d/<id>/…`, `open?id=`, `uc?id=`) and Dropbox `dl=0` links are rewritten to their direct download; anything else is fetched as is, redirects followed. The file must be reachable without a login."
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A repeated POST with the same key (per org) answers the SAME job (202, same id), never a second one. A re-do = a new key."
+          }
+        },
+        "required": [
+          "sourceUrl"
+        ]
+      },
+      "ReelsVideo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable id of the source video."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "downloading",
+              "ready",
+              "failed"
+            ]
+          },
+          "stage": {
+            "type": "string",
+            "nullable": true,
+            "description": "While downloading: downloading, probing."
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "When failed: SOURCE_URL_INVALID, SOURCE_URL_FORBIDDEN, SOURCE_TOO_LARGE, SOURCE_UNREACHABLE, SOURCE_NOT_A_VIDEO (the link answered a web page, e.g. a login), DISK_FULL, INTERRUPTED."
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceUrl": {
+            "type": "string"
+          },
+          "sizeBytes": {
+            "type": "number",
+            "nullable": true
+          },
+          "durationSeconds": {
+            "type": "number",
+            "nullable": true
+          },
+          "width": {
+            "type": "number",
+            "nullable": true
+          },
+          "height": {
+            "type": "number",
+            "nullable": true
+          },
+          "transcriptStatus": {
+            "type": "string",
+            "enum": [
+              "none",
+              "queued",
+              "transcribing",
+              "done",
+              "failed"
+            ]
+          },
+          "transcriptLanguage": {
+            "type": "string",
+            "nullable": true
+          },
+          "transcriptError": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "readyAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceExpiresAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "When the source file is deleted (7 days after readyAt). After it: no new cut, no internal hook; the transcript and rendered clips stay."
+          },
+          "sourceDeletedAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "Set once the source file was deleted."
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "stage",
+          "errorCode",
+          "error",
+          "sourceUrl",
+          "sizeBytes",
+          "durationSeconds",
+          "width",
+          "height",
+          "transcriptStatus",
+          "transcriptLanguage",
+          "transcriptError",
+          "createdAt",
+          "readyAt",
+          "sourceExpiresAt",
+          "sourceDeletedAt"
+        ]
+      },
+      "ReelsTranscriptRequest": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 12,
+            "description": "ISO 639-1 code of the spoken language when known (`en`, `fr`); omitted = detected."
+          },
+          "transcriptionId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The id of a chat-service media transcription (`POST /orgs/media-transcriptions`) the caller already started for this same recording: it is read instead of starting a second one. Omitted = this service starts it with the video's `sourceUrl`."
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Accepted for symmetry: a video has ONE transcript, so this POST is idempotent with or without a key."
+          }
+        }
+      },
+      "ReelsTranscriptJob": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The video's id (a video has one transcript)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "transcribing",
+              "done",
+              "failed"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ]
+      },
+      "ReelsTranscript": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The video's id."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "queued",
+              "transcribing",
+              "done",
+              "failed"
+            ]
+          },
+          "language": {
+            "type": "string",
+            "nullable": true
+          },
+          "text": {
+            "type": "string",
+            "nullable": true,
+            "description": "The words of the returned range as one text. null until done."
+          },
+          "wordTimestamps": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "model",
+              "interpolated",
+              null
+            ],
+            "description": "model = the transcriber timed each word; interpolated = it timed segments only and each word is placed inside its segment proportionally to its length."
+          },
+          "durationSeconds": {
+            "type": "number",
+            "nullable": true,
+            "description": "The video's duration."
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": {
+                  "type": "integer",
+                  "description": "Stable index in the whole transcript (what the moments prompt names)."
+                },
+                "start": {
+                  "type": "number"
+                },
+                "end": {
+                  "type": "number"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "index",
+                "start",
+                "end",
+                "text"
+              ]
+            },
+            "description": "Seconds from the start of the source. With `from`/`to`: the segments overlapping the range."
+          },
+          "words": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "number"
+                },
+                "end": {
+                  "type": "number"
+                },
+                "word": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "start",
+                "end",
+                "word"
+              ]
+            },
+            "description": "With `from`/`to`: the words whose midpoint is inside the range. null with `words=false`."
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "language",
+          "text",
+          "wordTimestamps",
+          "durationSeconds",
+          "segments",
+          "words",
+          "error"
+        ]
+      },
+      "ReelsMomentsRequestBody": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "description": "How many moments to pick. Default 5."
+          },
+          "minSeconds": {
+            "type": "number",
+            "minimum": 3,
+            "maximum": 180,
+            "description": "Shortest moment wanted. Default 20."
+          },
+          "maxSeconds": {
+            "type": "number",
+            "minimum": 3,
+            "maximum": 180,
+            "description": "Longest moment wanted. Default 60."
+          },
+          "brief": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 20000,
+            "description": "The campaign's brief, when there is one: appended to the system prompt, it outranks the default game, never the output format."
+          }
+        }
+      },
+      "ReelsMomentsBody": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ReelsMomentsRequestBody"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string",
+                "minLength": 1,
+                "description": "LLM to ask: any name chat-service /complete accepts (this service then calls /complete itself, on the caller's run). Exactly one of the ways to decide must be sent."
+              },
+              "completion": {
+                "type": "object",
+                "properties": {
+                  "request": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "nullable": true
+                    },
+                    "description": "The chat-service /complete request the completion was made with (the `request` this service answered, as sent: provider + model included). Its `systemPrompt` is stored as the writer's system prompt."
+                  },
+                  "answer": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "nullable": true
+                    },
+                    "description": "chat-service's WHOLE /complete answer (`json`, `model`, `tokensInput`, `tokensOutput`, ...): the LLM completion script's `content.answer`. Read exactly as this service reads its own completion; the stored model and tokens are its."
+                  },
+                  "runId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The run that asked the completion (the writing script's run; the completion run is its child)."
+                  }
+                },
+                "required": [
+                  "request",
+                  "answer",
+                  "runId"
+                ],
+                "description": "A completion the calling script obtained itself from the `/request` twin of this route (`request` as sent, `answer` = chat-service's WHOLE /complete answer, `runId` = the run that asked). This service makes no completion then."
+              }
+            }
+          }
+        ]
+      },
+      "ReelsMoments": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable id of this proposal (the stored LLM answer)."
+          },
+          "model": {
+            "type": "string",
+            "nullable": true,
+            "description": "The concrete model id that answered."
+          },
+          "moments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "number",
+                  "description": "Seconds in the source: send as `start` to POST /video-clips."
+                },
+                "end": {
+                  "type": "number"
+                },
+                "durationSeconds": {
+                  "type": "number"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "why": {
+                  "type": "string"
+                },
+                "quote": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "start",
+                "end",
+                "durationSeconds",
+                "title",
+                "why",
+                "quote"
+              ]
+            },
+            "description": "Strongest first. The writer is trusted: lengths are not checked against min/max."
+          }
+        },
+        "required": [
+          "id",
+          "model",
+          "moments"
+        ]
+      },
+      "CreateVideoClipRequest": {
+        "type": "object",
+        "properties": {
+          "videoId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "start": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Seconds in the source."
+          },
+          "end": {
+            "type": "number",
+            "description": "Seconds in the source. `end - start` must be 3..180 and inside the video (400 `CLIP_RANGE_INVALID`)."
+          },
+          "layout": {
+            "type": "string",
+            "enum": [
+              "fit_blur",
+              "crop",
+              "stack"
+            ],
+            "description": "How the frame becomes 1080x1920. `fit_blur` (default): the whole frame over a blurred copy of itself, never cuts a speaker off. `crop`: a 1080-wide window of the cover-scaled frame at `cropX`. `stack`: the left half of the frame over the right half (a side-by-side two-person interview)."
+          },
+          "cropX": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "`crop` layout only: where the window sits, 0 = left edge, 1 = right edge. Default 0.5."
+          },
+          "captions": {
+            "type": "boolean",
+            "description": "Burn word-by-word captions (needs a done transcript: 409 `TRANSCRIPT_NOT_READY`). Default true."
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "A repeated POST with the same key (per org) answers the SAME job (202, same id), never a second one. A re-do = a new key."
+          }
+        },
+        "required": [
+          "videoId",
+          "start",
+          "end"
+        ]
+      },
+      "VideoClip": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable id of the clip."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cut",
+              "hooked"
+            ],
+            "description": "cut = a span of the source; hooked = a clip with a hook added (a NEW clip: its parent is untouched)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "rendering",
+              "done",
+              "failed",
+              "expired"
+            ],
+            "description": "expired = rendered, then its file passed its retention and was deleted."
+          },
+          "stage": {
+            "type": "string",
+            "nullable": true
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "When failed: RENDER_FAILED, OUTPUT_INVALID, SOURCE_EXPIRED, CLIP_EXPIRED, TRANSCRIPT_NOT_READY, INTERRUPTED."
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "videoId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "parentClipId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid",
+            "description": "The clip a hook was added to; null for a cut."
+          },
+          "start": {
+            "type": "number",
+            "description": "The main cut's span in the source (a hooked clip carries its parent's)."
+          },
+          "end": {
+            "type": "number"
+          },
+          "layout": {
+            "type": "string",
+            "enum": [
+              "fit_blur",
+              "crop",
+              "stack"
+            ]
+          },
+          "cropX": {
+            "type": "number"
+          },
+          "captions": {
+            "type": "boolean"
+          },
+          "hook": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "internal"
+                    ]
+                  },
+                  "start": {
+                    "type": "number",
+                    "description": "The hook's span in the source."
+                  },
+                  "end": {
+                    "type": "number"
+                  },
+                  "quote": {
+                    "type": "string"
+                  },
+                  "why": {
+                    "type": "string"
+                  },
+                  "proposalId": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "The stored LLM answer that chose it; null when the span was sent explicitly."
+                  }
+                },
+                "required": [
+                  "type",
+                  "start",
+                  "end",
+                  "quote",
+                  "why",
+                  "proposalId"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "external"
+                    ]
+                  },
+                  "hookId": {
+                    "type": "string",
+                    "nullable": true,
+                    "description": "The hook library line it was made from; null for a free line."
+                  },
+                  "template": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "The line shown on screen."
+                  },
+                  "source": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "seconds": {
+                    "type": "number"
+                  },
+                  "why": {
+                    "type": "string"
+                  },
+                  "proposalId": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "type",
+                  "hookId",
+                  "template",
+                  "text",
+                  "source",
+                  "seconds",
+                  "why",
+                  "proposalId"
+                ]
+              },
+              {
+                "nullable": true
+              }
+            ]
+          },
+          "url": {
+            "type": "string",
+            "nullable": true,
+            "description": "Public https URL of the MP4 (1080x1920, 30 fps, h264 + AAC, faststart) once done; null otherwise. Unguessable, no auth: what Instagram's publish API fetches."
+          },
+          "durationSeconds": {
+            "type": "number",
+            "nullable": true
+          },
+          "sizeBytes": {
+            "type": "number",
+            "nullable": true
+          },
+          "text": {
+            "type": "string",
+            "nullable": true,
+            "description": "The words spoken in the main cut; null without a transcript."
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "finishedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "When the file is deleted (30 days after finishedAt)."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "stage",
+          "errorCode",
+          "error",
+          "videoId",
+          "parentClipId",
+          "start",
+          "end",
+          "layout",
+          "cropX",
+          "captions",
+          "hook",
+          "url",
+          "durationSeconds",
+          "sizeBytes",
+          "text",
+          "createdAt",
+          "finishedAt",
+          "expiresAt"
+        ]
+      },
+      "InternalHookRequestBody": {
+        "type": "object",
+        "properties": {
+          "maxSeconds": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 6,
+            "description": "Longest hook the model may pick, in seconds. Default 3, 1..6."
+          },
+          "brief": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 20000,
+            "description": "The campaign's brief, when there is one: appended to the system prompt, it outranks the default game, never the output format."
+          }
+        }
+      },
+      "InternalHookBody": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/InternalHookRequestBody"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string",
+                "minLength": 1,
+                "description": "LLM to ask: any name chat-service /complete accepts (this service then calls /complete itself, on the caller's run). Exactly one of the ways to decide must be sent."
+              },
+              "completion": {
+                "type": "object",
+                "properties": {
+                  "request": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "nullable": true
+                    },
+                    "description": "The chat-service /complete request the completion was made with (the `request` this service answered, as sent: provider + model included). Its `systemPrompt` is stored as the writer's system prompt."
+                  },
+                  "answer": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "nullable": true
+                    },
+                    "description": "chat-service's WHOLE /complete answer (`json`, `model`, `tokensInput`, `tokensOutput`, ...): the LLM completion script's `content.answer`. Read exactly as this service reads its own completion; the stored model and tokens are its."
+                  },
+                  "runId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The run that asked the completion (the writing script's run; the completion run is its child)."
+                  }
+                },
+                "required": [
+                  "request",
+                  "answer",
+                  "runId"
+                ],
+                "description": "A completion the calling script obtained itself from the `/request` twin of this route (`request` as sent, `answer` = chat-service's WHOLE /complete answer, `runId` = the run that asked). This service makes no completion then."
+              },
+              "span": {
+                "type": "object",
+                "properties": {
+                  "start": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "end": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "start",
+                  "end"
+                ],
+                "description": "The hook's span chosen by a human or another script: source seconds, anywhere in the source video, 0.5..10 s long (400 `CLIP_RANGE_INVALID`)."
+              },
+              "idempotencyKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "A repeated POST with the same key (per org) answers the SAME job (202, same id), never a second one. A re-do = a new key."
+              }
+            }
+          }
+        ]
+      },
+      "ExternalHookRequestBody": {
+        "type": "object",
+        "properties": {
+          "brief": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 20000,
+            "description": "The campaign's brief, when there is one: appended to the system prompt, it outranks the default game, never the output format."
+          },
+          "seconds": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 6,
+            "description": "How long the line stays on screen, in seconds. Default 3, 1..6."
+          }
+        }
+      },
+      "ExternalHookBody": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ExternalHookRequestBody"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "model": {
+                "type": "string",
+                "minLength": 1,
+                "description": "LLM to ask: any name chat-service /complete accepts (this service then calls /complete itself, on the caller's run). Exactly one of the ways to decide must be sent."
+              },
+              "completion": {
+                "type": "object",
+                "properties": {
+                  "request": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "nullable": true
+                    },
+                    "description": "The chat-service /complete request the completion was made with (the `request` this service answered, as sent: provider + model included). Its `systemPrompt` is stored as the writer's system prompt."
+                  },
+                  "answer": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "nullable": true
+                    },
+                    "description": "chat-service's WHOLE /complete answer (`json`, `model`, `tokensInput`, `tokensOutput`, ...): the LLM completion script's `content.answer`. Read exactly as this service reads its own completion; the stored model and tokens are its."
+                  },
+                  "runId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The run that asked the completion (the writing script's run; the completion run is its child)."
+                  }
+                },
+                "required": [
+                  "request",
+                  "answer",
+                  "runId"
+                ],
+                "description": "A completion the calling script obtained itself from the `/request` twin of this route (`request` as sent, `answer` = chat-service's WHOLE /complete answer, `runId` = the run that asked). This service makes no completion then."
+              },
+              "line": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "The line shown on screen (em/en dashes are stripped)."
+                  },
+                  "hookId": {
+                    "type": "string",
+                    "description": "The hook library line it was made from, when there is one (400 `HOOK_UNREADABLE` when unknown)."
+                  }
+                },
+                "required": [
+                  "text"
+                ],
+                "description": "The line chosen by a human or another script."
+              },
+              "idempotencyKey": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "A repeated POST with the same key (per org) answers the SAME job (202, same id), never a second one. A re-do = a new key."
+              }
+            }
+          }
+        ]
+      },
+      "HookLibrary": {
+        "type": "object",
+        "properties": {
+          "hooks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Stable: `<source>:<hash of the line>`."
+                },
+                "template": {
+                  "type": "string",
+                  "description": "The line: a formula with [blanks] (`viral-hooks-skill`) or a hook that ran verbatim on a video (`tiktok-hooks-finetune`)."
+                },
+                "category": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "source": {
+                  "type": "string"
+                },
+                "sourceUrl": {
+                  "type": "string"
+                },
+                "evidence": {
+                  "type": "object",
+                  "nullable": true,
+                  "additionalProperties": {
+                    "nullable": true
+                  },
+                  "description": "`viral-hooks-skill`: { example, platform }. `tiktok-hooks-finetune`: { views, likes, shares, outlierMultiplier } (how many times the video beat its account's usual views). Never a video URL or a creator handle."
+                }
+              },
+              "required": [
+                "id",
+                "template",
+                "category",
+                "source",
+                "sourceUrl",
+                "evidence"
+              ]
+            }
+          },
+          "total": {
+            "type": "number",
+            "description": "Active hooks matching the filter, before `limit`."
+          }
+        },
+        "required": [
+          "hooks",
+          "total"
+        ]
+      },
       "OrgId": {
         "type": "string"
       },
@@ -8797,6 +9725,1377 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/videos": {
+      "post": {
+        "tags": [
+          "Reels"
+        ],
+        "summary": "Download a long recording onto the service (async)",
+        "description": "Queues the download of `sourceUrl` (streamed to disk, one download at a time), checks it is a video and extracts its audio. Answers 202 at once; poll `GET /videos/{id}?waitSeconds=240`. A source is fetched ONCE: the same `idempotencyKey`, or no key and a `sourceUrl` this org already downloaded and still holds (not failed, source not deleted), answers that video. LEDGER: this service opens no run and declares nothing for reels. Everything runs under the caller's `x-run-id` (an LLM call made here is billed by chat-service on that run). The `id` answered is STABLE: the caller declares its Unit on it (`subjectService: \"content-generation-service\"`, `subjectId` = that id).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call."
+            },
+            "required": true,
+            "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call.",
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateVideoRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Queued, or the video already held for this key / source",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsVideo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, `SOURCE_URL_INVALID` (not https), `SOURCE_URL_FORBIDDEN` (resolves to a private address), `SOURCE_UNREACHABLE` (the host does not resolve)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/videos/{id}": {
+      "get": {
+        "tags": [
+          "Reels"
+        ],
+        "summary": "A source video's status; optionally wait for the download",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Integer 0..240. The call holds until the job leaves its in-flight states or the wait elapses, then answers the current state (always 200). One call stays under the platform's 300 s client timeout."
+            },
+            "required": false,
+            "description": "Integer 0..240. The call holds until the job leaves its in-flight states or the wait elapses, then answers the current state (always 200). One call stays under the platform's 300 s client timeout.",
+            "name": "waitSeconds",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The video",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsVideo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No video with this id for this org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/videos/{id}/transcript": {
+      "post": {
+        "tags": [
+          "Reels"
+        ],
+        "summary": "Ask for a video's transcript (async, idempotent)",
+        "description": "The transcript is chat-service's (`/orgs/media-transcriptions`: an open Whisper model on our own box, $0, it fetches the recording itself from the video's `sourceUrl`). This service starts that job, or reads the one named by `transcriptionId`, and keeps the words for captions, moments and hooks. Idempotent: queued / transcribing / done answer the current state and ask nothing; failed asks again. Poll `GET /videos/{id}/transcript?waitSeconds=240`. LEDGER: this service opens no run and declares nothing for reels. Everything runs under the caller's `x-run-id` (an LLM call made here is billed by chat-service on that run). The `id` answered is STABLE: the caller declares its Unit on it (`subjectService: \"content-generation-service\"`, `subjectId` = that id).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call."
+            },
+            "required": true,
+            "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call.",
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReelsTranscriptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "The transcript's state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsTranscriptJob"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No video with this id for this org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`VIDEO_NOT_READY`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`SOURCE_EXPIRED`: the audio was deleted before a transcript was made",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`TRANSCRIPTION_FAILED`: the video has no audio track",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Reels"
+        ],
+        "summary": "A video's transcript, whole or in pieces",
+        "description": "A 2 h transcript is about 1 MB with its words: read it in pieces with `from`/`to` (seconds), or without words (`words=false`: segments and text only).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Integer 0..240. The call holds until the job leaves its in-flight states or the wait elapses, then answers the current state (always 200). One call stays under the platform's 300 s client timeout."
+            },
+            "required": false,
+            "description": "Integer 0..240. The call holds until the job leaves its in-flight states or the wait elapses, then answers the current state (always 200). One call stays under the platform's 300 s client timeout.",
+            "name": "waitSeconds",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Seconds. Only segments and words from this instant."
+            },
+            "required": false,
+            "description": "Seconds. Only segments and words from this instant.",
+            "name": "from",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Seconds (exclusive). Only segments and words before this instant."
+            },
+            "required": false,
+            "description": "Seconds (exclusive). Only segments and words before this instant.",
+            "name": "to",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "description": "`false` = no word list (`words: null`). Default true."
+            },
+            "required": false,
+            "description": "`false` = no word list (`words: null`). Default true.",
+            "name": "words",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The transcript (empty `segments` until done)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsTranscript"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad `waitSeconds`, `from`, `to` or `words`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No video with this id for this org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/videos/{id}/moments/request": {
+      "post": {
+        "tags": [
+          "Reels"
+        ],
+        "summary": "The chat-service request that picks a video's best moments, without a model",
+        "description": "The message is the transcript as numbered segment lines; the system prompt explains what makes a short vertical clip hold attention. Spends nothing, stores nothing. Then POST /videos/{id}/moments with `completion`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call."
+            },
+            "required": true,
+            "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call.",
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReelsMomentsRequestBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriterChatRequest"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No video with this id for this org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`TRANSCRIPT_NOT_READY`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/videos/{id}/moments": {
+      "post": {
+        "tags": [
+          "Reels"
+        ],
+        "summary": "Pick the moments of a video worth cutting (Engine « Video clip cut » picks)",
+        "description": "Exactly one of `model` (this service asks chat-service) and `completion` (a script asked): both = 400 `MODEL_WITH_COMPLETION`, neither = 400 `MODEL_REQUIRED`. The model names moments by segment index; code maps them to source seconds. Trusted: no retry, no length check; a moment naming a segment that does not exist is dropped. Every answer read is stored as a proposal. LEDGER: this service opens no run and declares nothing for reels. Everything runs under the caller's `x-run-id` (an LLM call made here is billed by chat-service on that run). The `id` answered is STABLE: the caller declares its Unit on it (`subjectService: \"content-generation-service\"`, `subjectId` = that id).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call."
+            },
+            "required": true,
+            "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call.",
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReelsMomentsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The moments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsMoments"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, `MODEL_WITH_COMPLETION`, `MODEL_REQUIRED`, `UNKNOWN_MODEL`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Insufficient credits (chat-service's answer, passed through)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsufficientCreditsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No video with this id for this org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`TRANSCRIPT_NOT_READY`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`NO_MOMENTS` (no usable moment answered), `MODEL_CATALOGUE_UNAVAILABLE`, or chat-service failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/video-clips": {
+      "post": {
+        "tags": [
+          "Reels"
+        ],
+        "summary": "Cut a span of a video into a vertical clip with captions (async)",
+        "description": "Queues the render (one at a time, on this service's own CPU, no vendor): 1080x1920, 30 fps, captions of ≤3 uppercase words in the lower third with the spoken word highlighted. Answers 202 at once; poll `GET /video-clips/{id}?waitSeconds=240`. LEDGER: this service opens no run and declares nothing for reels. Everything runs under the caller's `x-run-id` (an LLM call made here is billed by chat-service on that run). The `id` answered is STABLE: the caller declares its Unit on it (`subjectService: \"content-generation-service\"`, `subjectId` = that id).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call."
+            },
+            "required": true,
+            "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call.",
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateVideoClipRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Queued, or the clip already made for this idempotencyKey",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoClip"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body or `CLIP_RANGE_INVALID`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No video with this id for this org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`VIDEO_NOT_READY` or `TRANSCRIPT_NOT_READY`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`SOURCE_EXPIRED`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`PUBLIC_MEDIA_BASE_URL_MISSING`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/video-clips/{id}": {
+      "get": {
+        "tags": [
+          "Reels"
+        ],
+        "summary": "A clip's status and URL; optionally wait for the render",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Integer 0..240. The call holds until the job leaves its in-flight states or the wait elapses, then answers the current state (always 200). One call stays under the platform's 300 s client timeout."
+            },
+            "required": false,
+            "description": "Integer 0..240. The call holds until the job leaves its in-flight states or the wait elapses, then answers the current state (always 200). One call stays under the platform's 300 s client timeout.",
+            "name": "waitSeconds",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The clip",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoClip"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No clip with this id for this org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/video-clips/{id}/internal-hook/request": {
+      "post": {
+        "tags": [
+          "Reels"
+        ],
+        "summary": "The chat-service request that picks a clip's internal hook, without a model",
+        "description": "The message is the clip's words as `index|seconds from the clip's start|word` lines; the system prompt explains the game (the 1.5 to maxSeconds seconds that make a stranger stop scrolling). Spends nothing, stores nothing. Then POST /video-clips/{id}/internal-hook with `completion`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call."
+            },
+            "required": true,
+            "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call.",
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InternalHookRequestBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriterChatRequest"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No clip with this id for this org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`CLIP_NOT_READY` or `TRANSCRIPT_NOT_READY`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/video-clips/{id}/internal-hook": {
+      "post": {
+        "tags": [
+          "Reels"
+        ],
+        "summary": "Add an internal hook: the clip's juiciest seconds played first (Engine « Hook added », async)",
+        "description": "Makes a NEW clip (`kind: hooked`, `parentClipId` = this clip, which stays untouched): the hook span rendered from the SOURCE with the clip's layout and captions, then the clip, joined in one file. Exactly one of `model`, `completion`, `span` (more = 400 `MODEL_WITH_COMPLETION`, none = 400 `MODEL_REQUIRED`). Trusted: no retry; word indexes that do not exist = 502 `HOOK_UNREADABLE`. A re-do on the same clip = a new `idempotencyKey` = a new hooked clip. LEDGER: this service opens no run and declares nothing for reels. Everything runs under the caller's `x-run-id` (an LLM call made here is billed by chat-service on that run). The `id` answered is STABLE: the caller declares its Unit on it (`subjectService: \"content-generation-service\"`, `subjectId` = that id).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call."
+            },
+            "required": true,
+            "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call.",
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InternalHookBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "The NEW hooked clip, queued (or the one already made for this idempotencyKey)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoClip"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, `MODEL_WITH_COMPLETION`, `MODEL_REQUIRED`, `UNKNOWN_MODEL`, `CLIP_RANGE_INVALID` (explicit span)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Insufficient credits (chat-service's answer, passed through)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsufficientCreditsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No clip with this id for this org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`CLIP_NOT_READY` or `TRANSCRIPT_NOT_READY`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`SOURCE_EXPIRED` (the hook is cut from the source) or `CLIP_EXPIRED`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`PUBLIC_MEDIA_BASE_URL_MISSING`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`HOOK_UNREADABLE`, `MODEL_CATALOGUE_UNAVAILABLE`, or chat-service failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/video-clips/{id}/external-hook/request": {
+      "post": {
+        "tags": [
+          "Reels"
+        ],
+        "summary": "The chat-service request that writes a clip's external hook line, without a model",
+        "description": "The system prompt explains the game and lists up to 150 hook library lines as `id | line | views` (every fill-in template + a sample of the verbatim hooks, the same sample for the same clip); the message is the clip's text. Spends nothing, stores nothing. Then POST /video-clips/{id}/external-hook with `completion`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call."
+            },
+            "required": true,
+            "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call.",
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalHookRequestBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WriterChatRequest"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No clip with this id for this org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`CLIP_NOT_READY` or `TRANSCRIPT_NOT_READY`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`HOOK_LIBRARY_EMPTY`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/video-clips/{id}/external-hook": {
+      "post": {
+        "tags": [
+          "Reels"
+        ],
+        "summary": "Add an external hook: a line proven elsewhere, shown on the clip's first seconds (Engine « Hook added », async)",
+        "description": "Makes a NEW clip (`kind: hooked`, `parentClipId` = this clip, untouched): the clip's file re-encoded with the line over its first `seconds` (dark text on a white box, upper third). Exactly one of `model`, `completion`, `line`. Trusted: no retry; a hook id not in the library = 502 `HOOK_UNREADABLE`. Needs the clip's file, not the source. A re-do on the same clip = a new `idempotencyKey` = a new hooked clip. LEDGER: this service opens no run and declares nothing for reels. Everything runs under the caller's `x-run-id` (an LLM call made here is billed by chat-service on that run). The `id` answered is STABLE: the caller declares its Unit on it (`subjectService: \"content-generation-service\"`, `subjectId` = that id).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call."
+            },
+            "required": true,
+            "description": "The caller's run: stored on the row, forwarded to chat-service on an LLM call.",
+            "name": "x-run-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalHookBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "The NEW hooked clip, queued (or the one already made for this idempotencyKey)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoClip"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body, `MODEL_WITH_COMPLETION`, `MODEL_REQUIRED`, `UNKNOWN_MODEL`, `HOOK_UNREADABLE` (explicit line naming an unknown hookId, or empty)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Insufficient credits (chat-service's answer, passed through)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsufficientCreditsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No clip with this id for this org",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`CLIP_NOT_READY` or `TRANSCRIPT_NOT_READY`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`CLIP_EXPIRED`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`PUBLIC_MEDIA_BASE_URL_MISSING`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`HOOK_UNREADABLE`, `MODEL_CATALOGUE_UNAVAILABLE`, or chat-service failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`HOOK_LIBRARY_EMPTY`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hook-library": {
+      "get": {
+        "tags": [
+          "Reels"
+        ],
+        "summary": "The hook lines proven elsewhere (active ones)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "category",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "1..500, default 200."
+            },
+            "required": false,
+            "description": "1..500, default 200.",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-org-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "x-user-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The library",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HookLibrary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad `limit`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReelsError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/hook-library/refresh": {
+      "post": {
+        "tags": [
+          "Reels"
+        ],
+        "summary": "Re-read the hook library's sources (API key only)",
+        "description": "Each source is read and stored on its own: upsert by id, lines the source no longer lists set inactive (never deleted). A source that fails leaves its stored lines untouched.",
+        "responses": {
+          "200": {
+            "description": "Per source",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "source": {
+                            "type": "string"
+                          },
+                          "ok": {
+                            "type": "boolean"
+                          },
+                          "active": {
+                            "type": "number"
+                          },
+                          "deactivated": {
+                            "type": "number"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "source",
+                          "ok"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "sources"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/reels/{token}/{file}": {
+      "get": {
+        "tags": [
+          "Reels"
+        ],
+        "summary": "A public media file (no API key): a rendered clip, or a source's audio",
+        "description": "The only route without `X-Api-Key`: the token is unguessable. Supports Range. `Cache-Control: public, max-age=86400`, `X-Robots-Tag: noindex`.",
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "`[A-Za-z0-9_-]{24,}`"
+            },
+            "required": true,
+            "description": "`[A-Za-z0-9_-]{24,}`",
+            "name": "token",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "clip.mp4"
+              ]
+            },
+            "required": true,
+            "name": "file",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file (`video/mp4` or `audio/mp4`)"
+          },
+          "206": {
+            "description": "A range of it"
+          },
+          "404": {
+            "description": "Unknown token or file, or the file passed its retention"
           }
         }
       }
