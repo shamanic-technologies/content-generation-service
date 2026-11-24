@@ -7,7 +7,7 @@ import {
   type LibraryHook,
 } from "../../src/lib/reels/hooks.js";
 import {
-  hookId, parseTikTokPage, parseViralHooksMarkdown, selectTikTokHooks, tiktokHooksFinetune, tiktokPageUrl, unquote,
+  hookId, isOcrNoise, parseTikTokPage, parseViralHooksMarkdown, selectTikTokHooks, tiktokHooksFinetune, tiktokPageUrl, unquote,
   TIKTOK_KEEP, TIKTOK_PAGES,
 } from "../../src/lib/reels/hook-sources.js";
 import { askReelsLlm, ReelsInsufficientCreditsError } from "../../src/lib/reels/llm.js";
@@ -182,6 +182,23 @@ describe("reels hook sources", () => {
     expect(hooks.some((h) => h.template.includes("Upper/Lower"))).toBe(false);
     expect(JSON.stringify(hooks)).not.toMatch(/tiktok\.com|username|redacted|ad_link/);
     expect(() => parseTikTokPage('{"error":"nope"}')).toThrow(/rows/);
+  });
+
+  it("drops what the dataset's vision model said about the picture or read off a lock screen, keeps real lines", () => {
+    for (const noise of [
+      "There is no text or emojis on top of the image.", "The image does not contain any text.", "There is no text in this image.",
+      'The text in the image is: "Look in the mirror"', "Chillguyday, May 12 75:04", "11:11 88:11 22:22",
+      "Customize Wallpaper Tuesday, Feb 14 75:16 Decembday, June 15 44:21 Lock Screen Home Screen",
+    ]) expect(isOcrNoise(noise), noise).toBe(true);
+    for (const line of [
+      "How students sleep knowing they have 10 assignments due by 11:59pm", "First day as a housekeeper... I wasn't ready for THIS",
+      "Remember this scene?", "MY 5-9 AFTER MY 9-5", "Would you try this?",
+    ]) expect(isOcrNoise(line), line).toBe(false);
+    const page = JSON.stringify({ rows: [
+      { row: { text_hook: "There is no text or emojis on top of the image.", text_hook_lang: "en", views: "37600000", outlier_multiplier: "23.5" } },
+      { row: { text_hook: "Remember this scene today?", text_hook_lang: "en", views: "900", outlier_multiplier: "12" } },
+    ] });
+    expect(parseTikTokPage(page).map((h) => h.template)).toEqual(["Remember this scene today?"]);
   });
 
   it("dedupes on the normalized text and keeps the most viewed", () => {
