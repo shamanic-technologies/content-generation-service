@@ -6,6 +6,10 @@ import {
 } from "@asteasolutions/zod-to-openapi";
 import { CATALOGUE_STATUSES, MAX_STATUS_REASON_LENGTH, NOT_SPECIFIED, STAFF_EMAIL_HEADER } from "./lib/catalogue-status.js";
 import { DEBRIEF_ERROR_CODES } from "./lib/debrief/errors.js";
+import { REELS_ERROR_CODES } from "./lib/reels/errors.js";
+import { CLIP_LAYOUTS } from "./lib/reels/layouts.js";
+import { MOMENTS_DEFAULTS } from "./lib/reels/moments.js";
+import { HOOK_SECONDS } from "./lib/reels/hooks.js";
 import { DYNASTY_IDENTITIES } from "./lib/template-dynasties.js";
 
 extendZodWithOpenApi(z);
@@ -3119,5 +3123,536 @@ registry.registerPath({
   responses: {
     200: { description: "A page of thread generations", content: { "application/json": { schema: ThreadGenerationsResponseSchema } } },
     400: { description: "Bad instant, bad limit, or a cursor this service did not issue", content: { "application/json": { schema: ErrorResponseSchema } } },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Reels: long video → vertical clips with hooks (REELS-1124). src/lib/reels/, routes reels-*.ts
+// ---------------------------------------------------------------------------
+
+const REELS_LEDGER_NOTE =
+  "LEDGER: this service opens no run and declares nothing for reels. Everything runs under the caller's `x-run-id` " +
+  "(an LLM call made here is billed by chat-service on that run). The `id` answered is STABLE: the caller declares its Unit on it " +
+  "(`subjectService: \"content-generation-service\"`, `subjectId` = that id).";
+
+const ReelsErrorResponseSchema = registry.register(
+  "ReelsError",
+  z
+    .object({
+      error: z.string().describe("What went wrong, written for the caller to act on."),
+      code: z.string().optional().describe(`A named failure when there is one: ${REELS_ERROR_CODES.join(", ")} (plus UNKNOWN_MODEL, MODEL_CATALOGUE_UNAVAILABLE from the model catalogue).`),
+    })
+    .openapi("ReelsError")
+);
+
+const reelsHeaders = z.object({ "x-org-id": z.string(), "x-user-id": z.string(), "x-run-id": z.string().describe("The caller's run: stored on the row, forwarded to chat-service on an LLM call.") });
+const reelsReadHeaders = z.object({ "x-org-id": z.string(), "x-user-id": z.string() });
+const reelsWaitQuery = z.string().optional().describe("Integer 0..240. The call holds until the job leaves its in-flight states or the wait elapses, then answers the current state (always 200). One call stays under the platform's 300 s client timeout.");
+const reelsError = (description: string) => ({ description, content: { "application/json": { schema: ReelsErrorResponseSchema } } });
+const IdempotencyKeyField = z.string().min(1).max(200).optional().describe("A repeated POST with the same key (per org) answers the SAME job (202, same id), never a second one. A re-do = a new key.");
+
+// --- videos
+
+export const CreateVideoRequestSchema = registry.register(
+  "CreateVideoRequest",
+  z
+    .object({
+      sourceUrl: z.string().min(1).max(4000).describe("https download link of the recording (up to 6 GiB). Google Drive share links (`/file/d/<id>/…`, `open?id=`, `uc?id=`) and Dropbox `dl=0` links are rewritten to their direct download; anything else is fetched as is, redirects followed. The file must be reachable without a login."),
+      idempotencyKey: IdempotencyKeyField,
+    })
+    .openapi("CreateVideoRequest")
+);
+
+export const ReelsVideoSchema = registry.register(
+  "ReelsVideo",
+  z
+    .object({
+      id: z.string().uuid().describe("Stable id of the source video."),
+      status: z.enum(["queued", "downloading", "ready", "failed"]),
+      stage: z.string().nullable().describe("While downloading: downloading, probing."),
+      errorCode: z.string().nullable().describe("When failed: SOURCE_URL_INVALID, SOURCE_URL_FORBIDDEN, SOURCE_TOO_LARGE, SOURCE_UNREACHABLE, SOURCE_NOT_A_VIDEO (the link answered a web page, e.g. a login), DISK_FULL, INTERRUPTED."),
+      error: z.string().nullable(),
+      sourceUrl: z.string(),
+      sizeBytes: z.number().nullable(),
+      durationSeconds: z.number().nullable(),
+      width: z.number().nullable(),
+      height: z.number().nullable(),
+      transcriptStatus: z.enum(["none", "queued", "transcribing", "done", "failed"]),
+      transcriptLanguage: z.string().nullable(),
+      transcriptError: z.string().nullable(),
+      createdAt: z.string(),
+      readyAt: z.string().nullable(),
+      sourceExpiresAt: z.string().nullable().describe("When the source file is deleted (7 days after readyAt). After it: no new cut, no internal hook; the transcript and rendered clips stay."),
+      sourceDeletedAt: z.string().nullable().describe("Set once the source file was deleted."),
+    })
+    .openapi("ReelsVideo")
+);
+
+registry.registerPath({
+  method: "post",
+  path: "/videos",
+  tags: ["Reels"],
+  summary: "Download a long recording onto the service (async)",
+  description:
+    "Queues the download of `sourceUrl` (streamed to disk, one download at a time), checks it is a video and extracts its audio. Answers 202 at once; poll `GET /videos/{id}?waitSeconds=240`. " +
+    "A source is fetched ONCE: the same `idempotencyKey`, or no key and a `sourceUrl` this org already downloaded and still holds (not failed, source not deleted), answers that video. " +
+    REELS_LEDGER_NOTE,
+  request: { headers: reelsHeaders, body: { required: true, content: { "application/json": { schema: CreateVideoRequestSchema } } } },
+  responses: {
+    202: { description: "Queued, or the video already held for this key / source", content: { "application/json": { schema: ReelsVideoSchema } } },
+    400: reelsError("Invalid body, `SOURCE_URL_INVALID` (not https), `SOURCE_URL_FORBIDDEN` (resolves to a private address), `SOURCE_UNREACHABLE` (the host does not resolve)"),
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/videos/{id}",
+  tags: ["Reels"],
+  summary: "A source video's status; optionally wait for the download",
+  request: { headers: reelsReadHeaders, params: z.object({ id: z.string().uuid() }), query: z.object({ waitSeconds: reelsWaitQuery }) },
+  responses: {
+    200: { description: "The video", content: { "application/json": { schema: ReelsVideoSchema } } },
+    404: reelsError("No video with this id for this org"),
+  },
+});
+
+// --- transcript
+
+export const TranscriptRequestSchema = registry.register(
+  "ReelsTranscriptRequest",
+  z
+    .object({
+      language: z.string().min(2).max(12).optional().describe("ISO 639-1 code of the spoken language when known (`en`, `fr`); omitted = detected."),
+      transcriptionId: z.string().min(1).max(200).optional().describe("The id of a chat-service media transcription (`POST /orgs/media-transcriptions`) the caller already started for this same recording: it is read instead of starting a second one. Omitted = this service starts it with the video's `sourceUrl`."),
+      idempotencyKey: IdempotencyKeyField.describe("Accepted for symmetry: a video has ONE transcript, so this POST is idempotent with or without a key."),
+    })
+    .openapi("ReelsTranscriptRequest")
+);
+
+const TranscriptJobSchema = registry.register(
+  "ReelsTranscriptJob",
+  z
+    .object({
+      id: z.string().uuid().describe("The video's id (a video has one transcript)."),
+      status: z.enum(["queued", "transcribing", "done", "failed"]),
+    })
+    .openapi("ReelsTranscriptJob")
+);
+
+const TranscriptSchema = registry.register(
+  "ReelsTranscript",
+  z
+    .object({
+      id: z.string().uuid().describe("The video's id."),
+      status: z.enum(["none", "queued", "transcribing", "done", "failed"]),
+      language: z.string().nullable(),
+      text: z.string().nullable().describe("The words of the returned range as one text. null until done."),
+      wordTimestamps: z.enum(["model", "interpolated"]).nullable().describe("model = the transcriber timed each word; interpolated = it timed segments only and each word is placed inside its segment proportionally to its length."),
+      durationSeconds: z.number().nullable().describe("The video's duration."),
+      segments: z.array(z.object({ index: z.number().int().describe("Stable index in the whole transcript (what the moments prompt names)."), start: z.number(), end: z.number(), text: z.string() })).describe("Seconds from the start of the source. With `from`/`to`: the segments overlapping the range."),
+      words: z.array(z.object({ start: z.number(), end: z.number(), word: z.string() })).nullable().describe("With `from`/`to`: the words whose midpoint is inside the range. null with `words=false`."),
+      error: z.string().nullable(),
+    })
+    .openapi("ReelsTranscript")
+);
+
+registry.registerPath({
+  method: "post",
+  path: "/videos/{id}/transcript",
+  tags: ["Reels"],
+  summary: "Ask for a video's transcript (async, idempotent)",
+  description:
+    "The transcript is chat-service's (`/orgs/media-transcriptions`: an open Whisper model on our own box, $0, it fetches the recording itself from the video's `sourceUrl`). This service starts that job, or reads the one named by `transcriptionId`, and keeps the words for captions, moments and hooks. Idempotent: queued / transcribing / done answer the current state and ask nothing; failed asks again. " +
+    "Poll `GET /videos/{id}/transcript?waitSeconds=240`. " + REELS_LEDGER_NOTE,
+  request: { headers: reelsHeaders, params: z.object({ id: z.string().uuid() }), body: { required: false, content: { "application/json": { schema: TranscriptRequestSchema } } } },
+  responses: {
+    202: { description: "The transcript's state", content: { "application/json": { schema: TranscriptJobSchema } } },
+    404: reelsError("No video with this id for this org"),
+    409: reelsError("`VIDEO_NOT_READY`"),
+    410: reelsError("`SOURCE_EXPIRED`: the audio was deleted before a transcript was made"),
+    422: reelsError("`TRANSCRIPTION_FAILED`: the video has no audio track"),
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/videos/{id}/transcript",
+  tags: ["Reels"],
+  summary: "A video's transcript, whole or in pieces",
+  description: "A 2 h transcript is about 1 MB with its words: read it in pieces with `from`/`to` (seconds), or without words (`words=false`: segments and text only).",
+  request: {
+    headers: reelsReadHeaders,
+    params: z.object({ id: z.string().uuid() }),
+    query: z.object({
+      waitSeconds: reelsWaitQuery,
+      from: z.string().optional().describe("Seconds. Only segments and words from this instant."),
+      to: z.string().optional().describe("Seconds (exclusive). Only segments and words before this instant."),
+      words: z.enum(["true", "false"]).optional().describe("`false` = no word list (`words: null`). Default true."),
+    }),
+  },
+  responses: {
+    200: { description: "The transcript (empty `segments` until done)", content: { "application/json": { schema: TranscriptSchema } } },
+    400: reelsError("Bad `waitSeconds`, `from`, `to` or `words`"),
+    404: reelsError("No video with this id for this org"),
+  },
+});
+
+// --- the completion a script hands back, shared by the three LLM steps
+
+const ReelsModelField = z.string().min(1).optional().describe("LLM to ask: any name chat-service /complete accepts (this service then calls /complete itself, on the caller's run). Exactly one of the ways to decide must be sent.");
+const ReelsCompletionField = HandedBackCompletionField.describe(
+  "A completion the calling script obtained itself from the `/request` twin of this route (`request` as sent, `answer` = chat-service's WHOLE /complete answer, `runId` = the run that asked). This service makes no completion then."
+);
+const BriefField = z.string().max(MAX_BRIEF_LENGTH).nullable().optional().describe("The campaign's brief, when there is one: appended to the system prompt, it outranks the default game, never the output format.");
+
+// --- moments
+
+export const MomentsRequestBodySchema = registry.register(
+  "ReelsMomentsRequestBody",
+  z
+    .object({
+      count: z.number().int().min(1).max(20).optional().describe(`How many moments to pick. Default ${MOMENTS_DEFAULTS.count}.`),
+      minSeconds: z.number().min(3).max(180).optional().describe(`Shortest moment wanted. Default ${MOMENTS_DEFAULTS.minSeconds}.`),
+      maxSeconds: z.number().min(3).max(180).optional().describe(`Longest moment wanted. Default ${MOMENTS_DEFAULTS.maxSeconds}.`),
+      brief: BriefField,
+    })
+    .openapi("ReelsMomentsRequestBody")
+);
+
+export const MomentsBodySchema = registry.register(
+  "ReelsMomentsBody",
+  MomentsRequestBodySchema.extend({ model: ReelsModelField, completion: ReelsCompletionField }).openapi("ReelsMomentsBody")
+);
+
+const MomentsResponseSchema = registry.register(
+  "ReelsMoments",
+  z
+    .object({
+      id: z.string().uuid().describe("Stable id of this proposal (the stored LLM answer)."),
+      model: z.string().nullable().describe("The concrete model id that answered."),
+      moments: z.array(
+        z.object({
+          start: z.number().describe("Seconds in the source: send as `start` to POST /video-clips."),
+          end: z.number(),
+          durationSeconds: z.number(),
+          title: z.string(),
+          why: z.string(),
+          quote: z.string(),
+        })
+      ).describe("Strongest first. The writer is trusted: lengths are not checked against min/max."),
+    })
+    .openapi("ReelsMoments")
+);
+
+registry.registerPath({
+  method: "post",
+  path: "/videos/{id}/moments/request",
+  tags: ["Reels"],
+  summary: "The chat-service request that picks a video's best moments, without a model",
+  description: "The message is the transcript as numbered segment lines; the system prompt explains what makes a short vertical clip hold attention. Spends nothing, stores nothing. Then POST /videos/{id}/moments with `completion`.",
+  request: { headers: reelsHeaders, params: z.object({ id: z.string().uuid() }), body: { required: false, content: { "application/json": { schema: MomentsRequestBodySchema } } } },
+  responses: {
+    200: { description: "The request", content: { "application/json": { schema: WriterChatRequestResponseSchema } } },
+    404: reelsError("No video with this id for this org"),
+    409: reelsError("`TRANSCRIPT_NOT_READY`"),
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/videos/{id}/moments",
+  tags: ["Reels"],
+  summary: "Pick the moments of a video worth cutting (Engine « Video clip cut » picks)",
+  description:
+    "Exactly one of `model` (this service asks chat-service) and `completion` (a script asked): both = 400 `MODEL_WITH_COMPLETION`, neither = 400 `MODEL_REQUIRED`. " +
+    "The model names moments by segment index; code maps them to source seconds. Trusted: no retry, no length check; a moment naming a segment that does not exist is dropped. Every answer read is stored as a proposal. " +
+    REELS_LEDGER_NOTE,
+  request: { headers: reelsHeaders, params: z.object({ id: z.string().uuid() }), body: { required: true, content: { "application/json": { schema: MomentsBodySchema } } } },
+  responses: {
+    200: { description: "The moments", content: { "application/json": { schema: MomentsResponseSchema } } },
+    400: reelsError("Invalid body, `MODEL_WITH_COMPLETION`, `MODEL_REQUIRED`, `UNKNOWN_MODEL`"),
+    402: { description: "Insufficient credits (chat-service's answer, passed through)", content: { "application/json": { schema: InsufficientCreditsResponseSchema } } },
+    404: reelsError("No video with this id for this org"),
+    409: reelsError("`TRANSCRIPT_NOT_READY`"),
+    502: reelsError("`NO_MOMENTS` (no usable moment answered), `MODEL_CATALOGUE_UNAVAILABLE`, or chat-service failed"),
+  },
+});
+
+// --- clips
+
+export const CreateClipRequestSchema = registry.register(
+  "CreateVideoClipRequest",
+  z
+    .object({
+      videoId: z.string().uuid(),
+      start: z.number().min(0).describe("Seconds in the source."),
+      end: z.number().describe("Seconds in the source. `end - start` must be 3..180 and inside the video (400 `CLIP_RANGE_INVALID`)."),
+      layout: z.enum(CLIP_LAYOUTS).optional().describe("How the frame becomes 1080x1920. `fit_blur` (default): the whole frame over a blurred copy of itself, never cuts a speaker off. `crop`: a 1080-wide window of the cover-scaled frame at `cropX`. `stack`: the left half of the frame over the right half (a side-by-side two-person interview)."),
+      cropX: z.number().min(0).max(1).optional().describe("`crop` layout only: where the window sits, 0 = left edge, 1 = right edge. Default 0.5."),
+      captions: z.boolean().optional().describe("Burn word-by-word captions (needs a done transcript: 409 `TRANSCRIPT_NOT_READY`). Default true."),
+      idempotencyKey: IdempotencyKeyField,
+    })
+    .openapi("CreateVideoClipRequest")
+);
+
+const ClipHookSchema = z
+  .union([
+    z.object({
+      type: z.literal("internal"),
+      start: z.number().describe("The hook's span in the source."),
+      end: z.number(),
+      quote: z.string(),
+      why: z.string(),
+      proposalId: z.string().nullable().describe("The stored LLM answer that chose it; null when the span was sent explicitly."),
+    }),
+    z.object({
+      type: z.literal("external"),
+      hookId: z.string().nullable().describe("The hook library line it was made from; null for a free line."),
+      template: z.string().nullable(),
+      text: z.string().describe("The line shown on screen."),
+      source: z.string().nullable(),
+      seconds: z.number(),
+      why: z.string(),
+      proposalId: z.string().nullable(),
+    }),
+  ])
+  .nullable();
+
+export const ReelsClipSchema = registry.register(
+  "VideoClip",
+  z
+    .object({
+      id: z.string().uuid().describe("Stable id of the clip."),
+      kind: z.enum(["cut", "hooked"]).describe("cut = a span of the source; hooked = a clip with a hook added (a NEW clip: its parent is untouched)."),
+      status: z.enum(["queued", "rendering", "done", "failed", "expired"]).describe("expired = rendered, then its file passed its retention and was deleted."),
+      stage: z.string().nullable(),
+      errorCode: z.string().nullable().describe("When failed: RENDER_FAILED, OUTPUT_INVALID, SOURCE_EXPIRED, CLIP_EXPIRED, TRANSCRIPT_NOT_READY, INTERRUPTED."),
+      error: z.string().nullable(),
+      videoId: z.string().uuid(),
+      parentClipId: z.string().uuid().nullable().describe("The clip a hook was added to; null for a cut."),
+      start: z.number().describe("The main cut's span in the source (a hooked clip carries its parent's)."),
+      end: z.number(),
+      layout: z.enum(CLIP_LAYOUTS),
+      cropX: z.number(),
+      captions: z.boolean(),
+      hook: ClipHookSchema,
+      url: z.string().nullable().describe("Public https URL of the MP4 (1080x1920, 30 fps, h264 + AAC, faststart) once done; null otherwise. Unguessable, no auth: what Instagram's publish API fetches."),
+      durationSeconds: z.number().nullable(),
+      sizeBytes: z.number().nullable(),
+      text: z.string().nullable().describe("The words spoken in the main cut; null without a transcript."),
+      createdAt: z.string(),
+      finishedAt: z.string().nullable(),
+      expiresAt: z.string().nullable().describe("When the file is deleted (30 days after finishedAt)."),
+    })
+    .openapi("VideoClip")
+);
+
+registry.registerPath({
+  method: "post",
+  path: "/video-clips",
+  tags: ["Reels"],
+  summary: "Cut a span of a video into a vertical clip with captions (async)",
+  description:
+    "Queues the render (one at a time, on this service's own CPU, no vendor): 1080x1920, 30 fps, captions of ≤3 uppercase words in the lower third with the spoken word highlighted. " +
+    "Answers 202 at once; poll `GET /video-clips/{id}?waitSeconds=240`. " + REELS_LEDGER_NOTE,
+  request: { headers: reelsHeaders, body: { required: true, content: { "application/json": { schema: CreateClipRequestSchema } } } },
+  responses: {
+    202: { description: "Queued, or the clip already made for this idempotencyKey", content: { "application/json": { schema: ReelsClipSchema } } },
+    400: reelsError("Invalid body or `CLIP_RANGE_INVALID`"),
+    404: reelsError("No video with this id for this org"),
+    409: reelsError("`VIDEO_NOT_READY` or `TRANSCRIPT_NOT_READY`"),
+    410: reelsError("`SOURCE_EXPIRED`"),
+    500: reelsError("`PUBLIC_MEDIA_BASE_URL_MISSING`"),
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/video-clips/{id}",
+  tags: ["Reels"],
+  summary: "A clip's status and URL; optionally wait for the render",
+  request: { headers: reelsReadHeaders, params: z.object({ id: z.string().uuid() }), query: z.object({ waitSeconds: reelsWaitQuery }) },
+  responses: {
+    200: { description: "The clip", content: { "application/json": { schema: ReelsClipSchema } } },
+    404: reelsError("No clip with this id for this org"),
+  },
+});
+
+// --- hooks
+
+const HookSecondsField = (what: string) => z.number().min(HOOK_SECONDS.min).max(HOOK_SECONDS.max).optional().describe(`${what} Default ${HOOK_SECONDS.default}, ${HOOK_SECONDS.min}..${HOOK_SECONDS.max}.`);
+
+export const InternalHookRequestBodySchema = registry.register(
+  "InternalHookRequestBody",
+  z.object({ maxSeconds: HookSecondsField("Longest hook the model may pick, in seconds."), brief: BriefField }).openapi("InternalHookRequestBody")
+);
+
+export const InternalHookBodySchema = registry.register(
+  "InternalHookBody",
+  InternalHookRequestBodySchema.extend({
+    model: ReelsModelField,
+    completion: ReelsCompletionField,
+    span: z.object({ start: z.number().min(0), end: z.number() }).optional().describe("The hook's span chosen by a human or another script: source seconds, anywhere in the source video, 0.5..10 s long (400 `CLIP_RANGE_INVALID`)."),
+    idempotencyKey: IdempotencyKeyField,
+  }).openapi("InternalHookBody")
+);
+
+export const ExternalHookRequestBodySchema = registry.register(
+  "ExternalHookRequestBody",
+  z.object({ brief: BriefField, seconds: HookSecondsField("How long the line stays on screen, in seconds.") }).openapi("ExternalHookRequestBody")
+);
+
+export const ExternalHookBodySchema = registry.register(
+  "ExternalHookBody",
+  ExternalHookRequestBodySchema.extend({
+    model: ReelsModelField,
+    completion: ReelsCompletionField,
+    line: z.object({
+      text: z.string().min(1).max(200).describe("The line shown on screen (em/en dashes are stripped)."),
+      hookId: z.string().optional().describe("The hook library line it was made from, when there is one (400 `HOOK_UNREADABLE` when unknown)."),
+    }).optional().describe("The line chosen by a human or another script."),
+    idempotencyKey: IdempotencyKeyField,
+  }).openapi("ExternalHookBody")
+);
+
+const hookResponses = {
+  202: { description: "The NEW hooked clip, queued (or the one already made for this idempotencyKey)", content: { "application/json": { schema: ReelsClipSchema } } },
+  402: { description: "Insufficient credits (chat-service's answer, passed through)", content: { "application/json": { schema: InsufficientCreditsResponseSchema } } },
+  404: reelsError("No clip with this id for this org"),
+  500: reelsError("`PUBLIC_MEDIA_BASE_URL_MISSING`"),
+};
+
+registry.registerPath({
+  method: "post",
+  path: "/video-clips/{id}/internal-hook/request",
+  tags: ["Reels"],
+  summary: "The chat-service request that picks a clip's internal hook, without a model",
+  description: "The message is the clip's words as `index|seconds from the clip's start|word` lines; the system prompt explains the game (the 1.5 to maxSeconds seconds that make a stranger stop scrolling). Spends nothing, stores nothing. Then POST /video-clips/{id}/internal-hook with `completion`.",
+  request: { headers: reelsHeaders, params: z.object({ id: z.string().uuid() }), body: { required: false, content: { "application/json": { schema: InternalHookRequestBodySchema } } } },
+  responses: {
+    200: { description: "The request", content: { "application/json": { schema: WriterChatRequestResponseSchema } } },
+    404: reelsError("No clip with this id for this org"),
+    409: reelsError("`CLIP_NOT_READY` or `TRANSCRIPT_NOT_READY`"),
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/video-clips/{id}/internal-hook",
+  tags: ["Reels"],
+  summary: "Add an internal hook: the clip's juiciest seconds played first (Engine « Hook added », async)",
+  description:
+    "Makes a NEW clip (`kind: hooked`, `parentClipId` = this clip, which stays untouched): the hook span rendered from the SOURCE with the clip's layout and captions, then the clip, joined in one file. " +
+    "Exactly one of `model`, `completion`, `span` (more = 400 `MODEL_WITH_COMPLETION`, none = 400 `MODEL_REQUIRED`). Trusted: no retry; word indexes that do not exist = 502 `HOOK_UNREADABLE`. " +
+    "A re-do on the same clip = a new `idempotencyKey` = a new hooked clip. " + REELS_LEDGER_NOTE,
+  request: { headers: reelsHeaders, params: z.object({ id: z.string().uuid() }), body: { required: true, content: { "application/json": { schema: InternalHookBodySchema } } } },
+  responses: {
+    ...hookResponses,
+    400: reelsError("Invalid body, `MODEL_WITH_COMPLETION`, `MODEL_REQUIRED`, `UNKNOWN_MODEL`, `CLIP_RANGE_INVALID` (explicit span)"),
+    409: reelsError("`CLIP_NOT_READY` or `TRANSCRIPT_NOT_READY`"),
+    410: reelsError("`SOURCE_EXPIRED` (the hook is cut from the source) or `CLIP_EXPIRED`"),
+    502: reelsError("`HOOK_UNREADABLE`, `MODEL_CATALOGUE_UNAVAILABLE`, or chat-service failed"),
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/video-clips/{id}/external-hook/request",
+  tags: ["Reels"],
+  summary: "The chat-service request that writes a clip's external hook line, without a model",
+  description: "The system prompt explains the game and lists up to 150 hook library lines as `id | line | views` (every fill-in template + a sample of the verbatim hooks, the same sample for the same clip); the message is the clip's text. Spends nothing, stores nothing. Then POST /video-clips/{id}/external-hook with `completion`.",
+  request: { headers: reelsHeaders, params: z.object({ id: z.string().uuid() }), body: { required: false, content: { "application/json": { schema: ExternalHookRequestBodySchema } } } },
+  responses: {
+    200: { description: "The request", content: { "application/json": { schema: WriterChatRequestResponseSchema } } },
+    404: reelsError("No clip with this id for this org"),
+    409: reelsError("`CLIP_NOT_READY` or `TRANSCRIPT_NOT_READY`"),
+    503: reelsError("`HOOK_LIBRARY_EMPTY`"),
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/video-clips/{id}/external-hook",
+  tags: ["Reels"],
+  summary: "Add an external hook: a line proven elsewhere, shown on the clip's first seconds (Engine « Hook added », async)",
+  description:
+    "Makes a NEW clip (`kind: hooked`, `parentClipId` = this clip, untouched): the clip's file re-encoded with the line over its first `seconds` (dark text on a white box, upper third). " +
+    "Exactly one of `model`, `completion`, `line`. Trusted: no retry; a hook id not in the library = 502 `HOOK_UNREADABLE`. Needs the clip's file, not the source. " +
+    "A re-do on the same clip = a new `idempotencyKey` = a new hooked clip. " + REELS_LEDGER_NOTE,
+  request: { headers: reelsHeaders, params: z.object({ id: z.string().uuid() }), body: { required: true, content: { "application/json": { schema: ExternalHookBodySchema } } } },
+  responses: {
+    ...hookResponses,
+    400: reelsError("Invalid body, `MODEL_WITH_COMPLETION`, `MODEL_REQUIRED`, `UNKNOWN_MODEL`, `HOOK_UNREADABLE` (explicit line naming an unknown hookId, or empty)"),
+    409: reelsError("`CLIP_NOT_READY` or `TRANSCRIPT_NOT_READY`"),
+    410: reelsError("`CLIP_EXPIRED`"),
+    502: reelsError("`HOOK_UNREADABLE`, `MODEL_CATALOGUE_UNAVAILABLE`, or chat-service failed"),
+    503: reelsError("`HOOK_LIBRARY_EMPTY`"),
+  },
+});
+
+// --- hook library
+
+export const HOOK_LIBRARY_MAX_LIMIT = 500;
+
+const HookLibraryResponseSchema = registry.register(
+  "HookLibrary",
+  z
+    .object({
+      hooks: z.array(
+        z.object({
+          id: z.string().describe("Stable: `<source>:<hash of the line>`."),
+          template: z.string().describe("The line: a formula with [blanks] (`viral-hooks-skill`) or a hook that ran verbatim on a video (`tiktok-hooks-finetune`)."),
+          category: z.string().nullable(),
+          source: z.string(),
+          sourceUrl: z.string(),
+          evidence: z.record(z.string(), z.unknown()).nullable().describe("`viral-hooks-skill`: { example, platform }. `tiktok-hooks-finetune`: { views, likes, shares, outlierMultiplier } (how many times the video beat its account's usual views). Never a video URL or a creator handle."),
+        })
+      ),
+      total: z.number().describe("Active hooks matching the filter, before `limit`."),
+    })
+    .openapi("HookLibrary")
+);
+
+registry.registerPath({
+  method: "get",
+  path: "/hook-library",
+  tags: ["Reels"],
+  summary: "The hook lines proven elsewhere (active ones)",
+  request: {
+    headers: reelsReadHeaders,
+    query: z.object({ category: z.string().optional(), limit: z.string().optional().describe(`1..${HOOK_LIBRARY_MAX_LIMIT}, default 200.`) }),
+  },
+  responses: {
+    200: { description: "The library", content: { "application/json": { schema: HookLibraryResponseSchema } } },
+    400: reelsError("Bad `limit`"),
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/internal/hook-library/refresh",
+  tags: ["Reels"],
+  summary: "Re-read the hook library's sources (API key only)",
+  description: "Each source is read and stored on its own: upsert by id, lines the source no longer lists set inactive (never deleted). A source that fails leaves its stored lines untouched.",
+  responses: {
+    200: {
+      description: "Per source",
+      content: { "application/json": { schema: z.object({ sources: z.array(z.object({ source: z.string(), ok: z.boolean(), active: z.number().optional(), deactivated: z.number().optional(), error: z.string().optional() })) }) } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/reels/{token}/{file}",
+  tags: ["Reels"],
+  summary: "A public media file (no API key): a rendered clip, or a source's audio",
+  description: "The only route without `X-Api-Key`: the token is unguessable. Supports Range. `Cache-Control: public, max-age=86400`, `X-Robots-Tag: noindex`.",
+  security: [],
+  request: { params: z.object({ token: z.string().describe("`[A-Za-z0-9_-]{24,}`"), file: z.enum(["clip.mp4"]) }) },
+  responses: {
+    200: { description: "The file (`video/mp4` or `audio/mp4`)" },
+    206: { description: "A range of it" },
+    404: { description: "Unknown token or file, or the file passed its retention" },
   },
 });

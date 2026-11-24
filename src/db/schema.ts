@@ -1,4 +1,4 @@
-import { pgTable, pgView, uuid, text, timestamp, uniqueIndex, index, integer, jsonb, boolean, doublePrecision, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, pgView, uuid, text, timestamp, uniqueIndex, index, integer, jsonb, boolean, doublePrecision, primaryKey, bigint } from "drizzle-orm/pg-core";
 
 // Email generations
 export const emailGenerations = pgTable(
@@ -457,6 +457,115 @@ export const industryDebriefVideos = pgTable(
   (table) => [index("idx_debrief_videos_status").on(table.status)]
 );
 export type IndustryDebriefVideo = typeof industryDebriefVideos.$inferSelect;
+
+// REELS-1124 (drizzle/0055): long video -> vertical clips with hooks. See src/lib/reels/.
+// run_id is always the CALLER's run: this service opens no run and declares nothing for reels.
+export const videos = pgTable(
+  "videos",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    runId: text("run_id").notNull(),
+    tracking: jsonb("tracking").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    idempotencyKey: text("idempotency_key"),
+    status: text("status").notNull().default("queued"), // queued | downloading | ready | failed
+    stage: text("stage"),
+    errorCode: text("error_code"),
+    error: text("error"),
+    sourceFile: text("source_file"), // file name under MEDIA_DIR/sources/<id>/
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
+    durationSeconds: doublePrecision("duration_seconds"),
+    width: integer("width"),
+    height: integer("height"),
+    hasAudio: boolean("has_audio"), // null until probed
+    transcriptStatus: text("transcript_status").notNull().default("none"), // none | queued | transcribing | done | failed
+    transcriptRef: text("transcript_ref"), // chat-service's job id
+    transcriptIdentity: jsonb("transcript_identity"), // identity headers of the POST that asked it (the poller reads under them)
+    transcript: jsonb("transcript"), // normalized (src/lib/reels/transcript.ts); never in a whole-row read
+    transcriptLanguage: text("transcript_language"),
+    transcriptError: text("transcript_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    readyAt: timestamp("ready_at", { withTimezone: true }),
+    sourceDeletedAt: timestamp("source_deleted_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_videos_status").on(table.status),
+    index("idx_videos_transcript_status").on(table.transcriptStatus),
+    index("idx_videos_org_source").on(table.orgId, table.sourceUrl),
+  ]
+);
+
+export const videoClips = pgTable(
+  "video_clips",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    runId: text("run_id").notNull(),
+    tracking: jsonb("tracking").notNull(),
+    videoId: uuid("video_id").notNull().references(() => videos.id),
+    parentClipId: uuid("parent_clip_id"), // the clip a hook was added to; null for a cut
+    kind: text("kind").notNull().default("cut"), // cut | hooked
+    startSeconds: doublePrecision("start_seconds").notNull(), // span of the main cut in the source
+    endSeconds: doublePrecision("end_seconds").notNull(),
+    layout: text("layout").notNull().default("fit_blur"),
+    cropX: doublePrecision("crop_x").notNull().default(0.5),
+    captions: boolean("captions").notNull().default(true),
+    hook: jsonb("hook"),
+    idempotencyKey: text("idempotency_key"),
+    status: text("status").notNull().default("queued"), // queued | rendering | done | failed
+    stage: text("stage"),
+    errorCode: text("error_code"),
+    error: text("error"),
+    token: text("token").notNull(), // unguessable public dir name
+    fileName: text("file_name"),
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
+    durationSeconds: doublePrecision("duration_seconds"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    fileDeletedAt: timestamp("file_deleted_at", { withTimezone: true }),
+  },
+  (table) => [index("idx_video_clips_status").on(table.status), index("idx_video_clips_video").on(table.videoId)]
+);
+
+// One row per LLM answer read (moments, a hook): which answer led to which clip. request / response_raw never in a list read.
+export const videoLlmProposals = pgTable(
+  "video_llm_proposals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    runId: text("run_id").notNull(),
+    videoId: uuid("video_id").notNull(),
+    clipId: uuid("clip_id"),
+    kind: text("kind").notNull(), // moments | internal_hook | external_hook
+    model: text("model"),
+    tokensInput: integer("tokens_input"),
+    tokensOutput: integer("tokens_output"),
+    request: jsonb("request"),
+    responseRaw: jsonb("response_raw"),
+    result: jsonb("result"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_video_llm_proposals_video").on(table.videoId, table.createdAt)]
+);
+
+// Hook lines proven elsewhere (src/lib/reels/hook-sources.ts). Rows are deactivated, never deleted: old clips name them.
+export const hookLibrary = pgTable(
+  "hook_library",
+  {
+    id: text("id").primaryKey(), // <source>:<sha1(template) first 12>
+    source: text("source").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    category: text("category"),
+    template: text("template").notNull(),
+    evidence: jsonb("evidence").$type<Record<string, unknown> | null>(),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
+    active: boolean("active").notNull().default(true),
+  },
+  (table) => [index("idx_hook_library_active").on(table.active, table.source)]
+);
 
 export type EmailGeneration = typeof emailGenerations.$inferSelect;
 export type NewEmailGeneration = typeof emailGenerations.$inferInsert;
