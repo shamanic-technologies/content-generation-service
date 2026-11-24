@@ -28,7 +28,12 @@ import sequenceRoutes from "./routes/sequences.js";
 import recordedGenerationRoutes from "./routes/recorded-generations.js";
 import previewEmailRoutes from "./routes/preview-email.js";
 import industryDebriefVideoRoutes from "./routes/industry-debrief-videos.js";
+import reelsPublicRoutes from "./routes/reels-public.js";
+import reelsVideoRoutes from "./routes/reels-videos.js";
+import reelsClipRoutes from "./routes/reels-clips.js";
 import { resumeDebriefJobs } from "./lib/debrief/jobs.js";
+import { resumeReelsJobs, startRetentionSweep, startTranscriptPoller } from "./lib/reels/jobs.js";
+import { refreshHookLibraryIfEmpty } from "./lib/reels/hook-library.js";
 import { startOutcomeDeclarationSweep } from "./lib/outcome-declarations.js";
 import { startCompletionRunSweep } from "./lib/completion-run-sweep.js";
 import { alignModelDynastyStatuses } from "./lib/catalogue-status-query.js";
@@ -61,6 +66,10 @@ app.get("/openapi.json", (_req, res) => {
   }
 });
 
+// Public media (REELS-1124): rendered clips and source audio under an unguessable token, no API key
+// (Instagram's publish API and chat-service's transcriber fetch a plain URL).
+app.use(reelsPublicRoutes);
+
 // API key auth — all routes below require valid X-Api-Key
 app.use(apiKeyAuth);
 
@@ -83,6 +92,8 @@ app.use(workflowDynastyOutputRoutes);
 app.use(modelDynastyOutputRoutes);
 app.use(previewEmailRoutes);
 app.use(industryDebriefVideoRoutes);
+app.use(reelsVideoRoutes);
+app.use(reelsClipRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -111,6 +122,12 @@ if (process.env.NODE_ENV !== "test") {
         console.log(`Content generation service running on port ${PORT}`);
         // After the port binds: renders a restart interrupted are re-queued in the background.
         resumeDebriefJobs().catch((err) => console.error("[debrief] resume at boot failed:", err));
+        // Reels (REELS-1124): downloads and renders a restart interrupted, the transcription poller,
+        // the retention sweep, and an empty hook library filled from its sources. None awaited.
+        resumeReelsJobs().catch((err) => console.error("[reels] resume at boot failed:", err));
+        startTranscriptPoller();
+        startRetentionSweep();
+        refreshHookLibraryIfEmpty().catch((err) => console.error("[reels] hook library fill at boot failed:", err));
         // Outcome declarations still pending (runs-service down at write time) are re-sent.
         startOutcomeDeclarationSweep();
         // Each generation is matched to the completion run(s) that wrote it (MODEL-RUN-COST-1024-CG).
