@@ -49,6 +49,7 @@ vi.mock("../../src/db/schema.js", () => ({
     campaignId: { name: "campaign_id" },
     brandIds: { name: "brand_ids" },
     createdAt: { name: "created_at" },
+    alreadyEmailed: { name: "already_emailed" },
   },
   prompts: { orgId: { name: "org_id" }, type: { name: "type" } },
 }));
@@ -269,5 +270,100 @@ describe("POST /generate/materials + /generate with written (script writer)", ()
   it("materials refuses a request with no lead (the script declares on the person's lead)", async () => {
     const { leadId: _l, ...noLead } = body;
     await request(app).post("/generate/materials").send(noLead).expect(400);
+  });
+  describe("a person who already holds our email (COLD-COPY-RESEND-1126)", () => {
+    // The lead's first email of this campaign, already sent to them on 11-12.
+    const sentFirst = { id: "gen-first", alreadyEmailed: false, subject: "Old", sequence: [{ step: 1, bodyHtml: "<p>x</p>", bodyText: "x", daysSinceLastStep: 0 }], tokensInput: 5, tokensOutput: 6 };
+    const next = { ...body, alreadyEmailed: true };
+    /** The column names a stored-email lookup's WHERE reads (drizzle keeps the column objects in its chunks). */
+    const whereColumns = (call: unknown[]) => {
+      const names: string[] = [];
+      const walk = (v: unknown, depth: number) => {
+        if (!v || typeof v !== "object" || depth > 8) return;
+        const o = v as Record<string, unknown>;
+        if (typeof o.name === "string" && Object.keys(o).length === 1) names.push(o.name);
+        for (const k of Object.keys(o)) walk(o[k], depth + 1);
+      };
+      walk((call[0] as { where: unknown }).where, 0);
+      return names;
+    };
+
+    it("materials never answer the stored email: fresh materials, no lookup of the lead's email", async () => {
+      mockGenFindFirst.mockResolvedValue(sentFirst);
+      const m = (await request(app).post("/generate/materials").send(next).expect(200)).body;
+      expect(m.existing).toBeNull();
+      expect(m.subject).toEqual({ service: "lead-service", id: "lead-1" });
+      expect(m.units.template_written.content.text).toBe("Write to {{leadFirstName}} for {{clientCompanyName}}.");
+      expect(mockGenFindFirst).not.toHaveBeenCalled();
+    });
+
+    it("/generate with the script's written email stores it as a NEW row marked alreadyEmailed, never returns the stored one", async () => {
+      const row = await servicePathRow();
+      mockGenFindFirst.mockResolvedValue(sentFirst);
+      const m = (await request(app).post("/generate/materials").send(next).expect(200)).body;
+      const fresh = [{ step: 1, bodyHtml: "<p>Following up, Marie</p>", bodyText: "Following up, Marie", daysSinceLastStep: 0 }];
+      const written = {
+        status: "made",
+        runId: "script-run-2",
+        unit: { content: { subject: "Re: Old", sequence: fresh } },
+        trace: [
+          { name: "voice.read", answer: { ok: true, data: { content: row.chatRequestInputs.clientCommsVoice, version: null } } },
+          { name: "llm.complete", sent: row.chatRequest, raw: row.responseRaw },
+        ],
+      };
+      const res = await request(app).post("/generate").send({ ...next, written, units: m.units }).expect(200);
+      const recorded = mockValues.mock.calls[0][0];
+      expect(recorded.alreadyEmailed).toBe(true);
+      expect(recorded.leadId).toBe("lead-1");
+      expect(recorded.generationRunId).toBe("script-run-2");
+      expect(res.body.id).toBe("gen-2");
+      expect(res.body.sequence).toEqual(fresh);
+      expect(res.body.id).not.toBe(sentFirst.id);
+    });
+
+    it("/generate (service path) writes a new email with its own completion", async () => {
+      mockGenFindFirst.mockResolvedValue(sentFirst);
+      const res = await request(app).post("/generate").send(next).expect(200);
+      expect(completeCalls()).toHaveLength(1);
+      expect(mockValues.mock.calls[0][0].alreadyEmailed).toBe(true);
+      expect(res.body.id).toBe("gen-1");
+    });
+
+    it("an idempotency key re-serves only a row itself written as a next message, never a first email", async () => {
+      mockGenFindFirst.mockResolvedValue(sentFirst);
+      const m = (await request(app).post("/generate/materials").send({ ...next, idempotencyKey: "send-run-1" }).expect(200)).body;
+      expect(m.existing).toBeNull();
+      expect(m.units).not.toBeNull();
+
+      const nextRow = { ...sentFirst, id: "gen-next", alreadyEmailed: true, subject: "Re: Old" };
+      mockGenFindFirst.mockResolvedValue(nextRow);
+      const again = (await request(app).post("/generate/materials").send({ ...next, idempotencyKey: "send-run-1" }).expect(200)).body;
+      expect(again.existing.id).toBe("gen-next");
+    });
+
+    it("a request that does not state it: the stored first email is answered as before, looked up among first emails only", async () => {
+      mockGenFindFirst.mockResolvedValue(sentFirst);
+      for (const b of [body, { ...body, alreadyEmailed: false }]) {
+        mockGenFindFirst.mockClear();
+        const m = (await request(app).post("/generate/materials").send(b).expect(200)).body;
+        expect(m).toEqual({ existing: { id: "gen-first", subject: "Old", sequence: sentFirst.sequence, tokensInput: 5, tokensOutput: 6 }, subject: null, units: null, tactics: null });
+        expect(whereColumns(mockGenFindFirst.mock.calls[0])).toEqual(expect.arrayContaining(["org_id", "campaign_id", "lead_id", "already_emailed"]));
+      }
+      const res = await request(app).post("/generate").send(body).expect(200);
+      expect(res.body.id).toBe("gen-first");
+      expect(mockValues).not.toHaveBeenCalled();
+      expect(completeCalls()).toHaveLength(0);
+    });
+
+    it("a first email stores alreadyEmailed false", async () => {
+      await request(app).post("/generate").send(body).expect(200);
+      expect(mockValues.mock.calls[0][0].alreadyEmailed).toBe(false);
+    });
+
+    it("a preview stating it is refused (400 PREVIEW_WITH_LEAD)", async () => {
+      const { campaignId: _c, leadId: _l, ...pb } = body;
+      const res = await request(app).post("/generate/materials").send({ ...pb, alreadyEmailed: true, preview: { key: "k" } }).expect(400);
+      expect(res.body.code).toBe("PREVIEW_WITH_LEAD");
+    });
   });
 });

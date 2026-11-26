@@ -580,8 +580,9 @@ export const GenerateRequestSchema = registry.register(
       brandIds: z.array(z.string()).optional().describe("Brand UUIDs associated with this generation. Falls back to parsed x-brand-id header (CSV) if omitted."),
       campaignId: z.string().optional(),
       apolloEnrichmentId: z.string().optional(),
-      leadId: z.string().optional().describe("Lead-service correlation ID, unique per campaign"),
+      leadId: z.string().optional().describe("Lead-service correlation ID. One first email per campaign; a request with `alreadyEmailed: true` writes a next one."),
       idempotencyKey: z.string().optional(),
+      alreadyEmailed: z.boolean().optional().describe("COLD-COPY-RESEND-1126: `true` = the person already holds our email (their thread with this brand has one). The request is then never answered with a stored email of this lead: /generate/materials answers `existing: null` with fresh materials, /generate writes (or records the script's) new email and stores it as an extra row for the same (campaign, lead). Only an `idempotencyKey` hit on a row itself written with `alreadyEmailed: true` is re-served (send the sender's run id as the key so a retry of the same send gets the same new email). Absent or false = byte for byte as before: the lead's first email of this campaign is re-served when it exists."),
       workflowSlug: z.string().optional(),
       featureSlug: z.string().optional().describe("Feature slug for tracking"),
       audienceId: z.string().optional().describe("Audience attribution ID. Falls back to x-audience-id header if omitted."),
@@ -1721,7 +1722,7 @@ const FirstEmailShapeSchema = z
 const SequenceFeedEntrySchema = z.object({
   generationId: z.string().uuid().describe("This service's generation id (one per sequence)."),
   orgId: z.string().describe("Internal org UUID the sequence was written for."),
-  campaignId: z.string().describe("Platform campaign id. Unique with leadId: one sequence per campaign x lead."),
+  campaignId: z.string().describe("Platform campaign id. One first email per campaign x lead; a person who already held our email can carry later ones (COLD-COPY-RESEND-1126), each its own generationId."),
   leadId: z.string().describe("lead-service lead id of the recipient."),
   model: z
     .string()
