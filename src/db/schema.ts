@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { pgTable, pgView, uuid, text, timestamp, uniqueIndex, index, integer, jsonb, boolean, doublePrecision, primaryKey, bigint } from "drizzle-orm/pg-core";
 
 // Email generations
@@ -85,6 +86,11 @@ export const emailGenerations = pgTable(
     // Idempotency support — caller-supplied key to prevent duplicate generations
     idempotencyKey: text("idempotency_key"),
 
+    // COLD-COPY-RESEND-1126 (drizzle/0056): the caller stated the person already holds our email (their thread
+    // has it). Such a request is never answered with a stored email; it writes a new one, stored as an extra row
+    // for the same (campaign, lead). The first-touch row (false) stays unique per (campaign, lead).
+    alreadyEmailed: boolean("already_emailed").notNull().default(false),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -104,7 +110,8 @@ export const emailGenerations = pgTable(
     // Last outputs of a workflow dynasty, GET /internal/workflow-dynasties/:slug/outputs (drizzle/0039)
     index("idx_emailgen_workflow_created").on(table.workflowSlug, table.createdAt),
     uniqueIndex("idx_emailgen_idempotency").on(table.orgId, table.idempotencyKey),
-    uniqueIndex("idx_emailgen_lead").on(table.campaignId, table.leadId),
+    // One FIRST-touch email per person per campaign; next messages (already_emailed) are not bound by it.
+    uniqueIndex("idx_emailgen_lead").on(table.campaignId, table.leadId).where(sql`already_emailed = false`),
   ]
 );
 

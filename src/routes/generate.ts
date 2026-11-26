@@ -119,6 +119,16 @@ function scopeOf(req: AuthenticatedRequest, data: GenerateBody) {
 }
 type GenerateScope = ReturnType<typeof scopeOf>;
 
+/** The lead's FIRST email of this campaign (one per person per campaign, `idx_emailgen_lead`); next messages excluded. */
+function firstEmailOfLead(orgId: string, leadCampaignId: string, leadId: string) {
+  return and(
+    eq(emailGenerations.orgId, orgId),
+    eq(emailGenerations.campaignId, leadCampaignId),
+    eq(emailGenerations.leadId, leadId),
+    eq(emailGenerations.alreadyEmailed, false)
+  );
+}
+
 /**
  * The stored generation this request is already answered by, or null: the idempotency key, then the lead's one email
  * per campaign. Retry recovery: a lead that already has a generation for this campaign gets that email back instead
@@ -128,6 +138,10 @@ type GenerateScope = ReturnType<typeof scopeOf>;
  * email is stale to its recipient. See issue #186.
  */
 async function answeredGeneration(req: AuthenticatedRequest, data: GenerateBody, scope: GenerateScope) {
+  // COLD-COPY-RESEND-1126: the caller states the person already holds our email. A stored email of this lead may
+  // be the one they already received, so it is never the answer: only a retry of THIS next-message request (its
+  // idempotency key, on a row itself written as a next message) is re-served.
+  const alreadyEmailed = data.alreadyEmailed === true;
   if (data.idempotencyKey) {
     const existing = await db.query.emailGenerations.findFirst({
       where: and(
@@ -135,18 +149,22 @@ async function answeredGeneration(req: AuthenticatedRequest, data: GenerateBody,
         eq(emailGenerations.idempotencyKey, data.idempotencyKey)
       ),
     });
+    if (existing && alreadyEmailed && existing.alreadyEmailed !== true) {
+      traceEvent(req.runId!, { service: "content-generation-service", event: "idempotency-skip-already-emailed", detail: `Key=${data.idempotencyKey} names generation id=${existing.id}, a first email: not re-served to a person who already holds our email`, level: "warn" }, req.headers).catch(() => {});
+      return null;
+    }
     if (existing) {
       traceEvent(req.runId!, { service: "content-generation-service", event: "idempotency-hit", detail: `Returning cached generation id=${existing.id} for key=${data.idempotencyKey}` }, req.headers).catch(() => {});
       return existing;
     }
   }
+  if (alreadyEmailed) {
+    if (data.leadId) traceEvent(req.runId!, { service: "content-generation-service", event: "lead-already-emailed", detail: `leadId=${data.leadId} already holds our email: a new email is written, the stored one is not re-served` }, req.headers).catch(() => {});
+    return null;
+  }
   if (data.leadId) {
     const existingForLead = await db.query.emailGenerations.findFirst({
-      where: and(
-        eq(emailGenerations.orgId, req.orgId!),
-        eq(emailGenerations.campaignId, scope.leadCampaignId),
-        eq(emailGenerations.leadId, data.leadId)
-      ),
+      where: firstEmailOfLead(req.orgId!, scope.leadCampaignId, data.leadId),
     });
     if (existingForLead) {
       traceEvent(req.runId!, { service: "content-generation-service", event: "lead-generation-hit", detail: `Returning existing generation id=${existingForLead.id} for leadId=${data.leadId}, campaignId=${scope.leadCampaignId || "none"} — no completion billed` }, req.headers).catch(() => {});
@@ -380,7 +398,7 @@ router.post("/generate/materials", serviceAuth, async (req: AuthenticatedRequest
  */
 async function previewMaterials(req: AuthenticatedRequest, res: Response, data: GenerateBody) {
   const preview = data.preview!;
-  if (data.leadId || data.campaignId || data.idempotencyKey) {
+  if (data.leadId || data.campaignId || data.idempotencyKey || data.alreadyEmailed) {
     return res.status(400).json({ error: "preview: a preview names no lead, campaign or idempotency key", code: "PREVIEW_WITH_LEAD" });
   }
   const scope = scopeOf(req, data);
@@ -443,6 +461,7 @@ async function recordWrittenByScript(req: AuthenticatedRequest, res: Response, d
     audienceId: scope.audienceId ?? null,
     leadId: leadId ?? null,
     idempotencyKey: data.idempotencyKey ?? null,
+    alreadyEmailed: data.alreadyEmailed === true,
     // The script's run wrote it: the completion is its child, the declaration lands on it.
     generationRunId: w.runId,
     outcomes,
@@ -455,9 +474,7 @@ async function recordWrittenByScript(req: AuthenticatedRequest, res: Response, d
     // A concurrent request for the same lead won the insert: its email is the answer (one email per person per
     // campaign); the script's run declared nothing, so nothing is counted twice.
     if (!leadId || !isLeadDuplicateError(err)) throw err;
-    const winner = await db.query.emailGenerations.findFirst({
-      where: and(eq(emailGenerations.orgId, req.orgId!), eq(emailGenerations.campaignId, leadCampaignId), eq(emailGenerations.leadId, leadId)),
-    });
+    const winner = await db.query.emailGenerations.findFirst({ where: firstEmailOfLead(req.orgId!, leadCampaignId, leadId) });
     if (!winner) throw err;
     traceEvent(req.runId!, { service: "content-generation-service", event: "lead-generation-race", detail: `Concurrent generation won for leadId=${leadId}, campaignId=${leadCampaignId || "none"} — returning id=${winner.id}`, level: "warn" }, req.headers).catch(() => {});
     return res.json(toGenerationResponse(winner));
@@ -600,6 +617,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       audienceId: scope.audienceId ?? null,
       leadId: leadId ?? null,
       idempotencyKey: data.idempotencyKey ?? null,
+      alreadyEmailed: data.alreadyEmailed === true,
       generationRunId,
       outcomes,
     };
@@ -620,13 +638,7 @@ router.post("/generate", serviceAuth, async (req: AuthenticatedRequest, res) => 
       // The winner's run declared this person's message; ours wrote a discarded one.
       await finishGenerationRun("completed");
 
-      const winner = await db.query.emailGenerations.findFirst({
-        where: and(
-          eq(emailGenerations.orgId, req.orgId!),
-          eq(emailGenerations.campaignId, leadCampaignId),
-          eq(emailGenerations.leadId, leadId)
-        ),
-      });
+      const winner = await db.query.emailGenerations.findFirst({ where: firstEmailOfLead(req.orgId!, leadCampaignId, leadId) });
       if (!winner) throw err;
 
       traceEvent(req.runId!, { service: "content-generation-service", event: "lead-generation-race", detail: `Concurrent generation won for leadId=${leadId}, campaignId=${leadCampaignId || "none"} — returning id=${winner.id}`, level: "warn" }, req.headers).catch(() => {});
