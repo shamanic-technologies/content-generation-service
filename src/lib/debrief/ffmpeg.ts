@@ -5,6 +5,7 @@
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { setPriority } from "node:os";
+import { SAFE_VIDEO_INPUT_OPTIONS } from "../ffmpeg-input.js";
 
 export const RENDER_NICE = 10;
 
@@ -45,9 +46,11 @@ export interface ProbedVideo {
   audio: { codec: string } | null;
 }
 
+/** Also probes a caller's downloaded file (reels source): local file + media demuxers only (SSRF-1127). */
 export async function probeVideo(path: string): Promise<ProbedVideo> {
   const out = await run("ffprobe", [
     "-v", "error",
+    ...SAFE_VIDEO_INPUT_OPTIONS,
     "-show_entries", "stream=codec_type,codec_name,pix_fmt,width,height:format=duration",
     "-of", "json", path,
   ]);

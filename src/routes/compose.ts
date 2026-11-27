@@ -4,6 +4,7 @@ import { put } from "@vercel/blob";
 import { generateQuoteImage } from "../lib/quote-image.js";
 import { composeSplitScreen } from "../lib/ffmpeg-compose.js";
 import { readCappedBody, PayloadTooLargeError } from "../lib/capped-body.js";
+import { publicFetch, PublicUrlRefusedError } from "../lib/safe-fetch.js";
 
 const router = Router();
 
@@ -13,6 +14,9 @@ const router = Router();
  * was an unbounded allocation on a ~2 GB heap.
  */
 export const MAX_SOURCE_VIDEO_BYTES = 150 * 1024 * 1024;
+
+/** A source that sends nothing for this long is dead. */
+export const SOURCE_VIDEO_TIMEOUT_MS = 120_000;
 
 export const ComposeRequestSchema = z.object({
   videoUrl: z.string().url(),
@@ -35,10 +39,27 @@ router.post("/compose", async (req: Request, res: Response) => {
   const { videoUrl, name, age, theme, text, outputBlobToken, layout } = parsed.data;
 
   try {
-    // 1. Download source video
-    const videoResponse = await fetch(videoUrl);
+    // 1. Download source video. `videoUrl` is the CALLER's (gateway, any user key, MCP):
+    // https only, every hop (redirects included) public and pinned (SSRF-1127). A refusal
+    // or a failed download never echoes what the target answered.
+    let videoResponse: globalThis.Response;
+    try {
+      videoResponse = await publicFetch(videoUrl, {
+        protocols: ["https:"],
+        signal: AbortSignal.timeout(SOURCE_VIDEO_TIMEOUT_MS),
+      });
+    } catch (err) {
+      if (err instanceof PublicUrlRefusedError) {
+        console.warn(`[compose] videoUrl refused: not a public https address`);
+        return res.status(400).json({ error: `videoUrl refused: ${err.message}`, code: "VIDEO_URL_NOT_PUBLIC" });
+      }
+      console.error(`[compose] videoUrl unreachable: ${(err as Error).message}`);
+      return res.status(400).json({ error: "Could not download the video from videoUrl", code: "VIDEO_DOWNLOAD_FAILED" });
+    }
     if (!videoResponse.ok) {
-      return res.status(400).json({ error: `Failed to download video: ${videoResponse.status}` });
+      await videoResponse.body?.cancel().catch(() => undefined);
+      console.error(`[compose] videoUrl answered ${videoResponse.status}`);
+      return res.status(400).json({ error: "Could not download the video from videoUrl", code: "VIDEO_DOWNLOAD_FAILED" });
     }
     let videoBuffer: Buffer;
     try {
@@ -55,10 +76,6 @@ router.post("/compose", async (req: Request, res: Response) => {
     }
     console.log(`[compose] Downloaded source video: ${videoBuffer.byteLength} bytes`);
 
-    // Detect extension from URL
-    const urlPath = new URL(videoUrl).pathname;
-    const videoExt = urlPath.split(".").pop() || "mp4";
-
     // 2. Generate quote image
     const imageBuffer = await generateQuoteImage({ name, age, theme, text });
 
@@ -66,7 +83,6 @@ router.post("/compose", async (req: Request, res: Response) => {
     const composedBuffer = await composeSplitScreen({
       videoBuffer,
       imageBuffer,
-      videoExt,
       layout,
     });
 
