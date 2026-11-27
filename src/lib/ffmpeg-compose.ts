@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { writeFile, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { SAFE_VIDEO_INPUT_OPTIONS } from "./ffmpeg-input.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -11,8 +12,6 @@ interface ComposeOptions {
   videoBuffer: Buffer;
   /** PNG image bytes for the top panel */
   imageBuffer: Buffer;
-  /** Video file extension (e.g. "mp4", "webm") */
-  videoExt?: string;
   /** Layout: "quote-top" (default) = quote 40% top + webcam 60% bottom; "webcam-top" = webcam 50% top + quote 50% bottom */
   layout?: "quote-top" | "webcam-top";
 }
@@ -24,10 +23,12 @@ interface ComposeOptions {
  * Returns the composed MP4 buffer.
  */
 export async function composeSplitScreen(opts: ComposeOptions): Promise<Buffer> {
-  const { videoBuffer, imageBuffer, videoExt = "mp4", layout = "quote-top" } = opts;
+  const { videoBuffer, imageBuffer, layout = "quote-top" } = opts;
   const tmp = await mkdtemp(join(tmpdir(), "compose-"));
 
-  const videoPath = join(tmp, `input.${videoExt}`);
+  // The caller's bytes: no extension (never a hint from the caller's URL), demuxer chosen by
+  // content among SAFE_VIDEO_DEMUXERS only, local file protocol only (SSRF-1127).
+  const videoPath = join(tmp, "input.bin");
   const imagePath = join(tmp, "quote.png");
   const outputPath = join(tmp, "output.mp4");
 
@@ -53,7 +54,7 @@ export async function composeSplitScreen(opts: ComposeOptions): Promise<Buffer> 
         ].join(";");
 
     await execFileAsync("ffmpeg", [
-      "-i", videoPath,
+      ...SAFE_VIDEO_INPUT_OPTIONS, "-i", videoPath,
       "-i", imagePath,
       "-filter_complex", filterComplex,
       "-map", "[out]",

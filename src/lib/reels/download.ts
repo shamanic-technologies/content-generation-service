@@ -3,7 +3,7 @@
  * addresses on every hop, STREAM to disk under a hard size ceiling, probe it, extract its audio.
  * Nothing here buffers media in memory, and no db: jobs.ts owns the row.
  */
-import { lookup } from "node:dns/promises";
+import { checkPublicUrl, publicFetch, PublicUrlRefusedError } from "../safe-fetch.js";
 import { createWriteStream } from "node:fs";
 import { copyFile, mkdir, rm, stat, statfs } from "node:fs/promises";
 import { join } from "node:path";
@@ -12,54 +12,54 @@ import { pipeline } from "node:stream/promises";
 import { probeVideo, run } from "../debrief/ffmpeg.js";
 import { ReelsError } from "./errors.js";
 import { publicDirOf, sourceDirOf } from "./media.js";
-import { MAX_SOURCE_BYTES, isForbiddenAddress, resolveSourceUrl, sourceExtension } from "./source-url.js";
+import { MAX_SOURCE_BYTES, resolveSourceUrl, sourceExtension } from "./source-url.js";
 
-const MAX_REDIRECTS = 10;
 /** Free space wanted when the server declares no size. */
 const UNKNOWN_SIZE_FREE_BYTES = 10 * 1024 * 1024 * 1024;
 /** A download that receives nothing for this long is dead. */
 const IDLE_TIMEOUT_MS = 120_000;
 
-/** SOURCE_URL_FORBIDDEN unless every address `hostname` resolves to is public. */
+/** SOURCE_URL_FORBIDDEN unless every address `hostname` resolves to is public (safe-fetch's rule, SSRF-1127). */
 export async function assertPublicHost(hostname: string): Promise<void> {
-  const host = hostname.replace(/^\[|\]$/g, "");
-  let addresses: Array<{ address: string }>;
   try {
-    addresses = await lookup(host, { all: true });
+    await checkPublicUrl(`https://${hostname}/`, { protocols: ["https:"] });
   } catch (err) {
-    throw new ReelsError("SOURCE_UNREACHABLE", `${host} does not resolve: ${(err as Error).message}`, 400);
-  }
-  const bad = addresses.find((a) => isForbiddenAddress(a.address));
-  if (!addresses.length || bad) {
-    throw new ReelsError("SOURCE_URL_FORBIDDEN", `${host} resolves to a private or local address: not fetched`, 400);
+    if (err instanceof PublicUrlRefusedError) {
+      throw new ReelsError("SOURCE_URL_FORBIDDEN", `${hostname} resolves to a private or local address: not fetched`, 400);
+    }
+    throw new ReelsError("SOURCE_UNREACHABLE", `${hostname} does not resolve: ${(err as Error).message}`, 400);
   }
 }
 
-/** GET following redirects by hand: every hop is https and resolves to a public address. */
+/**
+ * GET through publicFetch (SSRF-1127): https only, every hop (redirects followed by hand, max 5)
+ * resolved, refused unless public, and the socket PINNED to the checked address (no DNS rebinding
+ * between the check and the connect, which the old lookup-then-fetch allowed).
+ */
 async function openSource(url: string, signal: AbortSignal): Promise<{ response: Response; finalUrl: string }> {
-  let current = url;
-  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    const u = new URL(current);
-    if (u.protocol !== "https:") throw new ReelsError("SOURCE_URL_INVALID", `The source redirects to a non-https URL (${u.protocol}//${u.host})`, 400);
-    await assertPublicHost(u.hostname);
-    let response: Response;
-    try {
-      response = await fetch(current, { redirect: "manual", signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; media-fetch)", Accept: "*/*" } });
-    } catch (err) {
-      throw new ReelsError("SOURCE_UNREACHABLE", `Fetching ${u.host} failed: ${(err as Error).message}`);
+  const host = new URL(url).host;
+  let response: Response;
+  try {
+    response = await publicFetch(url, {
+      protocols: ["https:"],
+      signal,
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; media-fetch)", Accept: "*/*" },
+    });
+  } catch (err) {
+    if (err instanceof PublicUrlRefusedError) {
+      throw new ReelsError("SOURCE_URL_FORBIDDEN", `The source (or a redirect of it) is not a public https address: not fetched`, 400);
     }
-    if (response.status >= 300 && response.status < 400 && response.headers.get("location")) {
-      await response.body?.cancel().catch(() => {});
-      current = new URL(response.headers.get("location")!, current).toString();
-      continue;
+    if (/too many redirects/.test((err as Error).message)) {
+      throw new ReelsError("SOURCE_UNREACHABLE", "The source redirects too many times");
     }
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => {});
-      throw new ReelsError("SOURCE_UNREACHABLE", `${u.host} answered ${response.status} for the source`);
-    }
-    return { response, finalUrl: current };
+    throw new ReelsError("SOURCE_UNREACHABLE", `Fetching ${host} failed: ${(err as Error).message}`);
   }
-  throw new ReelsError("SOURCE_UNREACHABLE", `The source redirects more than ${MAX_REDIRECTS} times`);
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => {});
+    throw new ReelsError("SOURCE_UNREACHABLE", `${host} answered ${response.status} for the source`);
+  }
+  // publicFetch follows redirects itself; the final name is only an extension hint (sourceExtension).
+  return { response, finalUrl: url };
 }
 
 export interface DownloadedSource {
