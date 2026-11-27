@@ -15,9 +15,13 @@ vi.mock("@vercel/blob", () => ({
   put: vi.fn().mockResolvedValue({ url: "https://blob.vercel-storage.com/composed/output.mp4" }),
 }));
 
-// Mock global fetch for video download
+// The download goes through publicFetch (SSRF-1127); its refusal rules are pinned by
+// safe-fetch.test.ts and compose-ssrf.test.ts. Here it is a stub, error class kept real.
 const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+vi.mock("../../src/lib/safe-fetch.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/lib/safe-fetch.js")>()),
+  publicFetch: (...args: unknown[]) => mockFetch(...args),
+}));
 
 import composeRoutes from "../../src/routes/compose.js";
 import { generateQuoteImage } from "../../src/lib/quote-image.js";
@@ -112,7 +116,7 @@ describe("POST /compose", () => {
   });
 
   it("returns 400 when video download fails", async () => {
-    mockFetch.mockResolvedValue({ ok: false, status: 404 });
+    mockFetch.mockResolvedValue({ ok: false, status: 404, body: null });
 
     const app = buildApp();
     const res = await request(app)
@@ -121,7 +125,9 @@ describe("POST /compose", () => {
       .send(validBody)
       .expect(400);
 
-    expect(res.body.error).toMatch(/Failed to download video/);
+    expect(res.body.code).toBe("VIDEO_DOWNLOAD_FAILED");
+    // The upstream status is never echoed to the caller.
+    expect(JSON.stringify(res.body)).not.toContain("404");
   });
 
   it("composes video and returns blob URL on success", async () => {
@@ -135,7 +141,10 @@ describe("POST /compose", () => {
     expect(res.body.composedVideoUrl).toBe("https://blob.vercel-storage.com/composed/output.mp4");
 
     // Verify pipeline was called correctly
-    expect(mockFetch).toHaveBeenCalledWith(validBody.videoUrl);
+    expect(mockFetch).toHaveBeenCalledWith(
+      validBody.videoUrl,
+      expect.objectContaining({ protocols: ["https:"] }),
+    );
     expect(generateQuoteImage).toHaveBeenCalledWith({
       name: "Sophie",
       age: 34,
@@ -145,7 +154,6 @@ describe("POST /compose", () => {
     expect(composeSplitScreen).toHaveBeenCalledWith({
       videoBuffer: expect.any(Buffer),
       imageBuffer: expect.any(Buffer),
-      videoExt: "mp4",
       layout: "quote-top",
     });
     expect(put).toHaveBeenCalledWith(
@@ -159,17 +167,15 @@ describe("POST /compose", () => {
     );
   });
 
-  it("detects video extension from URL", async () => {
+  it("never derives the input format from the caller's URL extension", async () => {
     const app = buildApp();
     await request(app)
       .post("/compose")
       .set("X-Api-Key", VALID_KEY)
-      .send({ ...validBody, videoUrl: "https://example.com/recording.webm" })
+      .send({ ...validBody, videoUrl: "https://example.com/recording.m3u8" })
       .expect(200);
 
-    expect(composeSplitScreen).toHaveBeenCalledWith(
-      expect.objectContaining({ videoExt: "webm" }),
-    );
+    expect(vi.mocked(composeSplitScreen).mock.calls[0][0]).not.toHaveProperty("videoExt");
   });
 
   it("returns 500 when composition throws", async () => {

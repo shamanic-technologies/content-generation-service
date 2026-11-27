@@ -15,6 +15,7 @@ import { mkdtemp, open, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isFaststart, probeVideo, run } from "../debrief/ffmpeg.js";
+import { SAFE_VIDEO_INPUT_OPTIONS } from "../ffmpeg-input.js";
 import { buildCaptionsAss, buildHookAss, type TimedWord } from "./captions-ass.js";
 import { ReelsError } from "./errors.js";
 import { audioGraph, layoutGraph, subtitlesFilter, OUT_FPS, type ClipLayout } from "./layouts.js";
@@ -71,7 +72,8 @@ async function check(path: string, expectedSeconds: number, tolerance: number): 
 
 /** Input args of a span of the source; a source with no audio track gets silence as input 1. */
 function sourceSpan(sourcePath: string, start: number, seconds: number, hasAudio: boolean): { args: string[]; audioPad: string; inputs: number } {
-  const args = ["-ss", start.toFixed(3), "-t", seconds.toFixed(3), "-i", sourcePath];
+  // The source's bytes are the caller's: local file + media demuxers only (SSRF-1127).
+  const args = ["-ss", start.toFixed(3), "-t", seconds.toFixed(3), ...SAFE_VIDEO_INPUT_OPTIONS, "-i", sourcePath];
   if (hasAudio) return { args, audioPad: "0:a:0", inputs: 1 };
   return { args: [...args, "-f", "lavfi", "-t", seconds.toFixed(3), "-i", "anullsrc=r=44100:cl=stereo"], audioPad: "1:a:0", inputs: 2 };
 }
